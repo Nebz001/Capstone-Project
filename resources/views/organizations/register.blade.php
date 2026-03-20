@@ -1,19 +1,8 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+@extends('layouts.app')
 
-    <title>{{ config('app.name', 'Laravel') }}</title>
+@section('title', 'Register Student Organization')
 
-    <link rel="preconnect" href="https://fonts.bunny.net">
-    <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
-
-    @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
-        @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @endif
-</head>
-<body>
+@section('content')
   <div class="min-h-screen bg-gray-50 py-10 sm:py-14">
     <div class="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-8">
         <header class="mb-8">
@@ -117,7 +106,7 @@
                                 id="organization_name"
                                 name="organization_name"
                                 type="text"
-                                placeholder="e.g., Nexus Underdogs"
+                                placeholder="e.g., Computer Society"
                                 required
                                 class="mt-2 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                             />
@@ -409,92 +398,4 @@
         </form>
     </div>
   </div>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const form = document.getElementById('organization-application-form');
-
-        if (form) {
-            form.addEventListener('submit', (event) => {
-                event.preventDefault();
-
-                if (typeof Swal === 'undefined') return;
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Application Submitted',
-                    text: 'Your organization application has been submitted successfully.',
-                    confirmButtonText: 'OK',
-                    customClass: {
-                    confirmButton: 'bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2'
-                    },
-                    buttonsStyling: false
-                });
-            });
-        }
-
-        const applicationInputs = document.querySelectorAll('input[name="application_for"]');
-        const note = document.getElementById('requirements-note');
-        const newList = document.getElementById('requirements-new');
-        const renewalList = document.getElementById('requirements-renewal');
-
-        const setEnabled = (container, enabled) => {
-            if (!container) return;
-            container.querySelectorAll('input, textarea, select, button').forEach((el) => {
-                el.disabled = !enabled;
-            });
-        };
-
-        const clearInputs = (container) => {
-            if (!container) return;
-            container.querySelectorAll('input[type="checkbox"]').forEach((el) => {
-                el.checked = false;
-            });
-            container.querySelectorAll('input[type="text"]').forEach((el) => {
-                el.value = '';
-            });
-        };
-
-        const updateRequirements = () => {
-            const selected = document.querySelector('input[name="application_for"]:checked')?.value;
-
-            if (!selected) {
-                note?.classList.remove('hidden');
-                newList?.classList.add('hidden');
-                renewalList?.classList.add('hidden');
-                setEnabled(newList, false);
-                setEnabled(renewalList, false);
-                return;
-            }
-
-            note?.classList.add('hidden');
-
-            if (selected === 'new') {
-                newList?.classList.remove('hidden');
-                renewalList?.classList.add('hidden');
-                setEnabled(newList, true);
-                setEnabled(renewalList, false);
-                clearInputs(renewalList);
-                return;
-            }
-
-            if (selected === 'renewal') {
-                renewalList?.classList.remove('hidden');
-                newList?.classList.add('hidden');
-                setEnabled(renewalList, true);
-                setEnabled(newList, false);
-                clearInputs(newList);
-            }
-        };
-
-        applicationInputs.forEach((input) => {
-            input.addEventListener('change', updateRequirements);
-        });
-
-        setEnabled(newList, false);
-        setEnabled(renewalList, false);
-        updateRequirements();
-    });
-    </script>
-</body>
-</html>
+@endsection
