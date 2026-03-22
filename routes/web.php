@@ -17,3 +17,7 @@ Route::redirect('/organizations/activity-calendar', '/organizations/activity-cal
 Route::get('/organizations/activity-calendar-submission', function () {
   return view('organizations.activity-calendar-submission');
 })->name('activity-calendar-submission');
+
+Route::get('auth/register', function () {
+  return view('auth.register');
+})->name('register');

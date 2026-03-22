@@ -77,20 +77,20 @@ export const initActivityCalendarSubmissionPage = () => {
 			row.dataset.index = String(index);
 
 			row.innerHTML = `
-				<td class="px-5 py-3.5 text-gray-900">${escapeHtml(activity.date || '—')}</td>
-				<td class="px-5 py-3.5 text-gray-900">${escapeHtml(activity.name || '—')}</td>
-				<td class="px-5 py-3.5 text-gray-900">${escapeHtml(activity.sdg || '—')}</td>
-				<td class="px-5 py-3.5 text-gray-900">${escapeHtml(activity.venue || '—')}</td>
-				<td class="px-5 py-3.5 text-gray-900">${escapeHtml(activity.participantProgram || '—')}</td>
-				<td class="px-5 py-3.5 text-gray-900">${escapeHtml(activity.budget || '—')}</td>
+				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.date || '—')}</td>
+				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.name || '—')}</td>
+				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.sdg || '—')}</td>
+				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.venue || '—')}</td>
+				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.participantProgram || '—')}</td>
+				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.budget || '—')}</td>
 				<td class="px-5 py-3.5">
-					<span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">Pending review</span>
+					<span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">Pending review</span>
 				</td>
-				<td class="px-5 py-3.5 text-sm text-gray-500">For admin use</td>
+				<td class="px-5 py-3.5 text-sm text-slate-500">For admin use</td>
 				<td class="px-5 py-3.5">
 					<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-						<button type="button" data-action="edit" class="inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">Edit</button>
-						<button type="button" data-action="delete" class="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">Delete</button>
+						<button type="button" data-action="edit" class="inline-flex items-center justify-center rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-sky-500/15">Edit</button>
+						<button type="button" data-action="delete" class="inline-flex items-center justify-center rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-sky-500/15">Delete</button>
 					</div>
 				</td>
 			`;
