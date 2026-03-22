@@ -29,13 +29,13 @@
 
             <!-- Application Information -->
             <x-ui.card padding="p-0">
-                <div class="border-b border-slate-100 px-6 py-4">
-                    <h2 class="text-base font-semibold text-slate-900">Application Information</h2>
-                    <p class="mt-1 text-sm text-slate-600">Provide the application type and academic year.</p>
-                    <p class="mt-4 text-xs text-slate-500">
-                      Fields marked with <span class="text-red-600">*</span> are required.
-                    </p>
-                </div>
+                <x-ui.card-section-header
+                    title="Application Information"
+                    subtitle="Provide the application type and academic year."
+                    helper='Fields marked with <span class="text-red-600">*</span> are required.'
+                    :helper-html="true"
+                    content-padding="px-6"
+                />
 
                 <div class="px-6 py-6">
                     <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -72,10 +72,11 @@
 
             <!-- Contact Information -->
             <x-ui.card padding="p-0">
-                <div class="border-b border-slate-100 px-6 py-4">
-                    <h2 class="text-base font-semibold text-slate-900">Contact Information</h2>
-                    <p class="mt-1 text-sm text-slate-600">Enter the primary contact details for your organization.</p>
-                </div>
+                <x-ui.card-section-header
+                    title="Contact Information"
+                    subtitle="Enter the primary contact details for your organization."
+                    content-padding="px-6"
+                />
 
                 <div class="px-6 py-6">
                     <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -130,10 +131,11 @@
 
             <!-- Organization Details -->
             <x-ui.card padding="p-0">
-                <div class="border-b border-slate-100 px-6 py-4">
-                    <h2 class="text-base font-semibold text-slate-900">Organization Details</h2>
-                    <p class="mt-1 text-sm text-slate-600">Provide key information about your organization.</p>
-                </div>
+                <x-ui.card-section-header
+                    title="Organization Details"
+                    subtitle="Provide key information about your organization."
+                    content-padding="px-6"
+                />
 
                 <div class="px-6 py-6">
                     <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -189,10 +191,11 @@
 
             <!-- Requirements Attached -->
             <x-ui.card padding="p-0">
-                <div class="border-b border-slate-100 px-6 py-4">
-                    <h2 class="text-base font-semibold text-slate-900">Requirements Attached</h2>
-                    <p class="mt-1 text-sm text-slate-600">Check the documents included with your application.</p>
-                </div>
+                <x-ui.card-section-header
+                    title="Requirements Attached"
+                    subtitle="Check the documents included with your application."
+                    content-padding="px-6"
+                />
 
                 <div class="px-6 py-6">
                     <div class="rounded-2xl border border-slate-200 bg-slate-100 p-4 sm:p-5">

@@ -2,6 +2,7 @@
     'title',
     'subtitle' => null,
     'helper' => null,
+    'helperHtml' => false,
 ])
 
 <div {{ $attributes->merge(['class' => 'border-b border-slate-100 pb-5']) }}>
@@ -12,6 +13,10 @@
     @endif
 
     @if ($helper)
-        <p class="mt-3 text-xs text-slate-500">{{ $helper }}</p>
+        @if ($helperHtml)
+            <p class="mt-3 text-xs text-slate-500">{!! $helper !!}</p>
+        @else
+            <p class="mt-3 text-xs text-slate-500">{{ $helper }}</p>
+        @endif
     @endif
 </div>

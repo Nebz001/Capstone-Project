@@ -25,13 +25,12 @@
 
               <!-- Organization Information -->
               <x-ui.card padding="p-0">
-                  <div class="border-b border-slate-100 px-6 py-4 sm:px-8 lg:px-10">
-                      <h2 class="text-base font-semibold text-slate-900">Organization Information</h2>
-                      <p class="mt-1 text-sm text-slate-600">Provide the details for this submission.</p>
-                      <p class="mt-4 text-xs text-slate-500">
-                          Fields marked with <span class="text-red-600">*</span> are required.
-                      </p>
-                  </div>
+                  <x-ui.card-section-header
+                      title="Organization Information"
+                      subtitle="Provide the details for this submission."
+                      helper='Fields marked with <span class="text-red-600">*</span> are required.'
+                      :helper-html="true"
+                  />
 
                   <div class="px-6 py-6 sm:px-8 lg:px-10">
                       <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -82,12 +81,10 @@
 
               <!-- Activity Calendar Table -->
               <x-ui.card padding="p-0">
-                  <div class="border-b border-slate-100 px-6 py-4 sm:px-8 lg:px-10">
-                      <div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-                          <h2 class="text-base font-semibold text-slate-900">Activity Calendar</h2>
-                          <p class="text-sm text-slate-600">Status and Date Received are for admin use.</p>
-                      </div>
-                  </div>
+                  <x-ui.card-section-header
+                      title="Activity Calendar"
+                      subtitle="Status and Date Received are for admin use."
+                  />
 
                   <div class="px-6 py-6 sm:px-8 lg:px-10">
                       <div class="rounded-2xl border border-slate-200 bg-slate-100/40 p-5 sm:p-6">
@@ -215,10 +212,10 @@
 
               <!-- Notes / Reminders -->
               <x-ui.card padding="p-0">
-                  <div class="border-b border-slate-100 px-6 py-4 sm:px-8 lg:px-10">
-                      <h2 class="text-base font-semibold text-slate-900">Notes / Reminders</h2>
-                      <p class="mt-1 text-sm text-slate-600">Please review before submitting.</p>
-                  </div>
+                  <x-ui.card-section-header
+                      title="Notes / Reminders"
+                      subtitle="Please review before submitting."
+                  />
                   <div class="px-6 py-6 sm:px-8 lg:px-10">
                       <div class="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-4 text-sm text-sky-900">
                           <ul class="list-disc space-y-2 pl-5">

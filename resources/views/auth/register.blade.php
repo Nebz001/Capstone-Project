@@ -9,6 +9,8 @@
 				<x-ui.section-header
 					title="Registration Details"
 					subtitle="All fields below are for account setup only."
+					helper='Fields marked with <span class="text-red-600">*</span> are required.'
+					:helper-html="true"
 				/>
 
 				<form id="student-register-form" method="POST" action="" class="mt-6 space-y-7 sm:mt-7">
@@ -25,20 +27,20 @@
 								type="email"
 								required
 								autocomplete="email"
-								placeholder="tanbm@students.nu-lipa.edu.ph"
+								placeholder="sample@students.nu-lipa.edu.ph"
 							/>
 							<x-forms.helper>Use your official NU Lipa student email only.</x-forms.helper>
 						</div>
 
 						<div>
 							<x-forms.label for="school-id-segment-0">School ID</x-forms.label>
-							<x-forms.helper class="mt-1">Format preview: 2023-182854</x-forms.helper>
+							<x-forms.helper class="mt-1">Format preview: 2023-123456</x-forms.helper>
 
 							<input id="school_id" name="school_id" type="hidden" value="" />
 
 							<div
 								id="school-id-group"
-								class="mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:gap-2.5 sm:p-4"
+								class="mt-3 flex w-full flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:gap-2.5 sm:p-4"
 								role="group"
 								aria-label="School ID digits"
 							>
@@ -55,7 +57,7 @@
 									/>
 								@endfor
 
-								<span class="mx-1 text-base font-semibold text-slate-500 sm:text-lg" aria-hidden="true">-</span>
+								<span class="mx-1 inline-flex items-center self-center text-base leading-none font-semibold text-slate-500 sm:text-lg" aria-hidden="true">-</span>
 
 								@for ($i = 4; $i < 10; $i++)
 									<x-forms.input
@@ -86,17 +88,27 @@
 									required
 									autocomplete="new-password"
 									placeholder="Create a secure password"
-									class="mt-0 pr-20"
+									class="mt-0 pr-12"
 								/>
-								<x-ui.button
+								<button
 									type="button"
-									variant="secondary"
 									data-password-toggle
 									data-password-target="password"
-									class="absolute inset-y-0 right-0 my-2 mr-2 rounded-lg px-3 py-1.5 text-xs"
+									aria-label="Show password"
+									title="Show password"
+									class="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
 								>
-									Show
-								</x-ui.button>
+									<svg data-icon-eye-open xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+										<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+										<circle cx="12" cy="12" r="3" />
+									</svg>
+									<svg data-icon-eye-closed xmlns="http://www.w3.org/2000/svg" class="hidden h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+										<path d="m3 3 18 18" />
+										<path d="M10.477 10.488a3 3 0 0 0 4.242 4.242" />
+										<path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.875c5.523 0 10 3.358 10 7.5a6.87 6.87 0 0 1-1.333 3.895" />
+										<path d="M6.61 6.61C4.149 7.97 2.5 10.044 2.5 12.375c0 4.142 4.477 7.5 10 7.5a10.93 10.93 0 0 0 4.84-1.13" />
+									</svg>
+								</button>
 							</div>
 							<x-forms.helper>Use at least 8 characters with a mix of letters and numbers.</x-forms.helper>
 						</div>
@@ -111,17 +123,27 @@
 									required
 									autocomplete="new-password"
 									placeholder="Re-enter your password"
-									class="mt-0 pr-20"
+									class="mt-0 pr-12"
 								/>
-								<x-ui.button
+								<button
 									type="button"
-									variant="secondary"
 									data-password-toggle
 									data-password-target="password_confirmation"
-									class="absolute inset-y-0 right-0 my-2 mr-2 rounded-lg px-3 py-1.5 text-xs"
+									aria-label="Show password"
+									title="Show password"
+									class="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
 								>
-									Show
-								</x-ui.button>
+									<svg data-icon-eye-open xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+										<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+										<circle cx="12" cy="12" r="3" />
+									</svg>
+									<svg data-icon-eye-closed xmlns="http://www.w3.org/2000/svg" class="hidden h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+										<path d="m3 3 18 18" />
+										<path d="M10.477 10.488a3 3 0 0 0 4.242 4.242" />
+										<path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.875c5.523 0 10 3.358 10 7.5a6.87 6.87 0 0 1-1.333 3.895" />
+										<path d="M6.61 6.61C4.149 7.97 2.5 10.044 2.5 12.375c0 4.142 4.477 7.5 10 7.5a10.93 10.93 0 0 0 4.84-1.13" />
+									</svg>
+								</button>
 							</div>
 
 							<x-forms.helper id="password-match-status" aria-live="polite">
