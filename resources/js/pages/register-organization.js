@@ -1,6 +1,6 @@
 import { showSuccessAlert } from '../components/alerts';
 
-export const initRegisterPage = () => {
+export const initRegisterOrganizationPage = () => {
 	const form = document.getElementById('organization-application-form');
 	if (!form) return;
 

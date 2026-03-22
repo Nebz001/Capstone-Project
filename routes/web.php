@@ -6,9 +6,11 @@ Route::get('/', function () {
   return view('welcome');
 });
 
-Route::get('/organizations/register', function () {
-  return view('organizations.register');
-});
+Route::redirect('/organizations/register', '/organizations/register-organization');
+
+Route::get('/organizations/register-organization', function () {
+  return view('organizations.register-organization');
+})->name('register-organization');
 
 Route::get('/organizations/activity-calendar', function () {
   return view('organizations.activity-calendar');
