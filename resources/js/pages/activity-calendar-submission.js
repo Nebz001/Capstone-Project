@@ -10,7 +10,7 @@ const escapeHtml = (value) => {
 		.replaceAll("'", '&#039;');
 };
 
-export const initActivityCalendarPage = () => {
+export const initActivityCalendarSubmissionPage = () => {
 	const mainForm = document.getElementById('activity-calendar-form');
 	if (!mainForm) return;
 

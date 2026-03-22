@@ -1,7 +1,7 @@
 import './bootstrap';
 
-import { initActivityCalendarPage } from './pages/activity-calendar';
+import { initActivityCalendarSubmissionPage } from './pages/activity-calendar-submission';
 import { initRegisterOrganizationPage } from './pages/register-organization';
 
-initActivityCalendarPage();
+initActivityCalendarSubmissionPage();
 initRegisterOrganizationPage();
