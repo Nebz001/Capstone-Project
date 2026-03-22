@@ -3,6 +3,14 @@
 @section('title', 'Student Registration')
 
 @section('content')
+	@if (session('success') || session('status'))
+		<div
+			id="register-success-alert-data"
+			data-message="{{ session('success') ?? session('status') ?? 'Account created successfully.' }}"
+			hidden
+		></div>
+	@endif
+
 	<x-layout.page-shell>
 		<div class="mx-auto w-full max-w-3xl">
 			<x-ui.card>
@@ -13,7 +21,7 @@
 					:helper-html="true"
 				/>
 
-				<form id="student-register-form" method="POST" action="" class="mt-6 space-y-7 sm:mt-7">
+				<form id="student-register-form" method="POST" action="{{ route('register.submit') }}" class="mt-6 space-y-7 sm:mt-7">
 					@csrf
 
 					<section class="space-y-5">
@@ -88,6 +96,8 @@
 									required
 									autocomplete="new-password"
 									placeholder="Create a secure password"
+									data-password-input
+									aria-describedby="password-requirements-title password-requirements-error"
 									class="mt-0 pr-12"
 								/>
 								<button
@@ -110,7 +120,28 @@
 									</svg>
 								</button>
 							</div>
-							<x-forms.helper>Use at least 8 characters with a mix of letters and numbers.</x-forms.helper>
+              <x-forms.error id="password-requirements-error" class="hidden" aria-live="polite">
+								Password must meet all the requirements below.
+							</x-forms.error>
+							<x-forms.helper id="password-requirements-title">Password must include:</x-forms.helper>
+							<ul class="mt-3 space-y-2" aria-labelledby="password-requirements-title">
+								<li data-password-rule-item="length" class="flex items-center gap-2 text-xs text-slate-500">
+									<span data-password-rule-indicator class="h-1.5 w-1.5 rounded-full bg-slate-300" aria-hidden="true"></span>
+									<span>At least 8 characters</span>
+								</li>
+								<li data-password-rule-item="uppercase" class="flex items-center gap-2 text-xs text-slate-500">
+									<span data-password-rule-indicator class="h-1.5 w-1.5 rounded-full bg-slate-300" aria-hidden="true"></span>
+									<span>At least one uppercase letter</span>
+								</li>
+								<li data-password-rule-item="lowercase" class="flex items-center gap-2 text-xs text-slate-500">
+									<span data-password-rule-indicator class="h-1.5 w-1.5 rounded-full bg-slate-300" aria-hidden="true"></span>
+									<span>At least one lowercase letter</span>
+								</li>
+								<li data-password-rule-item="number" class="flex items-center gap-2 text-xs text-slate-500">
+									<span data-password-rule-indicator class="h-1.5 w-1.5 rounded-full bg-slate-300" aria-hidden="true"></span>
+									<span>At least one number</span>
+								</li>
+							</ul>
 						</div>
 
 						<div>

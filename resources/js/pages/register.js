@@ -1,6 +1,21 @@
+import { showSuccessAlert } from '../components/alerts';
+
 export const initRegisterPage = () => {
 	const form = document.getElementById('student-register-form');
 	if (!form) return;
+
+	const successMessageSource = document.getElementById('register-success-alert-data');
+	const successMessage = successMessageSource?.dataset.message?.trim();
+
+	if (successMessage) {
+		window.requestAnimationFrame(() => {
+			showSuccessAlert(
+				'Account Created',
+				successMessage || 'Your account has been created successfully.',
+				{ confirmButtonText: 'Continue' },
+			);
+		});
+	}
 
 	const schoolIdHiddenInput = document.getElementById('school_id');
 	const schoolIdSegments = Array.from(
@@ -59,7 +74,62 @@ export const initRegisterPage = () => {
 	const passwordInput = document.getElementById('password');
 	const confirmInput = document.getElementById('password_confirmation');
 	const matchStatus = document.getElementById('password-match-status');
+	const passwordRequirementsError = document.getElementById('password-requirements-error');
 	const passwordToggles = Array.from(document.querySelectorAll('[data-password-toggle]'));
+	let passwordSubmitAttempted = false;
+	const passwordRuleItems = {
+		length: document.querySelector('[data-password-rule-item="length"]'),
+		uppercase: document.querySelector('[data-password-rule-item="uppercase"]'),
+		lowercase: document.querySelector('[data-password-rule-item="lowercase"]'),
+		number: document.querySelector('[data-password-rule-item="number"]'),
+	};
+
+	const evaluatePasswordRules = (value) => {
+		return {
+			length: value.length >= 8,
+			uppercase: /[A-Z]/.test(value),
+			lowercase: /[a-z]/.test(value),
+			number: /\d/.test(value),
+		};
+	};
+
+	const updatePasswordRules = () => {
+		if (!(passwordInput instanceof HTMLInputElement)) return;
+
+		const ruleState = evaluatePasswordRules(passwordInput.value);
+		const allRulesMet = Object.values(ruleState).every(Boolean);
+
+		Object.entries(passwordRuleItems).forEach(([ruleName, ruleItem]) => {
+			if (!(ruleItem instanceof HTMLElement)) return;
+
+			const isMet = Boolean(ruleState[ruleName]);
+			const indicator = ruleItem.querySelector('[data-password-rule-indicator]');
+
+			ruleItem.classList.toggle('text-slate-500', !isMet);
+			ruleItem.classList.toggle('text-emerald-600', isMet);
+			ruleItem.classList.toggle('font-medium', isMet);
+
+			if (indicator instanceof HTMLElement) {
+				indicator.classList.toggle('bg-slate-300', !isMet);
+				indicator.classList.toggle('bg-emerald-500', isMet);
+			}
+		});
+
+		passwordInput.classList.toggle('border-rose-300', !allRulesMet);
+		passwordInput.classList.toggle('focus:border-rose-500', !allRulesMet);
+		passwordInput.classList.toggle('focus:ring-rose-500/20', !allRulesMet);
+		passwordInput.classList.toggle('border-slate-300', allRulesMet);
+		passwordInput.classList.toggle('focus:border-sky-500', allRulesMet);
+		passwordInput.classList.toggle('focus:ring-sky-500/15', allRulesMet);
+		passwordInput.setAttribute('aria-invalid', String(!allRulesMet));
+
+		if (passwordRequirementsError instanceof HTMLElement) {
+			const showError = passwordSubmitAttempted && !allRulesMet;
+			passwordRequirementsError.classList.toggle('hidden', !showError);
+		}
+
+		return allRulesMet;
+	};
 
 	const updatePasswordToggleVisual = (button, input) => {
 		if (!(button instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) return;
@@ -125,8 +195,23 @@ export const initRegisterPage = () => {
 	});
 
 	if (passwordInput instanceof HTMLInputElement && confirmInput instanceof HTMLInputElement) {
+		passwordInput.addEventListener('input', updatePasswordRules);
 		passwordInput.addEventListener('input', updatePasswordMatch);
 		confirmInput.addEventListener('input', updatePasswordMatch);
+		updatePasswordRules();
 		updatePasswordMatch();
 	}
+
+	form.addEventListener('submit', (event) => {
+		if (!(passwordInput instanceof HTMLInputElement)) return;
+
+		passwordSubmitAttempted = true;
+		const allRulesMet = updatePasswordRules();
+
+		if (allRulesMet) return;
+
+		event.preventDefault();
+		passwordInput.focus({ preventScroll: true });
+		passwordInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	});
 };
