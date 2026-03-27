@@ -102,6 +102,11 @@
             <div class="pt-1">
               <x-ui.button type="submit" :full-width="true">Login</x-ui.button>
             </div>
+
+            <p class="text-center text-sm text-slate-600">
+              Don&apos;t have an account?
+              <a href="{{ route('register') }}" class="font-semibold text-sky-700 hover:underline">Create one</a>
+            </p>
           </section>
         </form>
       </x-ui.card>

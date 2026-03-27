@@ -27,6 +27,40 @@
 					<section class="space-y-5">
 						<h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Student Information</h3>
 
+						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+							<div>
+								<x-forms.label for="first_name" required>First Name</x-forms.label>
+								<x-forms.input
+									id="first_name"
+									name="first_name"
+									type="text"
+									required
+									autocomplete="given-name"
+									value="{{ old('first_name') }}"
+									placeholder="Enter your first name"
+								/>
+								@error('first_name')
+									<x-forms.error>{{ $message }}</x-forms.error>
+								@enderror
+							</div>
+
+							<div>
+								<x-forms.label for="last_name" required>Last Name</x-forms.label>
+								<x-forms.input
+									id="last_name"
+									name="last_name"
+									type="text"
+									required
+									autocomplete="family-name"
+									value="{{ old('last_name') }}"
+									placeholder="Enter your last name"
+								/>
+								@error('last_name')
+									<x-forms.error>{{ $message }}</x-forms.error>
+								@enderror
+							</div>
+						</div>
+
 						<div>
 							<x-forms.label for="school_email" required>School Email</x-forms.label>
 							<x-forms.input
@@ -35,9 +69,13 @@
 								type="email"
 								required
 								autocomplete="email"
+								value="{{ old('school_email') }}"
 								placeholder="sample@students.nu-lipa.edu.ph"
 							/>
 							<x-forms.helper>Use your official NU Lipa student email only.</x-forms.helper>
+							@error('school_email')
+								<x-forms.error>{{ $message }}</x-forms.error>
+							@enderror
 						</div>
 
 						<div>
@@ -186,6 +224,11 @@
 					<div class="pt-2">
 						<x-ui.button type="submit" :full-width="true">Create Account</x-ui.button>
 					</div>
+
+					<p class="text-center text-sm text-slate-600">
+						Already have an account?
+						<a href="{{ route('login') }}" class="font-semibold text-sky-700 hover:underline">Login</a>
+					</p>
 				</form>
 			</x-ui.card>
 		</div>
