@@ -4,6 +4,30 @@ export const initLoginPage = () => {
 	const form = document.getElementById('student-login-form');
 	if (!form) return;
 
+	let submitting = false;
+	form.addEventListener('submit', (event) => {
+		if (submitting) return;
+		event.preventDefault();
+		submitting = true;
+
+		showAlert({
+			icon: 'info',
+			title: 'Signing you in…',
+			text: 'Please wait while we verify your account.',
+			showConfirmButton: false,
+			allowOutsideClick: false,
+			allowEscapeKey: false,
+		}).then(() => {
+			// If the alert closes for any reason, allow resubmission.
+			submitting = false;
+		});
+
+		// Keep the alert visible briefly before navigation.
+		window.setTimeout(() => {
+			form.submit();
+		}, 1300);
+	});
+
 	const successMessageSource = document.getElementById('login-success-alert-data');
 	const errorMessageSource = document.getElementById('login-error-alert-data');
 	const successMessage = successMessageSource?.dataset.message?.trim();
