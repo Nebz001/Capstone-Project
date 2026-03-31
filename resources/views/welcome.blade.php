@@ -9,7 +9,7 @@ $portalModules = [
 'title' => 'Organization Registration',
 'description' => 'Submit new organization registration requirements for SDAO review and validation.',
 'action' => 'Start registration',
-'href' => route('register'),
+'href' => route('register-organization'),
 'icon' => 'OR',
 ],
 [
@@ -67,9 +67,9 @@ $portalModules = [
           Access Portal
         </a>
         <a
-          href="{{ route('register') }}"
+          href="{{ route('register-organization') }}"
           class="inline-flex items-center justify-center rounded-xl border border-[#F5C400]/60 bg-[#F5C400]/15 px-6 py-3 text-sm font-semibold text-[#F5C400] backdrop-blur-sm transition hover:bg-[#F5C400]/25 focus:outline-none focus:ring-4 focus:ring-[#F5C400]/25">
-          Register
+          Register Organization
         </a>
       </div>
 
@@ -109,7 +109,7 @@ $portalModules = [
         <h3 class="mt-4 text-base font-semibold text-slate-900">Organization Registration</h3>
         <p class="mt-2 flex-1 text-sm leading-6 text-slate-600">Submit new organization registration requirements for SDAO review and validation.</p>
         <a
-          href="{{ route('register') }}"
+          href="{{ route('register-organization') }}"
           class="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-[#003E9F] transition-all hover:gap-2.5 hover:text-[#00327F]">
           Start registration
           <svg class="h-4 w-4 flex-none" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
