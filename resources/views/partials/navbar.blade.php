@@ -33,9 +33,9 @@
         Login
       </a>
       <a
-        href="{{ route('register-organization') }}"
+        href="{{ route('register') }}"
         class="hidden items-center justify-center rounded-xl border border-[#E7C663] bg-[#FFF8DF] px-4 py-2 text-sm font-semibold text-[#6A5200] shadow-sm transition hover:bg-[#FDF2C4] focus:outline-none focus:ring-4 focus:ring-[#F5C400]/25 sm:inline-flex">
-        Register Organization
+        Register
       </a>
       @endauth
     </div>

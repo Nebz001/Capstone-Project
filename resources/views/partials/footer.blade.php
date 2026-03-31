@@ -58,8 +58,6 @@
     {{-- Quick Links + Copyright --}}
     <div class="mt-8 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
       <nav class="flex flex-wrap gap-x-5 gap-y-2 text-sm text-blue-200" aria-label="Footer navigation">
-        <a href="{{ route('login') }}" class="transition hover:text-white">Login</a>
-        <a href="{{ route('register-organization') }}" class="transition hover:text-white">Register Organization</a>
         <a href="#services" class="transition hover:text-white">Portal Services</a>
         <a href="#about" class="transition hover:text-white">About the System</a>
       </nav>
