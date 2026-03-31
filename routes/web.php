@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\OrganizationOfficer\DashboardController;
 
 Route::get('/', function () {
   return view('welcome');
@@ -41,8 +40,9 @@ Route::post('auth/logout', function () {
   return redirect()->route('login');
 })->name('logout');
 
-// Organization Officer Dashboard
-// TODO: add ->middleware('auth') once authentication is fully implemented
+// Legacy Organization Officer dashboard path
 Route::prefix('officer')->name('officer.')->group(function () {
-  Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+  Route::get('dashboard', function () {
+    return redirect()->route('register-organization');
+  })->name('dashboard');
 });

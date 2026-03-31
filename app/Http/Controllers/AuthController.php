@@ -68,7 +68,7 @@ class AuthController extends Controller
     $user = $request->user();
 
     if ($user && $user->role_type === 'ORG_OFFICER') {
-      return redirect()->route('officer.dashboard');
+      return redirect()->route('register-organization');
     }
 
     return redirect()->route('login')->with('success', 'Logged in successfully.');
