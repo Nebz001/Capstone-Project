@@ -15,18 +15,8 @@
       </div>
     </a>
 
-    {{-- Right: Auth State --}}
+    {{-- Right: Guest buttons (always visible for testing) --}}
     <div class="ml-4 flex flex-none items-center gap-2">
-      @auth
-      <div class="flex items-center gap-2.5">
-        <div class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[#003E9F] text-sm font-bold text-white shadow-sm">
-          {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
-        </div>
-        <span class="hidden text-sm font-medium text-slate-700 sm:block">
-          {{ auth()->user()->name }}
-        </span>
-      </div>
-      @else
       <a
         href="{{ route('login') }}"
         class="inline-flex items-center justify-center rounded-xl border border-[#003E9F] bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/20">
@@ -37,7 +27,6 @@
         class="hidden items-center justify-center rounded-xl border border-[#E7C663] bg-[#FFF8DF] px-4 py-2 text-sm font-semibold text-[#6A5200] shadow-sm transition hover:bg-[#FDF2C4] focus:outline-none focus:ring-4 focus:ring-[#F5C400]/25 sm:inline-flex">
         Register
       </a>
-      @endauth
     </div>
 
   </div>
