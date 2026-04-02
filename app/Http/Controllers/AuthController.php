@@ -38,7 +38,7 @@ class AuthController extends Controller
     Auth::login($user);
 
     return redirect()
-      ->route('login')
+      ->route('organizations.index')
       ->with('success', 'Account created successfully.');
   }
 
@@ -68,9 +68,9 @@ class AuthController extends Controller
     $user = $request->user();
 
     if ($user && $user->role_type === 'ORG_OFFICER') {
-      return redirect()->route('register-organization');
+      return redirect()->route('organizations.index');
     }
 
-    return redirect()->route('login')->with('success', 'Logged in successfully.');
+    return redirect()->route('organizations.index')->with('success', 'Logged in successfully.');
   }
 }

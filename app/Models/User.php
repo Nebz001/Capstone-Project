@@ -2,48 +2,88 @@
 
 namespace App\Models;
 
-use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable([
-  'first_name',
-  'last_name',
-  'school_id',
-  'email',
-  'password',
-  'role_type',
-  'account_status',
-])]
-#[Hidden([
-  'password',
-  'remember_token',
-])]
 class User extends Authenticatable
 {
-  /** @use HasFactory<UserFactory> */
-  use HasFactory, Notifiable;
+    use HasFactory, Notifiable;
 
-  /**
-   * Get the attributes that should be cast.
-   *
-   * @return array<string, string>
-   */
-  protected function casts(): array
-  {
-    return [
-      'password' => 'hashed',
+    protected $fillable = [
+        'first_name',
+        'last_name',
+        'school_id',
+        'email',
+        'password',
+        'role_type',
+        'account_status',
     ];
-  }
 
-  /**
-   * Get the user's full name.
-   */
-  public function getFullNameAttribute(): string
-  {
-    return trim($this->first_name . ' ' . $this->last_name);
-  }
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'password' => 'hashed',
+        ];
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        return trim($this->first_name . ' ' . $this->last_name);
+    }
+
+    // ── Relationships ──────────────────────────────────────────
+
+    public function organizationOfficers(): HasMany
+    {
+        return $this->hasMany(OrganizationOfficer::class);
+    }
+
+    /**
+     * Resolve the organization this user belongs to via their active officer record.
+     */
+    public function currentOrganization(): ?Organization
+    {
+        return $this->organizationOfficers()
+            ->where('officer_status', 'ACTIVE')
+            ->with('organization')
+            ->first()
+            ?->organization;
+    }
+
+    public function organizationRegistrations(): HasMany
+    {
+        return $this->hasMany(OrganizationRegistration::class);
+    }
+
+    public function organizationRenewals(): HasMany
+    {
+        return $this->hasMany(OrganizationRenewal::class);
+    }
+
+    public function activityProposals(): HasMany
+    {
+        return $this->hasMany(ActivityProposal::class);
+    }
+
+    public function activityReports(): HasMany
+    {
+        return $this->hasMany(ActivityReport::class);
+    }
+
+    public function approvalWorkflows(): HasMany
+    {
+        return $this->hasMany(ApprovalWorkflow::class);
+    }
+
+    public function communicationMessages(): HasMany
+    {
+        return $this->hasMany(CommunicationMessage::class);
+    }
 }

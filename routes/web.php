@@ -3,28 +3,38 @@
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OrganizationController;
 
 Route::get('/', function () {
   return view('welcome');
 });
 
-Route::prefix('organizations')->group(function () {
-  // Organizations
-  Route::redirect('register', 'organizations/register-organization');
+Route::get('dashboard', function () {
+  return redirect()->route('organizations.index');
+})->name('dashboard');
 
-  Route::get('register-organization', function () {
-    return view('organizations.register-organization');
-  })->name('register-organization');
+Route::prefix('organizations')->name('organizations.')->controller(OrganizationController::class)->group(function () {
+  Route::get('/', 'index')->name('index');
+  Route::get('/manage', 'manage')->name('manage');
 
-  Route::redirect('activity-calendar', 'organizations/activity-calendar-submission');
+  Route::get('/register', 'showRegistrationForm')->name('register');
+  Route::post('/register', 'storeRegistration')->middleware('auth')->name('register.store');
 
-  Route::get('activity-calendar-submission', function () {
-    return view('organizations.activity-calendar-submission');
-  })->name('activity-calendar-submission');
+  Route::get('/renew', 'showRenewalForm')->name('renew');
+  Route::post('/renew', 'storeRenewal')->name('renew.store');
+
+  Route::get('/profile', 'profile')->name('profile');
+  Route::put('/profile', 'updateProfile')->name('profile.update');
+
+  Route::get('/activity-calendar-submission', 'showActivityCalendarSubmission')
+    ->middleware('auth')
+    ->name('activity-calendar-submission');
+  Route::post('/activity-calendar-submission', 'storeActivityCalendarSubmission')
+    ->middleware('auth')
+    ->name('activity-calendar-submission.store');
 });
 
 Route::prefix('auth')->controller(AuthController::class)->group(function () {
-  // Authentication
   Route::get('register', 'showRegister')->name('register');
   Route::post('register', 'register')->name('register.submit');
 
@@ -32,7 +42,6 @@ Route::prefix('auth')->controller(AuthController::class)->group(function () {
   Route::post('login', 'login')->name('login.submit');
 });
 
-// Logout — accessible to authenticated users
 Route::post('auth/logout', function () {
   Auth::logout();
   request()->session()->invalidate();
@@ -40,9 +49,8 @@ Route::post('auth/logout', function () {
   return redirect()->route('login');
 })->name('logout');
 
-// Legacy Organization Officer dashboard path
 Route::prefix('officer')->name('officer.')->group(function () {
   Route::get('dashboard', function () {
-    return redirect()->route('register-organization');
+    return redirect()->route('organizations.index');
   })->name('dashboard');
 });
