@@ -44,6 +44,10 @@ class OrganizationController extends Controller
       abort(403, 'Only organization officers can submit organization registration.');
     }
 
+    if (!$user->isOfficerValidated()) {
+      return back()->with('error', 'Your student officer account is pending SDAO validation.');
+    }
+
     if ($user->currentOrganization()) {
       return back()
         ->with('error', 'Your account is already linked to an organization.')
@@ -128,6 +132,10 @@ class OrganizationController extends Controller
     }
 
     $organization = $user->currentOrganization();
+
+    if (!$user->isOfficerValidated()) {
+      return back()->with('error', 'Your student officer account is pending SDAO validation.');
+    }
 
     if (!$organization) {
       return back()
@@ -296,6 +304,10 @@ class OrganizationController extends Controller
 
     if (!$user || $user->role_type !== 'ORG_OFFICER') {
       abort(403, 'Only organization officers can access this feature.');
+    }
+
+    if (!$user->isOfficerValidated()) {
+      abort(403, 'Your student officer account is pending SDAO validation.');
     }
 
     return $user->organizationOfficers()

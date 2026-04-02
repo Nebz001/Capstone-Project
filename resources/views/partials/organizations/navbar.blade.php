@@ -34,15 +34,50 @@
       {{-- Vertical divider --}}
       <div class="mx-1 h-6 w-px bg-white/20" aria-hidden="true"></div>
 
-      {{-- User name + avatar --}}
-      <div class="flex items-center gap-2.5">
-        <span class="hidden text-sm font-medium text-white sm:block">
-          {{ auth()->user()->full_name }}
-        </span>
-        <div class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-white/20 text-sm font-bold text-white shadow-sm ring-2 ring-white/30">
-          {{ strtoupper(substr(auth()->user()->first_name, 0, 1)) }}
+      {{-- Profile menu (dropdown) --}}
+      <details class="relative z-[60]">
+        <summary
+          class="flex cursor-pointer list-none items-center gap-2 rounded-xl py-1 pl-1 pr-2 text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/30 [&::-webkit-details-marker]:hidden"
+        >
+          <div class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-white/20 text-sm font-bold text-white shadow-sm ring-2 ring-white/30">
+            {{ strtoupper(substr(auth()->user()->first_name, 0, 1)) }}
+          </div>
+          <span class="hidden max-w-[10rem] truncate text-sm font-medium sm:block">
+            {{ auth()->user()->full_name }}
+          </span>
+          <svg class="h-4 w-4 flex-none text-white/80" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </summary>
+
+        <div
+          class="absolute right-0 top-full mt-2 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-xl shadow-slate-900/15 ring-1 ring-slate-900/5"
+          role="menu"
+        >
+          <div class="border-b border-slate-100 px-4 py-3">
+            <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Signed in as</p>
+            <p class="mt-0.5 truncate text-sm font-semibold text-slate-900">{{ auth()->user()->full_name }}</p>
+            <p class="truncate text-xs text-slate-500">{{ auth()->user()->email }}</p>
+          </div>
+          <a
+            href="{{ route('organizations.profile') }}"
+            class="block px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            role="menuitem"
+          >
+            Organization profile
+          </a>
+          <form method="POST" action="{{ route('logout') }}" class="border-t border-slate-100">
+            @csrf
+            <button
+              type="submit"
+              class="w-full px-4 py-2.5 text-left text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
+              role="menuitem"
+            >
+              Log out
+            </button>
+          </form>
         </div>
-      </div>
+      </details>
 
     </div>
 

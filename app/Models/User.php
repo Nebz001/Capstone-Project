@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -19,6 +20,10 @@ class User extends Authenticatable
         'password',
         'role_type',
         'account_status',
+        'officer_validation_status',
+        'officer_validation_notes',
+        'officer_validated_at',
+        'officer_validated_by',
     ];
 
     protected $hidden = [
@@ -30,6 +35,7 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'officer_validated_at' => 'datetime',
         ];
     }
 
@@ -85,5 +91,32 @@ class User extends Authenticatable
     public function communicationMessages(): HasMany
     {
         return $this->hasMany(CommunicationMessage::class);
+    }
+
+    public function validatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'officer_validated_by');
+    }
+
+    /**
+     * Whether this user is an SDAO web admin (dashboard / signatory flows).
+     * Requires ADMIN role and an email listed in config/sdao.php.
+     */
+    public function isSdaoAdmin(): bool
+    {
+        if ($this->role_type !== 'ADMIN') {
+            return false;
+        }
+
+        $emails = collect(config('sdao.admin_accounts', []))
+            ->pluck('email')
+            ->all();
+
+        return in_array($this->email, $emails, true);
+    }
+
+    public function isOfficerValidated(): bool
+    {
+        return $this->role_type === 'ORG_OFFICER' && $this->officer_validation_status === 'APPROVED';
     }
 }

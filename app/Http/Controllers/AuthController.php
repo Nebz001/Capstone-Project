@@ -33,6 +33,7 @@ class AuthController extends Controller
       'password' => Hash::make($validated['password']),
       'role_type' => 'ORG_OFFICER',
       'account_status' => 'ACTIVE',
+      'officer_validation_status' => 'PENDING',
     ]);
 
     Auth::login($user);
@@ -67,10 +68,29 @@ class AuthController extends Controller
     /** @var \App\Models\User $user */
     $user = $request->user();
 
+    if ($user && $user->isSdaoAdmin()) {
+      return redirect()->route('admin.dashboard');
+    }
+
     if ($user && $user->role_type === 'ORG_OFFICER') {
       return redirect()->route('organizations.index');
     }
 
     return redirect()->route('organizations.index')->with('success', 'Logged in successfully.');
+  }
+
+  /**
+   * Log the user out, invalidate the session, and regenerate the CSRF token.
+   */
+  public function logout(Request $request)
+  {
+    Auth::logout();
+
+    $request->session()->invalidate();
+    $request->session()->regenerateToken();
+
+    return redirect()
+      ->route('login')
+      ->with('success', 'You have been logged out.');
   }
 }

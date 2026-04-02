@@ -210,3 +210,31 @@
     color: #94a3b8;
     margin-top: 1px;
 }
+
+/* ── Admin calendar detail drawer ─────────────────────────────────── */
+
+.admin-calendar-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+}
+
+.admin-calendar-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(1px);
+}
+
+.admin-calendar-drawer-panel {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 100%;
+    width: 100%;
+    max-width: 430px;
+    background: #ffffff;
+    border-left: 1px solid #e2e8f0;
+    box-shadow: -16px 0 40px -18px rgba(0, 0, 0, 0.35);
+    overflow-y: auto;
+}
