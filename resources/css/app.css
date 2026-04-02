@@ -9,3 +9,204 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+/* ── FullCalendar overrides (read-only dashboard calendar) ────────── */
+
+.fc {
+    --fc-border-color: #e2e8f0;
+    --fc-today-bg-color: rgba(0, 62, 159, 0.06);
+    --fc-page-bg-color: transparent;
+    font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+.fc .fc-toolbar {
+    padding: 0 4px;
+    gap: 8px;
+}
+
+.fc .fc-toolbar-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.fc .fc-button {
+    background: transparent;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    color: #64748b;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    box-shadow: none;
+    text-transform: none;
+    transition: background 150ms, color 150ms, border-color 150ms;
+}
+
+.fc .fc-button:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+    border-color: #cbd5e1;
+}
+
+.fc .fc-button:focus {
+    box-shadow: 0 0 0 3px rgba(0, 62, 159, 0.15);
+}
+
+.fc .fc-button-active,
+.fc .fc-button:active {
+    background: #003E9F !important;
+    color: #fff !important;
+    border-color: #003E9F !important;
+}
+
+.fc .fc-col-header-cell {
+    padding: 10px 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.fc .fc-daygrid-day-number {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #334155;
+    padding: 6px 8px;
+}
+
+.fc .fc-day-today .fc-daygrid-day-number {
+    background: #003E9F;
+    color: #fff;
+    border-radius: 9999px;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    padding: 0;
+    margin: 4px 4px 0 auto;
+}
+
+.fc .fc-daygrid-event {
+    border-radius: 0.5rem;
+    padding: 2px 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.4;
+    border-left-width: 3px;
+    cursor: default;
+    margin-bottom: 2px;
+}
+
+.fc .fc-daygrid-event {
+    cursor: pointer;
+}
+
+.fc .fc-daygrid-event:hover {
+    filter: brightness(0.95);
+}
+
+.fc .fc-daygrid-more-link {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #003E9F;
+}
+
+.fc .fc-daygrid-day-frame {
+    min-height: 110px;
+}
+
+.fc .fc-scrollgrid {
+    border-radius: 0.75rem;
+    overflow: hidden;
+}
+
+.fc th,
+.fc td {
+    border-color: #f1f5f9;
+}
+
+/* ── Event popover (read-only detail card) ────────────────────────── */
+
+.fc-event-popover {
+    position: absolute;
+    z-index: 9999;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 120ms ease-out, transform 120ms ease-out;
+    pointer-events: none;
+}
+
+.fc-event-popover-visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.fc-event-popover-inner {
+    width: 260px;
+    border-radius: 1rem;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+.fc-event-popover-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-bottom: 1px solid;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.fc-event-popover-badge {
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+}
+
+.fc-event-popover-body {
+    padding: 12px 14px 14px;
+}
+
+.fc-event-popover-title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.35;
+    margin: 0 0 10px;
+}
+
+.fc-event-popover-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fc-event-popover-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-size: 0.75rem;
+    color: #475569;
+    line-height: 1.4;
+}
+
+.fc-event-popover-row svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    color: #94a3b8;
+    margin-top: 1px;
+}

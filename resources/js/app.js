@@ -4,8 +4,12 @@ import { initActivityCalendarSubmissionPage } from './pages/activity-calendar-su
 import { initLoginPage } from './pages/login';
 import { initRegisterPage } from './pages/register';
 import { initRegisterOrganizationPage } from './pages/register-organization';
+import { initOrganizationDashboard } from './pages/organization-dashboard';
+import { initOrganizationApplicationAlerts } from './pages/organization-applications';
 
 initActivityCalendarSubmissionPage();
 initLoginPage();
 initRegisterPage();
 initRegisterOrganizationPage();
+initOrganizationDashboard();
+initOrganizationApplicationAlerts();
