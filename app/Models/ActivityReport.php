@@ -15,12 +15,30 @@ class ActivityReport extends Model
         'report_file',
         'accomplishment_summary',
         'report_status',
+        'activity_event_title',
+        'school_code',
+        'department',
+        'poster_image_path',
+        'event_name',
+        'event_starts_at',
+        'activity_chairs',
+        'prepared_by',
+        'program_content',
+        'supporting_photo_paths',
+        'certificate_sample_path',
+        'evaluation_report',
+        'participants_reached_percent',
+        'evaluation_form_sample_path',
+        'attendance_sheet_path',
     ];
 
     protected function casts(): array
     {
         return [
             'report_submission_date' => 'date',
+            'event_starts_at' => 'datetime',
+            'supporting_photo_paths' => 'array',
+            'participants_reached_percent' => 'decimal:2',
         ];
     }
 

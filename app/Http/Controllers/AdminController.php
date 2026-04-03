@@ -341,27 +341,46 @@ class AdminController extends Controller
 
         $report->load(['organization', 'user']);
 
+        $schoolLabels = [
+            'sace' => 'School of Architecture, Computer and Engineering',
+            'sahs' => 'School of Allied Health and Sciences',
+            'sabm' => 'School of Accounting and Business Management',
+            'shs' => 'Senior High School',
+        ];
+
+        $details = [
+            'Organization' => $report->organization?->organization_name ?? 'N/A',
+            'Submitted By' => $report->user?->full_name ?? 'N/A',
+            'Submission Date' => optional($report->report_submission_date)->format('M d, Y') ?? 'N/A',
+            'Activity / Event Title' => $report->activity_event_title ?? 'N/A',
+            'School' => $report->school_code ? ($schoolLabels[$report->school_code] ?? $report->school_code) : 'N/A',
+            'Department' => $report->department ?? 'N/A',
+            'Event Name' => $report->event_name ?? 'N/A',
+            'Event Date & Time' => optional($report->event_starts_at)->format('M d, Y g:i A') ?? 'N/A',
+            'Activity Chair/s' => $report->activity_chairs ?? 'N/A',
+            'Prepared By' => $report->prepared_by ?? 'N/A',
+            'Program' => $report->program_content ?? 'N/A',
+            'Summary / Description' => $report->accomplishment_summary ?? 'N/A',
+            'Activity Evaluation' => $report->evaluation_report ?? 'N/A',
+            'Participants Reached (%)' => $report->participants_reached_percent !== null ? (string) $report->participants_reached_percent.'%' : 'N/A',
+            'Legacy Report File' => $report->report_file ?? 'N/A',
+        ];
+
         return view('admin.review-show', [
             'pageTitle' => 'After Activity Report Submission Details',
             'backRoute' => route('admin.reports.index'),
             'status' => $report->report_status ?? 'PENDING',
-            'details' => [
-                'Organization' => $report->organization?->organization_name ?? 'N/A',
-                'Submitted By' => $report->user?->full_name ?? 'N/A',
-                'Submission Date' => optional($report->report_submission_date)->format('M d, Y') ?? 'N/A',
-                'Report File' => $report->report_file ?? 'N/A',
-                'Summary' => $report->accomplishment_summary ?? 'N/A',
-            ],
+            'details' => $details,
             'organization' => $report->organization,
         ]);
     }
 
     private function authorizeAdmin(Request $request): void
     {
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = $request->user();
 
-        if (!$user || !$user->isSdaoAdmin()) {
+        if (! $user || ! $user->isSdaoAdmin()) {
             abort(403, 'Only authorized SDAO admins can access this section.');
         }
     }
@@ -400,7 +419,7 @@ class AdminController extends Controller
             ->get()
             ->map(function (ActivityCalendar $calendar): array {
                 return [
-                    'title' => 'Calendar Submission: ' . ($calendar->semester ?? 'Semester'),
+                    'title' => 'Calendar Submission: '.($calendar->semester ?? 'Semester'),
                     'start' => optional($calendar->submission_date)?->toDateString(),
                     'end' => null,
                     'status' => $calendar->calendar_status ?? 'PENDING',
@@ -420,4 +439,3 @@ class AdminController extends Controller
             ->values();
     }
 }
-

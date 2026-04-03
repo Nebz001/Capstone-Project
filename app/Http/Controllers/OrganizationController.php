@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
+use App\Models\ActivityReport;
 use App\Models\Organization;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
@@ -11,6 +12,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class OrganizationController extends Controller
@@ -169,6 +171,11 @@ class OrganizationController extends Controller
     public function manage()
     {
         return view('organizations.manage');
+    }
+
+    public function showSubmitReportHub()
+    {
+        return view('organizations.submit-report');
     }
 
     // ── Registration ────────────────────────────────────────────
@@ -376,8 +383,9 @@ class OrganizationController extends Controller
         }
 
         return redirect()
-            ->route('organizations.profile')
-            ->with('success', 'Renewal application submitted successfully.');
+            ->route('organizations.renew')
+            ->with('success', 'Renewal application submitted successfully.')
+            ->with('renewal_redirect_to', route('organizations.profile'));
     }
 
     // ── Organization Profile ────────────────────────────────────
@@ -527,6 +535,131 @@ class OrganizationController extends Controller
         return redirect()
             ->route('organizations.activity-calendar-submission')
             ->with('success', 'Activity calendar submitted successfully.');
+    }
+
+    // ── After Activity Report ─────────────────────────────────
+
+    public function showAfterActivityReportForm(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $activeOfficer = $this->resolveActiveOfficer($request);
+        $organization = $activeOfficer
+            ? Organization::query()->find($activeOfficer->organization_id)
+            : null;
+
+        if (! $organization) {
+            return redirect()
+                ->route('organizations.manage')
+                ->with('error', 'Your account is not linked to an active organization.');
+        }
+
+        return view('organizations.after-activity-report', [
+            'organization' => $organization,
+            'schoolOptions' => self::SCHOOL_CODE_LABELS,
+            'optionalProposals' => $organization->activityProposals()->latest('id')->limit(100)->get(),
+            'prefillPreparedBy' => $user->full_name,
+            'officerValidationPending' => ! $user->isOfficerValidated(),
+        ]);
+    }
+
+    public function storeAfterActivityReport(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $activeOfficer = $this->resolveActiveOfficer($request);
+        $organization = $activeOfficer
+            ? Organization::query()->find($activeOfficer->organization_id)
+            : null;
+
+        if (! $organization) {
+            return redirect()
+                ->route('organizations.manage')
+                ->with('error', 'Your account is not linked to an active organization.');
+        }
+
+        if (! $user->isOfficerValidated()) {
+            return redirect()
+                ->route('organizations.after-activity-report')
+                ->with('error', 'Your student officer account is pending SDAO validation.');
+        }
+
+        $validated = $request->validate([
+            'proposal_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('activity_proposals', 'id')->where('organization_id', $organization->id),
+            ],
+            'activity_event_title' => ['required', 'string', 'max:255'],
+            'school' => ['required', 'string', Rule::in(array_keys(self::SCHOOL_CODE_LABELS))],
+            'department' => ['required', 'string', 'max:150'],
+            'poster_image' => ['required', 'file', 'image', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+            'event_name' => ['required', 'string', 'max:255'],
+            'event_starts_at' => ['required', 'date'],
+            'activity_chairs' => ['required', 'string', 'max:500'],
+            'prepared_by' => ['required', 'string', 'max:255'],
+            'summary_description' => ['required', 'string'],
+            'program_content' => ['required', 'string'],
+            'photos' => ['nullable', 'array', 'max:15'],
+            'photos.*' => ['image', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+            'certificate_sample' => ['nullable', 'file', 'mimes:pdf,jpeg,jpg,png,webp,doc,docx', 'max:10240'],
+            'evaluation_report' => ['required', 'string'],
+            'participants_reached_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'evaluation_form_sample' => ['nullable', 'file', 'mimes:pdf,jpeg,jpg,png,webp,doc,docx', 'max:10240'],
+            'attendance_sheet' => ['required', 'file', 'mimes:pdf,jpeg,jpg,png,webp,doc,docx', 'max:10240'],
+        ]);
+
+        $base = 'activity-reports/'.$organization->id.'/'.Str::uuid()->toString();
+        $posterPath = $request->file('poster_image')->store($base, 'public');
+
+        $photoPaths = [];
+        $uploadedPhotos = $request->file('photos');
+        $uploadedPhotos = is_array($uploadedPhotos) ? $uploadedPhotos : ($uploadedPhotos ? [$uploadedPhotos] : []);
+        foreach ($uploadedPhotos as $photo) {
+            if ($photo && $photo->isValid()) {
+                $photoPaths[] = $photo->store($base.'/photos', 'public');
+            }
+        }
+
+        $certificatePath = $request->hasFile('certificate_sample')
+            ? $request->file('certificate_sample')->store($base, 'public')
+            : null;
+
+        $evaluationFormPath = $request->hasFile('evaluation_form_sample')
+            ? $request->file('evaluation_form_sample')->store($base, 'public')
+            : null;
+
+        $attendancePath = $request->file('attendance_sheet')->store($base, 'public');
+
+        ActivityReport::create([
+            'proposal_id' => $validated['proposal_id'] ?? null,
+            'organization_id' => $organization->id,
+            'user_id' => $user->id,
+            'report_submission_date' => now()->toDateString(),
+            'report_file' => null,
+            'accomplishment_summary' => $validated['summary_description'],
+            'report_status' => 'PENDING',
+            'activity_event_title' => $validated['activity_event_title'],
+            'school_code' => $validated['school'],
+            'department' => $validated['department'],
+            'poster_image_path' => $posterPath,
+            'event_name' => $validated['event_name'],
+            'event_starts_at' => $validated['event_starts_at'],
+            'activity_chairs' => $validated['activity_chairs'],
+            'prepared_by' => $validated['prepared_by'],
+            'program_content' => $validated['program_content'],
+            'supporting_photo_paths' => $photoPaths === [] ? null : $photoPaths,
+            'certificate_sample_path' => $certificatePath,
+            'evaluation_report' => $validated['evaluation_report'],
+            'participants_reached_percent' => $validated['participants_reached_percent'],
+            'evaluation_form_sample_path' => $evaluationFormPath,
+            'attendance_sheet_path' => $attendancePath,
+        ]);
+
+        return redirect()
+            ->route('organizations.after-activity-report')
+            ->with('success', 'After activity report submitted successfully.')
+            ->with('after_activity_report_redirect_to', route('organizations.index'));
     }
 
     private function resolveActiveOfficer(Request $request): ?OrganizationOfficer
