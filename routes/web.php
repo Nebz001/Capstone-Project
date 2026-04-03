@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\AdminAnnouncementController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AnnouncementDismissController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
 use Illuminate\Support\Facades\Route;
@@ -48,10 +50,25 @@ Route::post('auth/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
 
+Route::post('announcements/dismiss', [AnnouncementDismissController::class, 'store'])
+    ->middleware('auth')
+    ->name('announcements.dismiss');
+
 Route::prefix('officer')->name('officer.')->group(function () {
     Route::get('dashboard', function () {
         return redirect()->route('organizations.index');
     })->middleware('auth')->name('dashboard');
+});
+
+Route::prefix('admin')->name('admin.')->middleware('auth')->group(function () {
+    Route::controller(AdminAnnouncementController::class)->group(function () {
+        Route::get('/announcements', 'index')->name('announcements.index');
+        Route::get('/announcements/create', 'create')->name('announcements.create');
+        Route::post('/announcements', 'store')->name('announcements.store');
+        Route::get('/announcements/{announcement}/edit', 'edit')->name('announcements.edit');
+        Route::put('/announcements/{announcement}', 'update')->name('announcements.update');
+        Route::delete('/announcements/{announcement}', 'destroy')->name('announcements.destroy');
+    });
 });
 
 Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminController::class)->group(function () {

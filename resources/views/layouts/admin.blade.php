@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>@yield('title', 'SDAO Admin')</title>
   <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
 
@@ -120,6 +121,12 @@
   </div>
 
   <x-feedback.toast />
+
+  @isset($loginAnnouncements)
+    @if ($loginAnnouncements->isNotEmpty())
+      <x-announcements.login-modal :announcements="$loginAnnouncements" />
+    @endif
+  @endisset
 
   <div id="admin-logout-modal" class="fixed inset-0 z-[80] hidden items-center justify-center bg-slate-950/50 px-4">
     <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">

@@ -65,6 +65,8 @@ class AuthController extends Controller
 
     $request->session()->regenerate();
 
+    $request->session()->put('show_login_announcements', true);
+
     /** @var \App\Models\User $user */
     $user = $request->user();
 
@@ -89,6 +91,6 @@ class AuthController extends Controller
     $request->session()->invalidate();
     $request->session()->regenerateToken();
 
-    return redirect()->route('login');
+    return redirect('/');
   }
 }
