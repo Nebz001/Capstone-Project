@@ -1,4 +1,9 @@
 import { showSuccessAlert } from "../components/alerts";
+import {
+    initPhilippineContactInputs,
+    validateFormContactNo,
+} from "../utils/philippine-contact";
+import { initOrganizationTypeSchoolToggle } from "../utils/organization-type-school";
 
 const ACCEPT_RE =
     /\.(pdf|doc|docx|jpe?g|png)$/i;
@@ -137,6 +142,12 @@ const initRequirementAttachments = () => {
         });
 
         form.addEventListener("submit", (e) => {
+            if (!validateFormContactNo(form)) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+            }
+
             const othersSpec = form.querySelector(
                 'input[name="requirements_other"]',
             );
@@ -200,7 +211,9 @@ const initRequirementAttachments = () => {
 };
 
 export const initOrganizationApplicationAlerts = () => {
+    initPhilippineContactInputs();
     initRequirementAttachments();
+    initOrganizationTypeSchoolToggle();
 
     const registerForm = document.querySelector(
         'form[action*="/organizations/register"]',
