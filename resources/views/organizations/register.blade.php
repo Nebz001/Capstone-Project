@@ -102,8 +102,10 @@
               id="contact_no"
               name="contact_no"
               type="text"
-              inputmode="tel"
-              placeholder="e.g., 09XX XXX XXXX"
+              inputmode="numeric"
+              autocomplete="tel"
+              maxlength="13"
+              placeholder="09XXXXXXXXX"
               :value="old('contact_no')"
               required />
             @error('contact_no') <x-forms.error>{{ $message }}</x-forms.error> @enderror
@@ -125,6 +127,9 @@
     </x-ui.card>
 
     {{-- Organization Details --}}
+    @php
+      $orgType = old('organization_type', 'co_curricular');
+    @endphp
     <x-ui.card padding="p-0">
       <x-ui.card-section-header
         title="Organization Details"
@@ -147,13 +152,14 @@
               Type of Organization <span class="text-red-600">*</span>
             </legend>
             <div class="mt-3 space-y-3">
-              <x-forms.choice id="type_co_curricular" name="organization_type" type="radio" value="co_curricular" required>
+              <x-forms.choice id="type_co_curricular" name="organization_type" type="radio" value="co_curricular" :checked="$orgType === 'co_curricular'">
                 Co-Curricular Organization
               </x-forms.choice>
-              <x-forms.choice id="type_extra_curricular" name="organization_type" type="radio" value="extra_curricular" required>
+              <x-forms.choice id="type_extra_curricular" name="organization_type" type="radio" value="extra_curricular" :checked="$orgType === 'extra_curricular'">
                 Extra-Curricular Organization / Interest Clubs
               </x-forms.choice>
             </div>
+            @error('organization_type') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </fieldset>
           <div class="md:col-span-2">
             <x-forms.label for="purpose" required>Purpose of Organization</x-forms.label>
@@ -167,15 +173,27 @@
             @error('purpose') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </div>
           <div class="md:col-span-2">
-            <x-forms.label for="college" required>College</x-forms.label>
-            <x-forms.select id="college" name="college" required>
-              <option value="" disabled @unless(old('college')) selected @endunless>Select a college</option>
-              <option value="School of Architecture, Computer and Engineering" @selected(old('college')==='ccit' )>School of Architecture, Computer and Engineering</option>
-              <option value="School of Allied Health and Sciences" @selected(old('college')==='cba' )>School of Allied Health and Sciences</option>
-              <option value="School of Accounting and Business Management" @selected(old('college')==='coe' )>School of Accounting and Business Management</option>
-              <option value="Senior High School" @selected(old('college')==='ceas' )>Senior High School</option>
+            <label for="school" class="block text-sm font-medium text-slate-900">
+              School
+              <span
+                id="school-required-mark"
+                class="text-rose-600 {{ $orgType === 'extra_curricular' ? 'hidden' : '' }}"
+                aria-hidden="{{ $orgType === 'extra_curricular' ? 'true' : 'false' }}"
+              >*</span>
+            </label>
+            <x-forms.select
+              id="school"
+              name="school"
+              :required="$orgType === 'co_curricular'"
+              :disabled="$orgType === 'extra_curricular'"
+            >
+              <option value="" disabled @unless(old('school')) selected @endunless>Select a school</option>
+              <option value="sace" @selected(old('school') === 'sace')>School of Architecture, Computer and Engineering</option>
+              <option value="sahs" @selected(old('school') === 'sahs')>School of Allied Health and Sciences</option>
+              <option value="sabm" @selected(old('school') === 'sabm')>School of Accounting and Business Management</option>
+              <option value="shs" @selected(old('school') === 'shs')>Senior High School</option>
             </x-forms.select>
-            @error('college') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+            @error('school') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </div>
         </div>
       </div>
@@ -214,7 +232,7 @@
             <x-organizations.requirement-item
               checkbox-id="req_dean_endorsement"
               value="dean_endorsement_faculty_adviser"
-              label="Letter from the College Dean endorsing the Faculty Adviser"
+              label="Letter from the School Dean endorsing the Faculty Adviser"
             />
             <x-organizations.requirement-item
               checkbox-id="req_proposed_projects"
@@ -232,17 +250,29 @@
                 <div class="min-w-0 flex-1">
                   <div class="flex items-start gap-2">
                     <div class="min-w-0 flex-1">
-                      <x-forms.choice
-                        id="req_others"
-                        name="requirements[]"
-                        type="checkbox"
-                        value="others"
-                        :checked="$othersChecked"
-                        wrapper-class="flex items-start gap-3"
-                        label-class="text-sm text-slate-700"
-                      >
-                        Others
-                      </x-forms.choice>
+                      <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                        <x-forms.choice
+                          id="req_others"
+                          name="requirements[]"
+                          type="checkbox"
+                          value="others"
+                          :checked="$othersChecked"
+                          wrapper-class="flex shrink-0 items-start gap-3"
+                          label-class="text-sm text-slate-700"
+                        >
+                          Others
+                        </x-forms.choice>
+                        <x-forms.input
+                          id="req_others_text"
+                          name="requirements_other"
+                          type="text"
+                          variant="underline"
+                          placeholder="Describe the other document"
+                          :value="old('requirements_other')"
+                          class="min-w-0 flex-1 sm:max-w-xl"
+                          aria-label="Other document specification"
+                        />
+                      </div>
                     </div>
                     <div class="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
                       <input
@@ -269,16 +299,6 @@
                     </div>
                   </div>
                 </div>
-              </div>
-              <div class="mt-2 sm:pl-7">
-                <label for="req_others_text" class="mb-1 block text-xs font-medium text-slate-600">Specification <span class="text-red-600">*</span> (if Others is checked)</label>
-                <x-forms.input
-                  id="req_others_text"
-                  name="requirements_other"
-                  type="text"
-                  placeholder="Describe the other document"
-                  :value="old('requirements_other')"
-                />
               </div>
               @error('requirement_files.others')
                 <p class="req-file-error mt-1.5 text-xs text-rose-600">{{ $message }}</p>

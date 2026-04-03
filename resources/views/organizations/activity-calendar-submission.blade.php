@@ -11,11 +11,11 @@
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   <header class="mb-8">
-    <a href="{{ route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+    <a href="{{ route('organizations.index') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
       </svg>
-      Back to Manage Organization
+      Back to Dashboard
     </a>
     <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
       Activity Calendar Submission
@@ -32,16 +32,29 @@
   @endif
 
   @if ($officerValidationPending)
-    <div class="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
-      <svg class="h-5 w-5 shrink-0 text-amber-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12V15.75Z" />
-      </svg>
-      <span>Your student officer account is pending SDAO validation.</span>
-    </div>
+    <x-feedback.blocked-message
+      class="mb-6"
+      message="Your student officer account is pending SDAO validation. You cannot submit activity calendars until validation is complete."
+    />
   @endif
 
-  <form id="activity-calendar-form" method="POST" action="" class="space-y-6" novalidate>
+  <form
+    id="activity-calendar-form"
+    method="POST"
+    action=""
+    class="space-y-6"
+    novalidate
+    data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
+  >
     @csrf
+
+    <fieldset
+      @disabled($officerValidationPending)
+      @class([
+        'min-w-0 space-y-6 border-0 p-0 m-0',
+        'opacity-50 select-none' => $officerValidationPending,
+      ])
+    >
 
     <x-ui.card padding="p-0">
       <x-ui.card-section-header
@@ -245,20 +258,20 @@
       <div class="px-6 py-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
           <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto">Reset Form</x-ui.button>
-          @if($officerValidationPending)
-            <button
-              id="submit-activity-calendar"
-              type="submit"
-              formnovalidate
-              disabled
-              class="inline-flex w-full items-center justify-center rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-800/30 opacity-50 cursor-not-allowed transition focus:outline-none focus:ring-4 focus:ring-sky-500/25 sm:w-auto"
-            >Submit Activity Calendar</button>
-          @else
-            <x-ui.button id="submit-activity-calendar" type="submit" formnovalidate class="w-full sm:w-auto">Submit Activity Calendar</x-ui.button>
-          @endif
+          <x-ui.button
+            id="submit-activity-calendar"
+            type="submit"
+            formnovalidate
+            class="w-full sm:w-auto"
+            :disabled="$officerValidationPending"
+          >
+            Submit Activity Calendar
+          </x-ui.button>
         </div>
       </div>
     </x-ui.card>
+
+    </fieldset>
   </form>
 
 </div>

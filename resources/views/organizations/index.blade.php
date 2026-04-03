@@ -171,7 +171,7 @@
 
             {{-- ── Submit Report ────────────────────────────────────── --}}
             <a
-                href="#"
+                href="{{ route('organizations.submit-report') }}"
                 class="group flex items-start gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">

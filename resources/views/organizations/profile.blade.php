@@ -81,16 +81,14 @@
         </div>
 
         @if ($organization && ! $editing && ! $canEditProfile)
-            <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" role="status">
-                {{ $profileEditBlockedMessage }}
-            </div>
+            <x-feedback.blocked-message :message="$profileEditBlockedMessage" class="mt-4" />
         @endif
 
         @if ($organization && $canEditProfile && ! $editing && $organization->profile_revision_notes)
-            <div class="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950" role="status">
+            <x-feedback.blocked-message variant="info" class="mt-4">
                 <p class="font-semibold">SDAO requested profile updates</p>
-                <p class="mt-1 text-sky-900/90">{{ $organization->profile_revision_notes }}</p>
-            </div>
+                <p class="mt-1 opacity-90">{{ $organization->profile_revision_notes }}</p>
+            </x-feedback.blocked-message>
         @endif
     </header>
 
@@ -137,30 +135,30 @@
                 <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
                     <div class="border-b border-slate-100 bg-white px-6 py-4">
                         <h2 class="text-base font-bold text-slate-900">Organization Details</h2>
-                        <p class="mt-0.5 text-xs text-slate-500">Core information about your organization.</p>
+                        <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Core information about your organization.</p>
                     </div>
                     <div class="bg-white px-6 pt-6 pb-10">
                         <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                             <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
-                                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Organization Name</p>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Name</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->organization_name }}</p>
                             </div>
                             <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
-                                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Organization Type</p>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Type</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900">{{ $typeLabels[$organization->organization_type] ?? $organization->organization_type }}</p>
                             </div>
                             <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
-                                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">College / Department</p>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">College / Department</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->college_department }}</p>
                             </div>
                             <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
-                                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Founded Date</p>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Founded Date</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900">
                                     {{ $organization->founded_date?->format('F j, Y') ?? '—' }}
                                 </p>
                             </div>
                             <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
-                                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Purpose</p>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Purpose</p>
                                 <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $organization->purpose ?? '—' }}</p>
                             </div>
                         </div>
@@ -170,11 +168,11 @@
                 <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
                     <div class="border-b border-slate-100 bg-white px-6 py-4">
                         <h2 class="text-base font-bold text-slate-900">Adviser Information</h2>
-                        <p class="mt-0.5 text-xs text-slate-500">Faculty adviser assigned to this organization.</p>
+                        <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Faculty adviser assigned to this organization.</p>
                     </div>
                     <div class="bg-white px-6 pt-6 pb-10">
                         <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:max-w-xl">
-                            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Adviser Name</p>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Adviser Name</p>
                             <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->adviser_name ?? '—' }}</p>
                         </div>
                     </div>
@@ -183,12 +181,12 @@
                 <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
                     <div class="border-b border-slate-100 bg-white px-6 py-4">
                         <h2 class="text-base font-bold text-slate-900">Status Information</h2>
-                        <p class="mt-0.5 text-xs text-slate-500">Accreditation status managed by SDAO.</p>
+                        <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Accreditation status managed by SDAO.</p>
                     </div>
                     <div class="bg-white px-6 pt-6 pb-10">
                         <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                             <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
-                                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Organization Status</p>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Status</p>
                                 <div class="mt-2">
                                     <span class="inline-flex items-center gap-1.5 rounded-full border {{ $color['border'] }} {{ $color['bg'] }} px-3 py-1 text-xs font-semibold {{ $color['text'] }}">
                                         <span class="h-1.5 w-1.5 rounded-full {{ $color['dot'] }}" aria-hidden="true"></span>
@@ -197,15 +195,15 @@
                                 </div>
                             </div>
                             <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
-                                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Last Updated</p>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last Updated</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900">
                                     {{ $organization->updated_at?->format('F j, Y — g:i A') ?? '—' }}
                                 </p>
                             </div>
                         </div>
                     </div>
-                    <div class="border-t border-slate-100 bg-slate-50/95 px-6 pt-5 pb-10">
-                        <p class="text-xs leading-relaxed text-slate-600">
+                    <div class="border-t border-slate-100 bg-slate-50/95 px-6 py-4">
+                        <p class="text-xs font-medium leading-relaxed text-slate-700">
                             Organization status is managed by the SDAO office and cannot be changed here.
                         </p>
                     </div>
@@ -222,7 +220,7 @@
                 <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
                     <div class="border-b border-slate-100 bg-white px-6 py-4">
                         <h2 class="text-base font-bold text-slate-900">Organization Details</h2>
-                        <p class="mt-0.5 text-xs text-slate-500">Update your organization’s core information.</p>
+                        <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update your organization’s core information.</p>
                     </div>
                     <div class="bg-white px-6 pt-6 pb-10">
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -287,7 +285,7 @@
                 <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
                     <div class="border-b border-slate-100 bg-white px-6 py-4">
                         <h2 class="text-base font-bold text-slate-900">Adviser Information</h2>
-                        <p class="mt-0.5 text-xs text-slate-500">Update the faculty adviser for this organization.</p>
+                        <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update the faculty adviser for this organization.</p>
                     </div>
                     <div class="bg-white px-6 pt-6 pb-10">
                         <div class="max-w-xl">
@@ -307,11 +305,11 @@
                 <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
                     <div class="border-b border-slate-100 bg-white px-6 py-4">
                         <h2 class="text-base font-bold text-slate-900">Status Information</h2>
-                        <p class="mt-0.5 text-xs text-slate-500">Read-only — managed by SDAO.</p>
+                        <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Read-only — managed by SDAO.</p>
                     </div>
                     <div class="bg-white px-6 pt-6 pb-10">
                         <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:max-w-md">
-                            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Organization Status</p>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Status</p>
                             <div class="mt-2">
                                 <span class="inline-flex items-center gap-1.5 rounded-full border {{ $color['border'] }} {{ $color['bg'] }} px-3 py-1 text-xs font-semibold {{ $color['text'] }}">
                                     <span class="h-1.5 w-1.5 rounded-full {{ $color['dot'] }}" aria-hidden="true"></span>
@@ -320,8 +318,8 @@
                             </div>
                         </div>
                     </div>
-                    <div class="border-t border-slate-100 bg-slate-50/95 px-6 pt-5 pb-10">
-                        <p class="text-xs leading-relaxed text-slate-600">
+                    <div class="border-t border-slate-100 bg-slate-50/95 px-6 py-4">
+                        <p class="text-xs font-medium leading-relaxed text-slate-700">
                             Organization status is managed by the SDAO office and cannot be changed here.
                         </p>
                     </div>
