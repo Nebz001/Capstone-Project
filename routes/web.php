@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AdminController;
+use App\Models\Organization;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
 
@@ -71,4 +72,7 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
 
   Route::get('/after-activity-reports', 'reports')->name('reports.index');
   Route::get('/after-activity-reports/{report}', 'showReport')->name('reports.show');
+
+  Route::post('/organizations/{organization}/request-profile-revision', 'requestOrganizationProfileRevision')
+    ->name('organizations.request-profile-revision');
 });

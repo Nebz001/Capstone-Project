@@ -7,6 +7,7 @@
   $statusClass = match ($studentOfficer->officer_validation_status) {
     'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
     'APPROVED' => 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+    'ACTIVE' => 'bg-emerald-100 text-emerald-700 border border-emerald-200',
     'REJECTED' => 'bg-rose-100 text-rose-700 border border-rose-200',
     'REVISION_REQUIRED' => 'bg-orange-100 text-orange-700 border border-orange-200',
     default => 'bg-slate-100 text-slate-700 border border-slate-200',
@@ -85,6 +86,7 @@
       <label for="validation_status" class="text-xs font-semibold uppercase tracking-wide text-slate-500">Decision</label>
       <select id="validation_status" name="validation_status" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20">
         <option value="APPROVED" @selected(old('validation_status', $studentOfficer->officer_validation_status) === 'APPROVED')>Approved</option>
+        <option value="ACTIVE" @selected(old('validation_status', $studentOfficer->officer_validation_status) === 'ACTIVE')>Active</option>
         <option value="REJECTED" @selected(old('validation_status', $studentOfficer->officer_validation_status) === 'REJECTED')>Rejected</option>
         <option value="REVISION_REQUIRED" @selected(old('validation_status', $studentOfficer->officer_validation_status) === 'REVISION_REQUIRED')>Revision Required</option>
       </select>

@@ -25,7 +25,7 @@ class AuthController extends Controller
       'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
     ]);
 
-    $user = User::create([
+    User::create([
       'first_name' => $validated['first_name'],
       'last_name' => $validated['last_name'],
       'school_id' => $validated['school_id'],
@@ -36,11 +36,11 @@ class AuthController extends Controller
       'officer_validation_status' => 'PENDING',
     ]);
 
-    Auth::login($user);
-
     return redirect()
-      ->route('organizations.index')
-      ->with('success', 'Account created successfully.');
+      ->route('login')
+      ->with('success', 'Account created successfully.')
+      ->with('alert_title', 'Account Created')
+      ->withInput(['email' => $validated['school_email']]);
   }
 
   public function showLogin()
@@ -89,8 +89,6 @@ class AuthController extends Controller
     $request->session()->invalidate();
     $request->session()->regenerateToken();
 
-    return redirect()
-      ->route('login')
-      ->with('success', 'You have been logged out.');
+    return redirect()->route('login');
   }
 }

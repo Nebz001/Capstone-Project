@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
+use App\Models\Organization;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 class AdminController extends Controller
@@ -203,7 +205,7 @@ class AdminController extends Controller
         abort_if($user->role_type !== 'ORG_OFFICER', 404);
 
         $validated = $request->validate([
-            'validation_status' => ['required', 'in:APPROVED,REJECTED,REVISION_REQUIRED'],
+            'validation_status' => ['required', 'in:APPROVED,ACTIVE,REJECTED,REVISION_REQUIRED'],
             'validation_notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
@@ -246,6 +248,7 @@ class AdminController extends Controller
                 'Submission Date' => optional($registration->submission_date)->format('M d, Y') ?? 'N/A',
                 'Contact Email' => $registration->contact_email ?? 'N/A',
             ],
+            'organization' => $registration->organization,
         ]);
     }
 
@@ -267,7 +270,27 @@ class AdminController extends Controller
                 'Submission Date' => optional($renewal->submission_date)->format('M d, Y') ?? 'N/A',
                 'Contact Email' => $renewal->contact_email ?? 'N/A',
             ],
+            'organization' => $renewal->organization,
         ]);
+    }
+
+    public function requestOrganizationProfileRevision(Request $request, Organization $organization): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'profile_revision_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $organization->update([
+            'profile_information_revision_requested' => true,
+            'profile_revision_notes' => $validated['profile_revision_notes'] ?? null,
+        ]);
+
+        return back()->with(
+            'success',
+            'Organization profile revision has been requested. The organization officer may edit their profile.',
+        );
     }
 
     public function showCalendar(Request $request, ActivityCalendar $calendar): View
@@ -308,6 +331,7 @@ class AdminController extends Controller
                 'Proposed End' => optional($proposal->proposed_end_date)->format('M d, Y') ?? 'N/A',
                 'Submission Date' => optional($proposal->submission_date)->format('M d, Y') ?? 'N/A',
             ],
+            'organization' => $proposal->organization,
         ]);
     }
 
@@ -328,6 +352,7 @@ class AdminController extends Controller
                 'Report File' => $report->report_file ?? 'N/A',
                 'Summary' => $report->accomplishment_summary ?? 'N/A',
             ],
+            'organization' => $report->organization,
         ]);
     }
 

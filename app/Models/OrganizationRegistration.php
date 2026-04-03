@@ -27,6 +27,7 @@ class OrganizationRegistration extends Model
         'req_proposed_projects',
         'req_others',
         'req_others_specify',
+        'requirement_files',
         // endorsement
         'endorsed_by_adviser',
         'endorsed_by_dean',
@@ -55,6 +56,7 @@ class OrganizationRegistration extends Model
             'req_dean_endorsement'  => 'boolean',
             'req_proposed_projects' => 'boolean',
             'req_others'            => 'boolean',
+            'requirement_files'     => 'array',
         ];
     }
 

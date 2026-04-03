@@ -31,7 +31,7 @@
         ></div>
     @endif
 
-    <form method="POST" action="{{ route('organizations.renew.store') }}" class="space-y-6">
+    <form method="POST" action="{{ route('organizations.renew.store') }}" enctype="multipart/form-data" class="space-y-6">
         @csrf
 
         {{-- Academic Year --}}
@@ -188,59 +188,124 @@
         <x-ui.card padding="p-0">
             <x-ui.card-section-header
                 title="Requirements Attached"
-                subtitle="Check the documents included with your renewal application."
+                subtitle="Check each document you are submitting. When a requirement is selected, attach its file using the paperclip. PDF, Word, or image files only."
                 content-padding="px-6"
             />
             <div class="px-6 py-6">
                 <div class="rounded-2xl border border-slate-200 bg-slate-100 p-4 sm:p-5">
                     <p class="text-sm font-medium text-slate-900">Renewal Application Requirements</p>
                     <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <x-forms.choice id="req_letter_intent" name="requirements[]" value="letter_of_intent" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            Letter of Intent
-                        </x-forms.choice>
-                        <x-forms.choice id="req_application_form" name="requirements[]" value="application_form" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            Application Form
-                        </x-forms.choice>
-                        <x-forms.choice id="req_by_laws" name="requirements[]" value="by_laws_updated_if_applicable" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            By Laws of the Organization (if updated last AY)
-                        </x-forms.choice>
-                        <x-forms.choice id="req_officers_founders" name="requirements[]" value="updated_list_of_officers_founders_ay" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            Updated List of Officers/Founders for the AY
-                        </x-forms.choice>
-                        <x-forms.choice id="req_dean_endorsement" name="requirements[]" value="dean_endorsement_faculty_adviser" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            Letter from the College Dean endorsing the Faculty Adviser
-                        </x-forms.choice>
-                        <x-forms.choice id="req_proposed_projects" name="requirements[]" value="proposed_projects_budget" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            List of Proposed Projects with Proposed Budget for the AY
-                        </x-forms.choice>
-                        <x-forms.choice id="req_past_projects" name="requirements[]" value="past_projects" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            List of Past Projects
-                        </x-forms.choice>
-                        <x-forms.choice id="req_financial_statement" name="requirements[]" value="financial_statement_previous_ay" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            Financial Statement of the Previous AY
-                        </x-forms.choice>
-                        <x-forms.choice id="req_evaluation_summary" name="requirements[]" value="evaluation_summary_past_projects" wrapper-class="flex items-start gap-3 rounded-md p-2 hover:bg-white/60">
-                            Summary of Evaluation of Past Projects
-                        </x-forms.choice>
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_letter_intent"
+                            value="letter_of_intent"
+                            label="Letter of Intent"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_application_form"
+                            value="application_form"
+                            label="Application Form"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_by_laws"
+                            value="by_laws_updated_if_applicable"
+                            label="By Laws of the Organization (if updated last AY)"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_officers_founders"
+                            value="updated_list_of_officers_founders_ay"
+                            label="Updated List of Officers/Founders for the AY"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_dean_endorsement"
+                            value="dean_endorsement_faculty_adviser"
+                            label="Letter from the College Dean endorsing the Faculty Adviser"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_proposed_projects"
+                            value="proposed_projects_budget"
+                            label="List of Proposed Projects with Proposed Budget for the AY"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_past_projects"
+                            value="past_projects"
+                            label="List of Past Projects"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_financial_statement"
+                            value="financial_statement_previous_ay"
+                            label="Financial Statement of the Previous AY"
+                        />
+                        <x-organizations.requirement-item
+                            checkbox-id="renew_req_evaluation_summary"
+                            value="evaluation_summary_past_projects"
+                            label="Summary of Evaluation of Past Projects"
+                        />
 
-                        <div class="rounded-md p-2 hover:bg-white/60 sm:col-span-2">
-                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                                <div class="flex items-center gap-3">
-                                    <x-forms.choice id="req_others" name="requirements[]" value="others" wrapper-class="flex items-center gap-3" label-class="text-sm text-slate-700">
-                                        Others
-                                    </x-forms.choice>
+                        @php
+                            $renewOldReqs = old('requirements', []);
+                            $renewOldReqs = is_array($renewOldReqs) ? $renewOldReqs : [];
+                            $renewOthersChecked = in_array('others', $renewOldReqs, true);
+                        @endphp
+                        <div class="requirement-item sm:col-span-2 rounded-md p-2 hover:bg-white/60" data-requirement-key="others">
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-start gap-2">
+                                        <div class="min-w-0 flex-1">
+                                            <x-forms.choice
+                                                id="renew_req_others"
+                                                name="requirements[]"
+                                                type="checkbox"
+                                                value="others"
+                                                :checked="$renewOthersChecked"
+                                                wrapper-class="flex items-start gap-3"
+                                                label-class="text-sm text-slate-700"
+                                            >
+                                                Others
+                                            </x-forms.choice>
+                                        </div>
+                                        <div class="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
+                                            <input
+                                                type="file"
+                                                id="req_file_renew_req_others"
+                                                name="requirement_files[others]"
+                                                class="req-file-input sr-only"
+                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                                                tabindex="-1"
+                                                aria-hidden="true"
+                                            />
+                                            <button
+                                                type="button"
+                                                class="req-attach-btn inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/90 hover:text-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                                                aria-label="Attach file: Others"
+                                                title="Attach file"
+                                            >
+                                                <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                                </svg>
+                                            </button>
+                                            <span class="req-attached-badge hidden text-[10px] font-medium leading-none text-emerald-600" aria-hidden="true">Attached</span>
+                                            <span class="req-file-name max-w-[5.5rem] truncate text-center text-[10px] leading-tight text-slate-500 sm:max-w-[7rem]" aria-live="polite"></span>
+                                        </div>
+                                    </div>
                                 </div>
-                                <label for="req_others_text" class="sr-only">Please specify other requirements</label>
+                            </div>
+                            <div class="mt-2 sm:pl-7">
+                                <label for="renew_req_others_text" class="mb-1 block text-xs font-medium text-slate-600">Specification <span class="text-red-600">*</span> (if Others is checked)</label>
                                 <x-forms.input
-                                    id="req_others_text"
+                                    id="renew_req_others_text"
                                     name="requirements_other"
                                     type="text"
-                                    variant="underline"
-                                    placeholder="Please specify"
-                                    class="sm:max-w-sm"
+                                    placeholder="Describe the other document"
                                     :value="old('requirements_other')"
                                 />
                             </div>
+                            @error('requirement_files.others')
+                                <p class="req-file-error mt-1.5 text-xs text-rose-600">{{ $message }}</p>
+                            @enderror
+                            @error('requirements_other')
+                                <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
+                            @enderror
+                            <p class="req-client-msg mt-1 hidden text-xs text-rose-600" role="alert"></p>
                         </div>
                     </div>
                 </div>

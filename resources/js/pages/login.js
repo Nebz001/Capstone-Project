@@ -34,8 +34,10 @@ export const initLoginPage = () => {
 	const errorMessage = errorMessageSource?.dataset.message?.trim();
 
 	if (successMessage) {
+		const successTitle =
+			successMessageSource?.dataset.title?.trim() || 'Login Successful';
 		window.requestAnimationFrame(() => {
-			showSuccessAlert('Login Successful', successMessage || 'Welcome back!', {
+			showSuccessAlert(successTitle, successMessage || 'Welcome back!', {
 				confirmButtonText: 'Continue',
 			});
 		});

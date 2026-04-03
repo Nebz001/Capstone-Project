@@ -7,6 +7,9 @@
     <div
       id="login-success-alert-data"
       data-message="{{ session('success') ?? session('status') ?? 'Welcome back!' }}"
+      @if (session('alert_title'))
+        data-title="{{ session('alert_title') }}"
+      @endif
       hidden
     ></div>
   @endif

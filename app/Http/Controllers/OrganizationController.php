@@ -9,9 +9,35 @@ use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class OrganizationController extends Controller
 {
+  /** Checkbox values for new registration — must match `requirements[]` and `requirement_files` keys. */
+  private const REGISTRATION_REQUIREMENT_KEYS = [
+    'letter_of_intent',
+    'application_form',
+    'by_laws',
+    'updated_list_of_officers_founders',
+    'dean_endorsement_faculty_adviser',
+    'proposed_projects_budget',
+    'others',
+  ];
+
+  /** Checkbox values for renewal — must match `requirements[]` and `requirement_files` keys. */
+  private const RENEWAL_REQUIREMENT_KEYS = [
+    'letter_of_intent',
+    'application_form',
+    'by_laws_updated_if_applicable',
+    'updated_list_of_officers_founders_ay',
+    'dean_endorsement_faculty_adviser',
+    'proposed_projects_budget',
+    'past_projects',
+    'financial_statement_previous_ay',
+    'evaluation_summary_past_projects',
+    'others',
+  ];
+
   public function index()
   {
     return view('organizations.index');
@@ -54,7 +80,7 @@ class OrganizationController extends Controller
         ->withInput();
     }
 
-    $validated = $request->validate([
+    $validated = $request->validate(array_merge([
       'organization_name'  => ['required', 'string', 'max:150'],
       'contact_person'     => ['required', 'string', 'max:255'],
       'contact_no'         => ['required', 'string', 'max:20'],
@@ -65,13 +91,19 @@ class OrganizationController extends Controller
       'purpose'            => ['required', 'string'],
       'college'            => ['required', 'string', 'max:100'],
       'requirements'       => ['nullable', 'array'],
-      'requirements.*'     => ['string', 'max:100'],
-      'requirements_other' => ['nullable', 'string', 'max:255'],
-    ]);
+      'requirements.*'     => ['string', Rule::in(self::REGISTRATION_REQUIREMENT_KEYS)],
+      'requirements_other' => [
+        Rule::requiredIf(fn () => in_array('others', $request->input('requirements', []) ?? [], true)),
+        'nullable',
+        'string',
+        'max:255',
+      ],
+      'requirement_files'   => ['nullable', 'array'],
+    ], $this->requirementFileRules($request, self::REGISTRATION_REQUIREMENT_KEYS)));
 
     $reqs = collect($validated['requirements'] ?? []);
 
-    DB::transaction(function () use ($validated, $reqs, $user): void {
+    DB::transaction(function () use ($validated, $reqs, $user, $request): void {
       $organization = Organization::create([
         'organization_name'   => $validated['organization_name'],
         'organization_type'   => $validated['organization_type'],
@@ -87,6 +119,13 @@ class OrganizationController extends Controller
         'position_title'  => 'President',
         'officer_status'  => 'ACTIVE',
       ]);
+
+      $filePaths = $this->storeRequirementFilesForKeys(
+        $request,
+        $reqs,
+        self::REGISTRATION_REQUIREMENT_KEYS,
+        "organization-requirements/{$organization->id}/registration"
+      );
 
       OrganizationRegistration::create([
         'organization_id'      => $organization->id,
@@ -104,6 +143,7 @@ class OrganizationController extends Controller
         'req_proposed_projects' => $reqs->contains('proposed_projects_budget'),
         'req_others'           => $reqs->contains('others'),
         'req_others_specify'   => $validated['requirements_other'] ?? null,
+        'requirement_files'    => $filePaths === [] ? null : $filePaths,
       ]);
     });
 
@@ -143,22 +183,28 @@ class OrganizationController extends Controller
         ->withInput();
     }
 
-    $validated = $request->validate([
+    $validated = $request->validate(array_merge([
       'contact_person'     => ['required', 'string', 'max:255'],
       'contact_no'         => ['required', 'string', 'max:20'],
       'email_address'      => ['required', 'email', 'max:150'],
       'academic_year'      => ['required', 'string', 'max:20'],
       'purpose'            => ['required', 'string'],
       'requirements'       => ['nullable', 'array'],
-      'requirements.*'     => ['string', 'max:100'],
-      'requirements_other' => ['nullable', 'string', 'max:255'],
-    ]);
+      'requirements.*'     => ['string', Rule::in(self::RENEWAL_REQUIREMENT_KEYS)],
+      'requirements_other' => [
+        Rule::requiredIf(fn () => in_array('others', $request->input('requirements', []) ?? [], true)),
+        'nullable',
+        'string',
+        'max:255',
+      ],
+      'requirement_files'   => ['nullable', 'array'],
+    ], $this->requirementFileRules($request, self::RENEWAL_REQUIREMENT_KEYS)));
 
     $reqs = collect($validated['requirements'] ?? []);
 
     $organization->update(['purpose' => $validated['purpose']]);
 
-    OrganizationRenewal::create([
+    $renewal = OrganizationRenewal::create([
       'organization_id'       => $organization->id,
       'user_id'               => $user->id,
       'academic_year'         => $validated['academic_year'],
@@ -179,6 +225,17 @@ class OrganizationController extends Controller
       'req_others_specify'    => $validated['requirements_other'] ?? null,
     ]);
 
+    $filePaths = $this->storeRequirementFilesForKeys(
+      $request,
+      $reqs,
+      self::RENEWAL_REQUIREMENT_KEYS,
+      "organization-requirements/{$organization->id}/renewals/{$renewal->id}"
+    );
+
+    if ($filePaths !== []) {
+      $renewal->update(['requirement_files' => $filePaths]);
+    }
+
     return redirect()
       ->route('organizations.profile')
       ->with('success', 'Renewal application submitted successfully.');
@@ -192,9 +249,20 @@ class OrganizationController extends Controller
     $user = $request->user();
     $organization = $user?->currentOrganization();
 
+    $canEditProfile = $organization?->canEditProfile() ?? false;
+    $profileEditBlockedMessage = $organization?->profileEditBlockedMessage() ?? '';
+
+    if ($organization && $request->query('edit') && ! $canEditProfile) {
+      return redirect()
+        ->route('organizations.profile')
+        ->with('error', $profileEditBlockedMessage);
+    }
+
     return view('organizations.profile', [
-      'organization' => $organization,
-      'editing'      => (bool) $request->query('edit'),
+      'organization'              => $organization,
+      'editing'                   => (bool) ($request->query('edit') && $canEditProfile && $organization),
+      'canEditProfile'            => $organization ? $canEditProfile : false,
+      'profileEditBlockedMessage' => $organization ? $profileEditBlockedMessage : '',
     ]);
   }
 
@@ -208,15 +276,25 @@ class OrganizationController extends Controller
       return back()->with('error', 'No organization found for your account.');
     }
 
+    if (! $organization->canEditProfile()) {
+      return redirect()
+        ->route('organizations.profile')
+        ->with('error', $organization->profileEditBlockedMessage());
+    }
+
     $validated = $request->validate([
       'organization_name'  => ['required', 'string', 'max:150'],
       'organization_type'  => ['required', 'string', 'max:50'],
       'college_department' => ['required', 'string', 'max:100'],
+      'purpose'            => ['required', 'string'],
       'adviser_name'       => ['nullable', 'string', 'max:100'],
       'founded_date'       => ['nullable', 'date'],
     ]);
 
-    $organization->update($validated);
+    $organization->update(array_merge($validated, [
+      'profile_information_revision_requested' => false,
+      'profile_revision_notes'                 => null,
+    ]));
 
     return redirect()
       ->route('organizations.profile')
@@ -227,8 +305,12 @@ class OrganizationController extends Controller
 
   public function showActivityCalendarSubmission(Request $request)
   {
+    /** @var \App\Models\User $user */
+    $user = $request->user();
     $activeOfficer = $this->resolveActiveOfficer($request);
-    $organization = $activeOfficer?->organization;
+    $organization = $activeOfficer
+      ? Organization::query()->find($activeOfficer->organization_id)
+      : null;
 
     if (!$organization) {
       return redirect()
@@ -244,18 +326,29 @@ class OrganizationController extends Controller
     return view('organizations.activity-calendar-submission', [
       'organization' => $organization,
       'latestCalendar' => $latestCalendar,
+      'officerValidationPending' => ! $user->isOfficerValidated(),
     ]);
   }
 
   public function storeActivityCalendarSubmission(Request $request)
   {
+    /** @var \App\Models\User $user */
+    $user = $request->user();
     $activeOfficer = $this->resolveActiveOfficer($request);
-    $organization = $activeOfficer?->organization;
+    $organization = $activeOfficer
+      ? Organization::query()->find($activeOfficer->organization_id)
+      : null;
 
     if (!$organization) {
       return redirect()
         ->route('organizations.profile')
         ->with('error', 'Your account is not linked to an active organization.');
+    }
+
+    if (! $user->isOfficerValidated()) {
+      return redirect()
+        ->route('organizations.activity-calendar-submission')
+        ->with('error', 'Your student officer account is pending SDAO validation.');
     }
 
     $validated = $request->validate([
@@ -306,13 +399,61 @@ class OrganizationController extends Controller
       abort(403, 'Only organization officers can access this feature.');
     }
 
-    if (!$user->isOfficerValidated()) {
-      abort(403, 'Your student officer account is pending SDAO validation.');
-    }
-
     return $user->organizationOfficers()
       ->where('officer_status', 'ACTIVE')
-      ->with('organization')
+      ->orderByDesc('id')
       ->first();
+  }
+
+  /**
+   * @param  array<int, string>  $allowedKeys
+   * @return array<string, array<int, string>>
+   */
+  private function requirementFileRules(Request $request, array $allowedKeys): array
+  {
+    $selected = $request->input('requirements', []);
+    if (! is_array($selected)) {
+      $selected = [];
+    }
+
+    $rules = [];
+    foreach ($allowedKeys as $key) {
+      if (! in_array($key, $selected, true)) {
+        continue;
+      }
+      $rules["requirement_files.$key"] = [
+        'required',
+        'file',
+        'mimes:pdf,doc,docx,jpg,jpeg,png',
+        'max:10240',
+      ];
+    }
+
+    return $rules;
+  }
+
+  /**
+   * @param  \Illuminate\Support\Collection<int, string>  $reqs
+   * @param  array<int, string>  $allowedKeys
+   * @return array<string, string>
+   */
+  private function storeRequirementFilesForKeys(
+    Request $request,
+    \Illuminate\Support\Collection $reqs,
+    array $allowedKeys,
+    string $storageBasePath
+  ): array {
+    $paths = [];
+    foreach ($allowedKeys as $key) {
+      if (! $reqs->contains($key)) {
+        continue;
+      }
+      $file = $request->file("requirement_files.$key");
+      if ($file && $file->isValid()) {
+        $paths[$key] = $file->store($storageBasePath, 'public');
+      }
+    }
+
+    return $paths;
   }
 }

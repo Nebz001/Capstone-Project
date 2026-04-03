@@ -30,6 +30,7 @@ class OrganizationRenewal extends Model
         'req_evaluation_summary',
         'req_others',
         'req_others_specify',
+        'requirement_files',
         // endorsement
         'endorsed_by_adviser',
         'endorsed_by_dean',
@@ -61,6 +62,7 @@ class OrganizationRenewal extends Model
             'req_financial_statement' => 'boolean',
             'req_evaluation_summary' => 'boolean',
             'req_others'             => 'boolean',
+            'requirement_files'      => 'array',
         ];
     }
 

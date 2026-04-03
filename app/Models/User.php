@@ -53,14 +53,21 @@ class User extends Authenticatable
 
     /**
      * Resolve the organization this user belongs to via their active officer record.
+     * Loads the organization row directly from the database so status and profile fields
+     * always reflect the latest saved values (not a stale relation instance).
      */
     public function currentOrganization(): ?Organization
     {
-        return $this->organizationOfficers()
+        $officer = $this->organizationOfficers()
             ->where('officer_status', 'ACTIVE')
-            ->with('organization')
-            ->first()
-            ?->organization;
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $officer) {
+            return null;
+        }
+
+        return Organization::query()->find($officer->organization_id);
     }
 
     public function organizationRegistrations(): HasMany
@@ -115,8 +122,18 @@ class User extends Authenticatable
         return in_array($this->email, $emails, true);
     }
 
+    /**
+     * Officer is cleared for org-level actions when validation is Approved or Active
+     * (DB may use either value depending on workflow).
+     */
     public function isOfficerValidated(): bool
     {
-        return $this->role_type === 'ORG_OFFICER' && $this->officer_validation_status === 'APPROVED';
+        if ($this->role_type !== 'ORG_OFFICER') {
+            return false;
+        }
+
+        $status = strtoupper((string) ($this->officer_validation_status ?? ''));
+
+        return in_array($status, ['APPROVED', 'ACTIVE'], true);
     }
 }

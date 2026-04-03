@@ -4,6 +4,10 @@
 
 @section('content')
 
+@php
+  $officerValidationPending = $officerValidationPending ?? false;
+@endphp
+
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   <header class="mb-8">
@@ -20,6 +24,21 @@
       Submit your organization&rsquo;s term activity calendar for review.
     </p>
   </header>
+
+  @if (session('error'))
+    <div class="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900" role="alert">
+      {{ session('error') }}
+    </div>
+  @endif
+
+  @if ($officerValidationPending)
+    <div class="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+      <svg class="h-5 w-5 shrink-0 text-amber-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12V15.75Z" />
+      </svg>
+      <span>Your student officer account is pending SDAO validation.</span>
+    </div>
+  @endif
 
   <form id="activity-calendar-form" method="POST" action="" class="space-y-6" novalidate>
     @csrf
@@ -226,7 +245,17 @@
       <div class="px-6 py-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
           <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto">Reset Form</x-ui.button>
-          <x-ui.button id="submit-activity-calendar" type="submit" formnovalidate class="w-full sm:w-auto">Submit Activity Calendar</x-ui.button>
+          @if($officerValidationPending)
+            <button
+              id="submit-activity-calendar"
+              type="submit"
+              formnovalidate
+              disabled
+              class="inline-flex w-full items-center justify-center rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-800/30 opacity-50 cursor-not-allowed transition focus:outline-none focus:ring-4 focus:ring-sky-500/25 sm:w-auto"
+            >Submit Activity Calendar</button>
+          @else
+            <x-ui.button id="submit-activity-calendar" type="submit" formnovalidate class="w-full sm:w-auto">Submit Activity Calendar</x-ui.button>
+          @endif
         </div>
       </div>
     </x-ui.card>

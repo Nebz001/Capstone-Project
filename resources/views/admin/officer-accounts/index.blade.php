@@ -8,6 +8,7 @@
     return match ($status) {
       'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
       'APPROVED' => 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+      'ACTIVE' => 'bg-emerald-100 text-emerald-700 border border-emerald-200',
       'REJECTED' => 'bg-rose-100 text-rose-700 border border-rose-200',
       'REVISION_REQUIRED' => 'bg-orange-100 text-orange-700 border border-orange-200',
       default => 'bg-slate-100 text-slate-700 border border-slate-200',

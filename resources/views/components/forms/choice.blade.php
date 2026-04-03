@@ -4,6 +4,7 @@
     'type' => 'checkbox',
     'value' => null,
     'required' => false,
+    'checked' => false,
     'wrapperClass' => 'flex items-start gap-3',
     'labelClass' => 'text-sm text-slate-700',
 ])
@@ -21,6 +22,7 @@
         type="{{ $type }}"
         @if(!is_null($value)) value="{{ $value }}" @endif
         @if($required) required @endif
+        @if($checked) checked @endif
         {{ $attributes->class([$controlClass]) }}
     />
     <span class="{{ $labelClass }}">{{ $slot }}</span>
