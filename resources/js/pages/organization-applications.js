@@ -210,25 +210,11 @@ const initRequirementAttachments = () => {
     });
 };
 
-export const initOrganizationApplicationAlerts = () => {
-    initPhilippineContactInputs();
-    initRequirementAttachments();
-    initOrganizationTypeSchoolToggle();
-
-    const registerForm = document.querySelector(
-        'form[action*="/organizations/register"]',
-    );
-    const renewalForm = document.querySelector(
-        'form[action*="/organizations/renew"]',
-    );
-
-    if (!registerForm && !renewalForm) {
-        return;
-    }
-
+const showOrganizationApplicationSuccessAlert = () => {
     const flashEl =
         document.getElementById("organization-register-success-alert-data") ||
-        document.getElementById("organization-renew-success-alert-data");
+        document.getElementById("organization-renew-success-alert-data") ||
+        document.getElementById("after-activity-report-success-alert-data");
 
     if (!flashEl) {
         return;
@@ -246,7 +232,7 @@ export const initOrganizationApplicationAlerts = () => {
     const redirectDelay =
         Number.isFinite(parsedDelay) && parsedDelay > 0 ? parsedDelay : 1800;
 
-    window.requestAnimationFrame(() => {
+    const run = () => {
         if (!redirectUrl) {
             showSuccessAlert(title, text, { confirmButtonText: "Continue" });
             return;
@@ -262,5 +248,25 @@ export const initOrganizationApplicationAlerts = () => {
                 window.location.assign(redirectUrl);
             },
         });
+    };
+
+    window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(run);
     });
+};
+
+export const initOrganizationApplicationAlerts = () => {
+    initPhilippineContactInputs();
+    initRequirementAttachments();
+    initOrganizationTypeSchoolToggle();
+
+    if (document.readyState === "loading") {
+        document.addEventListener(
+            "DOMContentLoaded",
+            showOrganizationApplicationSuccessAlert,
+            { once: true },
+        );
+    } else {
+        showOrganizationApplicationSuccessAlert();
+    }
 };

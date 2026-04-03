@@ -14,6 +14,10 @@ export const initActivityCalendarSubmissionPage = () => {
 	const mainForm = document.getElementById('activity-calendar-form');
 	if (!mainForm) return;
 
+	if (mainForm.dataset.officerValidationPending === 'true') {
+		return;
+	}
+
 	initToast();
 
 	const addButton = document.getElementById('add-activity');
