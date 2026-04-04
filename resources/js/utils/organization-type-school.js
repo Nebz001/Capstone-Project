@@ -7,9 +7,14 @@ export function initOrganizationTypeSchoolToggle() {
     );
 
     forms.forEach((form) => {
+        if (form.dataset.officerValidationPending === "true") {
+            return;
+        }
+
         const schoolSelect = form.querySelector("#school");
         const radios = form.querySelectorAll('input[name="organization_type"]');
         const requiredMark = form.querySelector("#school-required-mark");
+        const nonAcademicNotice = form.querySelector("#school-non-academic-notice");
 
         if (!schoolSelect || radios.length === 0) {
             return;
@@ -30,6 +35,12 @@ export function initOrganizationTypeSchoolToggle() {
                 if (blank) {
                     blank.selected = true;
                 }
+                schoolSelect.setAttribute(
+                    "aria-describedby",
+                    "school-non-academic-notice",
+                );
+            } else {
+                schoolSelect.removeAttribute("aria-describedby");
             }
 
             if (requiredMark) {
@@ -38,6 +49,10 @@ export function initOrganizationTypeSchoolToggle() {
                     "aria-hidden",
                     isExtra ? "true" : "false",
                 );
+            }
+
+            if (nonAcademicNotice) {
+                nonAcademicNotice.classList.toggle("hidden", !isExtra);
             }
         };
 

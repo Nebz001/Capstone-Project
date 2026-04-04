@@ -99,6 +99,10 @@ const initRequirementAttachments = () => {
     );
 
     forms.forEach((form) => {
+        if (form.dataset.officerValidationPending === "true") {
+            return;
+        }
+
         const items = form.querySelectorAll(".requirement-item");
 
         items.forEach((item) => {
