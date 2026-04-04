@@ -44,10 +44,10 @@
             <button
               type="button"
               data-org-announcements-close
-              class="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white/90 text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-white hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/25"
+              class="absolute right-2 top-2 inline-flex items-center justify-center rounded-lg p-2 text-slate-500 transition hover:bg-slate-100/90 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/25 active:bg-slate-100"
               aria-label="Close announcements"
             >
-              <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true">
+              <svg class="h-5 w-5 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
               </svg>
             </button>
@@ -117,11 +117,17 @@
               </article>
             @empty
               <div class="flex flex-col items-center justify-center gap-4 px-4 py-10 text-center">
-                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-md ring-1 ring-slate-200/80">
-                  <svg class="h-8 w-8 text-[#003E9F]/70" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                  </svg>
-                </div>
+                <svg
+                  class="h-11 w-11 shrink-0 text-[#003E9F]/75"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
                 <div class="max-w-[16rem] space-y-2">
                   <p class="text-base font-bold text-slate-900">You’re up to date</p>
                   <p class="text-sm font-medium leading-relaxed text-slate-600">
