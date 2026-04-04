@@ -54,7 +54,9 @@
           Request a profile revision when the organization must update registered organization details or adviser information. Officers can edit only while this is active and the organization is not pending review.
         </p>
         @if ($organization->profile_information_revision_requested)
-          <p class="mt-2 text-sm font-medium text-amber-800">A profile revision is currently <span class="font-semibold">open</span> for this organization.</p>
+          <x-feedback.blocked-message class="mt-4">
+            A profile revision is currently <span class="font-semibold">open</span> for this organization.
+          </x-feedback.blocked-message>
         @endif
         <form method="POST" action="{{ route('admin.organizations.request-profile-revision', $organization) }}" class="mt-4 space-y-3">
           @csrf

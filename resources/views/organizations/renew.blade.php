@@ -4,6 +4,10 @@
 
 @section('content')
 
+@php
+    $officerValidationPending = $officerValidationPending ?? false;
+@endphp
+
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-10">
 
     {{-- ── Page Header ──────────────────────────────────────────────── --}}
@@ -33,8 +37,33 @@
         ></div>
     @endif
 
-    <form method="POST" action="{{ route('organizations.renew.store') }}" enctype="multipart/form-data" class="space-y-6">
+    @if (session('error'))
+        <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
+    @endif
+
+    @if ($officerValidationPending)
+        <x-feedback.blocked-message
+            class="mb-6"
+            message="Your student officer account is pending SDAO validation. You cannot submit or edit organization forms until validation is complete."
+        />
+    @endif
+
+    <form
+        method="POST"
+        action="{{ route('organizations.renew.store') }}"
+        enctype="multipart/form-data"
+        class="space-y-6"
+        data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
+    >
         @csrf
+
+        <fieldset
+            @disabled($officerValidationPending)
+            @class([
+                'min-w-0 space-y-6 border-0 p-0 m-0',
+                'opacity-50 select-none' => $officerValidationPending,
+            ])
+        >
 
         {{-- Academic Year --}}
         <x-ui.card padding="p-0">
@@ -199,6 +228,12 @@
                             <option value="sabm" @selected($schoolForOld === 'sabm')>School of Accounting and Business Management</option>
                             <option value="shs" @selected($schoolForOld === 'shs')>Senior High School</option>
                         </x-forms.select>
+                        <x-feedback.blocked-message
+                            id="school-non-academic-notice"
+                            variant="info"
+                            message="School selection is unavailable because Extra-Curricular Organization / Interest Clubs is classified as a non-academic organization."
+                            @class(['mt-2', 'hidden' => $orgType === 'co_curricular'])
+                        />
                         @error('school') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
                 </div>
@@ -339,11 +374,13 @@
         <x-ui.card padding="p-0">
             <div class="px-6 py-6">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                    <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto">Reset Form</x-ui.button>
-                    <x-ui.button type="submit" class="w-full sm:w-auto">Submit Renewal</x-ui.button>
+                    <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto" :disabled="$officerValidationPending">Reset Form</x-ui.button>
+                    <x-ui.button type="submit" class="w-full sm:w-auto" :disabled="$officerValidationPending">Submit Renewal</x-ui.button>
                 </div>
             </div>
         </x-ui.card>
+
+        </fieldset>
     </form>
 
 </div>

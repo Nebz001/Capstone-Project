@@ -19,7 +19,7 @@
 
 <body class="min-h-screen bg-slate-100 antialiased">
 
-  @include('partials.organizations.navbar')
+  @include('organizations.partials.navbar')
 
   <main>
     @yield('content')

@@ -38,9 +38,7 @@
     @endif
 
     @if (session('error'))
-        <div class="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900" role="alert">
-            {{ session('error') }}
-        </div>
+        <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
     @endif
 
     @if ($officerValidationPending)
