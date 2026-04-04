@@ -27,6 +27,6 @@ class AppServiceProvider extends ServiceProvider
             LoginAnnouncementsComposer::class
         );
 
-        View::composer('partials.organizations.navbar', OrganizationNavbarComposer::class);
+        View::composer('organizations.partials.navbar', OrganizationNavbarComposer::class);
     }
 }

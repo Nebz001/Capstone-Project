@@ -180,9 +180,12 @@ class OrganizationController extends Controller
 
     // ── Registration ────────────────────────────────────────────
 
-    public function showRegistrationForm()
+    public function showRegistrationForm(Request $request)
     {
-        return view('organizations.register');
+        $user = $request->user();
+        $officerValidationPending = $user && ! $user->isOfficerValidated();
+
+        return view('organizations.register', compact('officerValidationPending'));
     }
 
     public function storeRegistration(Request $request)
@@ -295,7 +298,9 @@ class OrganizationController extends Controller
             $schoolCodeDefault = $this->schoolCodeFromDepartment($organization->college_department);
         }
 
-        return view('organizations.renew', compact('organization', 'schoolCodeDefault'));
+        $officerValidationPending = $request->user() && ! $request->user()->isOfficerValidated();
+
+        return view('organizations.renew', compact('organization', 'schoolCodeDefault', 'officerValidationPending'));
     }
 
     public function storeRenewal(Request $request)
