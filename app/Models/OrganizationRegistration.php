@@ -41,22 +41,26 @@ class OrganizationRegistration extends Model
         'approved_by_crso',
         'approval_date',
         'additional_remarks',
+        'revision_comment_application',
+        'revision_comment_contact',
+        'revision_comment_organizational',
+        'revision_comment_requirements',
     ];
 
     protected function casts(): array
     {
         return [
-            'submission_date'       => 'date',
-            'endorsement_date'      => 'date',
-            'approval_date'         => 'date',
-            'req_letter_of_intent'  => 'boolean',
-            'req_application_form'  => 'boolean',
-            'req_by_laws'           => 'boolean',
-            'req_officers_list'     => 'boolean',
-            'req_dean_endorsement'  => 'boolean',
+            'submission_date' => 'date',
+            'endorsement_date' => 'date',
+            'approval_date' => 'date',
+            'req_letter_of_intent' => 'boolean',
+            'req_application_form' => 'boolean',
+            'req_by_laws' => 'boolean',
+            'req_officers_list' => 'boolean',
+            'req_dean_endorsement' => 'boolean',
             'req_proposed_projects' => 'boolean',
-            'req_others'            => 'boolean',
-            'requirement_files'     => 'array',
+            'req_others' => 'boolean',
+            'requirement_files' => 'array',
         ];
     }
 

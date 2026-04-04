@@ -79,7 +79,11 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::patch('/officer-accounts/{user}', 'updateOfficerValidation')->name('officer-accounts.update');
 
     Route::get('/registrations', 'registrations')->name('registrations.index');
+    Route::get('/registrations/{registration}/requirements/{key}', 'showRegistrationRequirementFile')
+        ->name('registrations.requirement-file')
+        ->where('key', '[a-z0-9_]+');
     Route::get('/registrations/{registration}', 'showRegistration')->name('registrations.show');
+    Route::patch('/registrations/{registration}/status', 'updateRegistrationStatus')->name('registrations.update-status');
 
     Route::get('/renewals', 'renewals')->name('renewals.index');
     Route::get('/renewals/{renewal}', 'showRenewal')->name('renewals.show');

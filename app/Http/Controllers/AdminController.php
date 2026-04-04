@@ -12,9 +12,25 @@ use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminController extends Controller
 {
+    /** @see OrganizationController::REGISTRATION_REQUIREMENT_KEYS */
+    private const REGISTRATION_REQUIREMENT_FILE_KEYS = [
+        'letter_of_intent',
+        'application_form',
+        'by_laws',
+        'updated_list_of_officers_founders',
+        'dean_endorsement_faculty_adviser',
+        'proposed_projects_budget',
+        'others',
+    ];
+
     public function dashboard(Request $request): View
     {
         $this->authorizeAdmin($request);
@@ -236,20 +252,173 @@ class AdminController extends Controller
 
         $registration->load(['organization', 'user']);
 
-        return view('admin.review-show', [
-            'pageTitle' => 'Registration Submission Details',
-            'backRoute' => route('admin.registrations.index'),
-            'status' => $registration->registration_status ?? 'PENDING',
-            'details' => [
-                'Organization' => $registration->organization?->organization_name ?? 'N/A',
-                'Submitted By' => $registration->user?->full_name ?? 'N/A',
-                'Academic Year' => $registration->academic_year ?? 'N/A',
-                'Contact Person' => $registration->contact_person ?? 'N/A',
-                'Submission Date' => optional($registration->submission_date)->format('M d, Y') ?? 'N/A',
-                'Contact Email' => $registration->contact_email ?? 'N/A',
+        return view('admin.registrations.show', compact('registration'));
+    }
+
+    /**
+     * Stream a registration requirement file from the public disk (auth + path scoped to this org).
+     * Avoids relying on the public/storage symlink, which often causes 404s when the link is missing.
+     */
+    public function showRegistrationRequirementFile(Request $request, OrganizationRegistration $registration, string $key): StreamedResponse
+    {
+        $this->authorizeAdmin($request);
+
+        if (! in_array($key, self::REGISTRATION_REQUIREMENT_FILE_KEYS, true)) {
+            abort(404);
+        }
+
+        $files = $registration->requirement_files;
+        if (! is_array($files) || empty($files[$key]) || ! is_string($files[$key])) {
+            abort(404);
+        }
+
+        $relativePath = $files[$key];
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $organizationId = (int) $registration->organization_id;
+        $expectedPrefix = 'organization-requirements/'.$organizationId.'/registration/';
+        if (! str_starts_with($relativePath, $expectedPrefix)) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        $filename = basename($relativePath);
+
+        return $disk->response($relativePath, $filename, [], 'inline');
+    }
+
+    public function updateRegistrationStatus(Request $request, OrganizationRegistration $registration): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validator = Validator::make($request->all(), [
+            'decision' => ['required', Rule::in(['APPROVED', 'REJECTED', 'REVISION'])],
+            'remarks' => [
+                Rule::when(
+                    $request->input('decision') === 'REJECTED',
+                    ['required', 'string', 'min:3', 'max:5000'],
+                    ['nullable', 'string', 'max:5000'],
+                ),
             ],
-            'organization' => $registration->organization,
+            'revision_comment_application' => ['nullable', 'string', 'max:5000'],
+            'revision_comment_contact' => ['nullable', 'string', 'max:5000'],
+            'revision_comment_organizational' => ['nullable', 'string', 'max:5000'],
+            'revision_comment_requirements' => ['nullable', 'string', 'max:5000'],
         ]);
+
+        $validator->after(function ($validator) use ($request): void {
+            if ($request->input('decision') !== 'REVISION') {
+                return;
+            }
+            $generalOk = strlen(trim((string) $request->input('remarks', ''))) >= 3;
+            $sectionTexts = [
+                $request->input('revision_comment_application'),
+                $request->input('revision_comment_contact'),
+                $request->input('revision_comment_organizational'),
+                $request->input('revision_comment_requirements'),
+            ];
+            $anySection = collect($sectionTexts)->contains(fn ($t) => strlen(trim((string) $t)) >= 3);
+            if (! $generalOk && ! $anySection) {
+                $validator->errors()->add(
+                    'remarks',
+                    'For revision, add general remarks (at least 3 characters) and/or at least one section comment (at least 3 characters).',
+                );
+            }
+        });
+
+        $validated = $validator->validate();
+
+        /** @var User $admin */
+        $admin = $request->user();
+        $decision = $validated['decision'];
+        $remarks = trim((string) ($validated['remarks'] ?? ''));
+
+        $sectionFields = [
+            'revision_comment_application' => trim((string) $request->input('revision_comment_application', '')),
+            'revision_comment_contact' => trim((string) $request->input('revision_comment_contact', '')),
+            'revision_comment_organizational' => trim((string) $request->input('revision_comment_organizational', '')),
+            'revision_comment_requirements' => trim((string) $request->input('revision_comment_requirements', '')),
+        ];
+
+        DB::transaction(function () use ($registration, $decision, $remarks, $admin, $sectionFields): void {
+            $registration->registration_status = $decision;
+            $registration->approved_by_sdao = $admin->full_name;
+            $registration->approval_date = now()->toDateString();
+
+            if ($decision === 'REVISION') {
+                foreach ($sectionFields as $column => $value) {
+                    $registration->{$column} = $value !== '' ? $value : null;
+                }
+            } else {
+                foreach (array_keys($sectionFields) as $column) {
+                    $registration->{$column} = null;
+                }
+            }
+
+            if ($decision === 'APPROVED') {
+                $registration->approval_decision = 'APPROVED';
+                $registration->additional_remarks = $remarks !== '' ? $remarks : null;
+                $registration->organization?->update([
+                    'organization_status' => 'ACTIVE',
+                    'profile_information_revision_requested' => false,
+                    'profile_revision_notes' => null,
+                ]);
+            } else {
+                $registration->approval_decision = null;
+                $registration->additional_remarks = $remarks !== '' ? $remarks : null;
+            }
+
+            if ($decision === 'REVISION') {
+                $registration->organization?->update([
+                    'profile_information_revision_requested' => true,
+                    'profile_revision_notes' => $this->composeRegistrationRevisionNotesForProfile($remarks, $sectionFields),
+                ]);
+            }
+
+            if ($decision === 'REJECTED') {
+                $registration->organization?->update([
+                    'profile_information_revision_requested' => false,
+                    'profile_revision_notes' => null,
+                ]);
+            }
+
+            $registration->save();
+        });
+
+        return redirect()
+            ->route('admin.registrations.show', $registration)
+            ->with('success', 'Registration decision saved successfully.');
+    }
+
+    /**
+     * @param  array<string, string>  $sectionFields  revision_comment_* => trimmed text
+     */
+    private function composeRegistrationRevisionNotesForProfile(string $generalRemarks, array $sectionFields): ?string
+    {
+        $blocks = [];
+        if ($generalRemarks !== '') {
+            $blocks[] = "General remarks\n".$generalRemarks;
+        }
+        $titles = [
+            'revision_comment_application' => 'Application Information',
+            'revision_comment_contact' => 'Contact Information',
+            'revision_comment_organizational' => 'Organizational Details',
+            'revision_comment_requirements' => 'Requirements Attached',
+        ];
+        foreach ($titles as $key => $title) {
+            $body = $sectionFields[$key] ?? '';
+            if ($body !== '') {
+                $blocks[] = $title."\n".$body;
+            }
+        }
+
+        return $blocks === [] ? null : implode("\n\n—\n\n", $blocks);
     }
 
     public function showRenewal(Request $request, OrganizationRenewal $renewal): View

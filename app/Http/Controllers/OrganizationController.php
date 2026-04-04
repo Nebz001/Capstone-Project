@@ -405,11 +405,21 @@ class OrganizationController extends Controller
                 ->with('error', $profileEditBlockedMessage);
         }
 
+        $revisionRegistration = null;
+        if ($organization && $organization->isProfileRevisionRequested()) {
+            $revisionRegistration = $organization->registrations()
+                ->where('registration_status', 'REVISION')
+                ->latest('updated_at')
+                ->latest('id')
+                ->first();
+        }
+
         return view('organizations.profile', [
             'organization' => $organization,
             'editing' => (bool) ($request->query('edit') && $canEditProfile && $organization),
             'canEditProfile' => $organization ? $canEditProfile : false,
             'profileEditBlockedMessage' => $organization ? $profileEditBlockedMessage : '',
+            'revisionRegistration' => $revisionRegistration,
         ]);
     }
 
