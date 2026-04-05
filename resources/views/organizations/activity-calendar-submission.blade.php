@@ -6,6 +6,18 @@
 
 @php
   $officerValidationPending = $officerValidationPending ?? false;
+  $calendarSubmittedLocked = $calendarSubmittedLocked ?? false;
+  $activityCalendarFormBlocked = $officerValidationPending || $calendarSubmittedLocked;
+  $calLock = $calendarSubmittedLocked && ($latestCalendar ?? null);
+  $academicYearVal = old('academic_year', $calLock ? ($latestCalendar->academic_year ?? '') : '');
+  $termVal = old('term', $calLock ? ($latestCalendar->semester ?? '') : '');
+  $orgNameVal = old('organization_name', $calLock ? ($latestCalendar->submitted_organization_name ?? '') : '');
+  $dateSubmittedVal = old(
+      'date_submitted',
+      $calLock && $latestCalendar->submission_date
+          ? $latestCalendar->submission_date->format('Y-m-d')
+          : ''
+  );
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -29,10 +41,20 @@
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
   @endif
 
-  @if (session('success'))
-    <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="alert">
-      {{ session('success') }}
-    </div>
+  @if ($calendarSubmittedLocked)
+    <x-feedback.blocked-message
+      class="mb-6"
+      message="This activity calendar has already been submitted and can no longer be edited."
+    />
+  @endif
+
+  @if (session('activity_calendar_submitted'))
+    <script id="activity-calendar-submitted-flash" type="application/json">
+      @json([
+        'submittedDocumentsUrl' => route('organizations.submitted-documents'),
+        'proposalSubmissionUrl' => route('organizations.activity-proposal-submission'),
+      ])
+    </script>
   @endif
 
   @if ($officerValidationPending)
@@ -49,14 +71,15 @@
     class="space-y-6"
     novalidate
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
+    data-activity-calendar-form-blocked="{{ $activityCalendarFormBlocked ? 'true' : 'false' }}"
   >
     @csrf
 
     <fieldset
-      @disabled($officerValidationPending)
+      @disabled($activityCalendarFormBlocked)
       @class([
         'min-w-0 space-y-6 border-0 p-0 m-0',
-        'opacity-50 select-none' => $officerValidationPending,
+        'pointer-events-none opacity-50' => $activityCalendarFormBlocked,
       ])
     >
 
@@ -77,16 +100,17 @@
               name="academic_year"
               type="text"
               placeholder="2025-2026"
+              :value="$academicYearVal"
               required />
           </div>
 
           <div>
             <x-forms.label for="term" required>Term</x-forms.label>
             <x-forms.select id="term" name="term" required>
-              <option value="" disabled selected>Select term</option>
-              <option value="term_1">Term 1</option>
-              <option value="term_2">Term 2</option>
-              <option value="term_3">Term 3</option>
+              <option value="" disabled @selected($termVal === '' || $termVal === null)>Select term</option>
+              <option value="term_1" @selected($termVal === 'term_1')>Term 1</option>
+              <option value="term_2" @selected($termVal === 'term_2')>Term 2</option>
+              <option value="term_3" @selected($termVal === 'term_3')>Term 3</option>
             </x-forms.select>
           </div>
 
@@ -97,6 +121,7 @@
               name="organization_name"
               type="text"
               placeholder="e.g., Computer Society"
+              :value="$orgNameVal"
               required />
           </div>
 
@@ -106,6 +131,7 @@
               id="date_submitted"
               name="date_submitted"
               type="date"
+              :value="$dateSubmittedVal"
               required />
           </div>
         </div>
@@ -229,11 +255,45 @@
                   </tr>
                 </thead>
                 <tbody id="activities-preview-body" class="divide-y divide-slate-200 bg-white">
-                  <tr id="activities-empty-state">
-                    <td colspan="9" class="px-5 py-10 text-center text-sm text-slate-600">
-                      No activities added yet.
-                    </td>
-                  </tr>
+                  @if ($calLock && $latestCalendar->entries->isNotEmpty())
+                    @foreach ($latestCalendar->entries as $entry)
+                      <tr class="align-top">
+                        <td class="px-5 py-3.5 text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
+                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->activity_name }}</td>
+                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->sdg }}</td>
+                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->venue }}</td>
+                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->participant_program }}</td>
+                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->budget }}</td>
+                        <td class="px-5 py-3.5">
+                          @php
+                            $calSt = strtoupper((string) ($latestCalendar->calendar_status ?? ''));
+                            $rowStatusLabel = match ($calSt) {
+                              'PENDING' => 'Pending review',
+                              'UNDER_REVIEW' => 'Under review',
+                              'APPROVED' => 'Approved',
+                              'REJECTED' => 'Rejected',
+                              default => $latestCalendar->calendar_status ?? 'Submitted',
+                            };
+                          @endphp
+                          <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{{ $rowStatusLabel }}</span>
+                        </td>
+                        <td class="px-5 py-3.5 text-sm text-slate-500">For admin use</td>
+                        <td class="px-5 py-3.5 text-sm text-slate-400">—</td>
+                      </tr>
+                    @endforeach
+                  @elseif ($calLock)
+                    <tr>
+                      <td colspan="9" class="px-5 py-10 text-center text-sm text-slate-600">
+                        No activities are stored for this submission.
+                      </td>
+                    </tr>
+                  @else
+                    <tr id="activities-empty-state">
+                      <td colspan="9" class="px-5 py-10 text-center text-sm text-slate-600">
+                        No activities added yet.
+                      </td>
+                    </tr>
+                  @endif
                 </tbody>
               </table>
             </div>
@@ -266,7 +326,7 @@
             id="submit-activity-calendar"
             type="submit"
             class="w-full sm:w-auto"
-            :disabled="$officerValidationPending"
+            :disabled="$activityCalendarFormBlocked"
           >
             Submit Activity Calendar
           </x-ui.button>

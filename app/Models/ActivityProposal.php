@@ -12,6 +12,7 @@ class ActivityProposal extends Model
     protected $fillable = [
         'organization_id',
         'calendar_id',
+        'activity_calendar_entry_id',
         'user_id',
         'form_organization_name',
         'organization_logo_path',
@@ -59,6 +60,11 @@ class ActivityProposal extends Model
     public function calendar(): BelongsTo
     {
         return $this->belongsTo(ActivityCalendar::class, 'calendar_id');
+    }
+
+    public function calendarEntry(): BelongsTo
+    {
+        return $this->belongsTo(ActivityCalendarEntry::class, 'activity_calendar_entry_id');
     }
 
     public function user(): BelongsTo

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
-use App\Models\ActivityCalendarEntry;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
 use App\Models\Organization;
@@ -606,8 +605,10 @@ class AdminController extends Controller
     private function buildCentralizedCalendarEvents()
     {
         $proposalEvents = ActivityProposal::query()
+            ->where('proposal_status', '!=', 'DRAFT')
             ->with(['organization', 'user'])
             ->latest('submission_date')
+            ->latest('id')
             ->get()
             ->map(function (ActivityProposal $proposal): array {
                 return [
@@ -631,42 +632,6 @@ class AdminController extends Controller
                 ];
             });
 
-        $termLabels = [
-            'term_1' => 'Term 1',
-            'term_2' => 'Term 2',
-            'term_3' => 'Term 3',
-        ];
-
-        $calendarActivityEvents = ActivityCalendarEntry::query()
-            ->with(['activityCalendar.organization'])
-            ->orderBy('activity_date')
-            ->orderBy('id')
-            ->get()
-            ->map(function (ActivityCalendarEntry $entry) use ($termLabels): array {
-                $calendar = $entry->activityCalendar;
-                $orgName = $calendar->submitted_organization_name
-                    ?: ($calendar->organization?->organization_name ?? 'N/A');
-                $termKey = $calendar->semester ?? '';
-                $termLabel = $termLabels[$termKey] ?? ($termKey !== '' ? $termKey : 'N/A');
-
-                return [
-                    'title' => $entry->activity_name,
-                    'start' => optional($entry->activity_date)?->toDateString(),
-                    'end' => null,
-                    'status' => $calendar->calendar_status ?? 'PENDING',
-                    'organization_name' => $orgName,
-                    'submitted_by' => 'Organization Submission',
-                    'date' => optional($entry->activity_date)->format('M d, Y') ?? 'N/A',
-                    'time' => 'Not specified',
-                    'venue' => $entry->venue,
-                    'submission_type' => 'Activity Calendar ('.$termLabel.')',
-                    'submission_date' => optional($calendar->submission_date)->format('M d, Y') ?? 'N/A',
-                    'detail_route' => route('admin.calendars.show', $calendar),
-                ];
-            });
-
-        return $proposalEvents
-            ->concat($calendarActivityEvents)
-            ->values();
+        return $proposalEvents->values();
     }
 }

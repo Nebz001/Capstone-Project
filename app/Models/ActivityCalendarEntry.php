@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ActivityCalendarEntry extends Model
 {
@@ -27,5 +28,10 @@ class ActivityCalendarEntry extends Model
     public function activityCalendar(): BelongsTo
     {
         return $this->belongsTo(ActivityCalendar::class);
+    }
+
+    public function proposal(): HasOne
+    {
+        return $this->hasOne(ActivityProposal::class, 'activity_calendar_entry_id');
     }
 }

@@ -1,0 +1,174 @@
+@extends('layouts.organization')
+
+@section('title', $pageTitle.' — NU Lipa SDAO')
+
+@section('content')
+
+<div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
+
+  <header class="mb-8">
+    <a href="{{ $backRoute }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+      <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+      </svg>
+      Back to Submitted Documents
+    </a>
+    <div class="mt-3 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{{ $pageTitle }}</h1>
+        <p class="mt-1 text-sm text-slate-500">{{ $subtitle }}</p>
+      </div>
+      <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $statusClass }}">
+        {{ $statusLabel }}
+      </span>
+    </div>
+  </header>
+
+  @if ($remarkHighlight)
+    <div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <p class="text-xs font-semibold uppercase tracking-wide text-amber-800">Remarks / notes preview</p>
+      <p class="mt-1 text-amber-950">{{ $remarkHighlight }}</p>
+    </div>
+  @endif
+
+  <x-ui.card padding="p-0" class="mb-6">
+    <x-ui.card-section-header title="Submission details" content-padding="px-6" />
+    <div class="border-t border-slate-100 px-6 py-5">
+      <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        @foreach ($metaRows as $row)
+          <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $row['label'] }}</dt>
+            <dd class="mt-1 text-sm text-slate-800">{{ $row['value'] }}</dd>
+          </div>
+        @endforeach
+      </dl>
+    </div>
+  </x-ui.card>
+
+  @if (isset($calendarEntries) && $calendarEntries->isNotEmpty())
+    <x-ui.card padding="p-0" class="mb-6">
+      <x-ui.card-section-header
+        title="Planned activities (saved)"
+        subtitle="Each row is one calendar activity. Open Submit Proposal to add or edit full details for that activity only."
+        content-padding="px-6" />
+      <div class="border-t border-slate-100 px-6 py-5">
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="min-w-[52rem] w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="whitespace-nowrap px-4 py-3 sm:px-5">Date</th>
+                <th class="px-4 py-3 sm:px-5">Activity</th>
+                <th class="whitespace-nowrap px-4 py-3 sm:px-5">SDG</th>
+                <th class="px-4 py-3 sm:px-5">Venue</th>
+                <th class="whitespace-nowrap px-4 py-3 sm:px-5">Proposal</th>
+                <th class="px-4 py-3 text-right sm:px-5">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 bg-white">
+              @foreach ($calendarEntries as $entry)
+                @php
+                  $prop = $entry->proposal;
+                  $canEditProposal = $prop && in_array($prop->proposal_status, ['DRAFT', 'REVISION'], true);
+                  $proposalFormUrl = route('organizations.activity-proposal-submission', ['calendar_entry' => $entry->id]);
+                @endphp
+                <tr class="align-top">
+                  <td class="whitespace-nowrap px-4 py-4 text-slate-800 sm:px-5">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
+                  <td class="px-4 py-4 text-slate-800 sm:px-5">
+                    <span class="font-medium">{{ $entry->activity_name }}</span>
+                    @if ($entry->participant_program)
+                      <p class="mt-1 line-clamp-2 text-xs text-slate-500">{{ $entry->participant_program }}</p>
+                    @endif
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-4 text-slate-800 sm:px-5">{{ $entry->sdg }}</td>
+                  <td class="px-4 py-4 text-slate-800 sm:px-5">{{ $entry->venue }}</td>
+                  <td class="whitespace-nowrap px-4 py-4 sm:px-5">
+                    @if (! $prop)
+                      <span class="inline-flex rounded-full border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">No proposal yet</span>
+                    @else
+                      @php
+                        $ps = strtoupper((string) $prop->proposal_status);
+                        $proposalBadge = match ($ps) {
+                          'DRAFT' => 'bg-slate-200 text-slate-800 border border-slate-300',
+                          'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
+                          'UNDER_REVIEW' => 'bg-blue-100 text-blue-800 border border-blue-200',
+                          'REVISION' => 'bg-orange-100 text-orange-800 border border-orange-200',
+                          'APPROVED' => 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+                          'REJECTED' => 'bg-rose-100 text-rose-800 border border-rose-200',
+                          default => 'bg-slate-100 text-slate-700 border border-slate-200',
+                        };
+                        $proposalLabel = match ($ps) {
+                          'DRAFT' => 'Draft',
+                          'PENDING' => 'Pending',
+                          'UNDER_REVIEW' => 'Under review',
+                          'REVISION' => 'For revision',
+                          'APPROVED' => 'Approved',
+                          'REJECTED' => 'Rejected',
+                          default => $prop->proposal_status ?? '—',
+                        };
+                      @endphp
+                      <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $proposalBadge }}">{{ $proposalLabel }}</span>
+                    @endif
+                  </td>
+                  <td class="px-4 py-4 text-right sm:px-5">
+                    <div class="inline-flex w-fit max-w-full flex-col items-end gap-2 text-left">
+                      @if (! $prop)
+                        <a href="{{ $proposalFormUrl }}" class="inline-flex shrink-0 whitespace-nowrap rounded-lg bg-[#003E9F] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#00327F]">Submit proposal</a>
+                      @else
+                        @if ($canEditProposal)
+                          <a href="{{ $proposalFormUrl }}" class="inline-flex shrink-0 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Edit proposal</a>
+                        @endif
+                        <a href="{{ route('organizations.submitted-documents.proposals.show', $prop) }}" class="inline-flex shrink-0 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">View proposal</a>
+                      @endif
+                    </div>
+                  </td>
+                </tr>
+              @endforeach
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </x-ui.card>
+  @endif
+
+  <x-ui.card padding="p-0" class="mb-6" id="submitted-files">
+    <x-ui.card-section-header
+      title="Submitted files"
+      subtitle="Open or download documents you uploaded (opens in the browser when supported)."
+      content-padding="px-6" />
+    <div class="border-t border-slate-100 px-6 py-5">
+      @if (count($fileLinks) === 0)
+        <p class="text-sm text-slate-500">No file attachments are stored for this submission, or the submission did not include uploads.</p>
+      @else
+        <ul class="space-y-2">
+          @foreach ($fileLinks as $link)
+            <li>
+              <a href="{{ $link['url'] }}" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-[#003E9F] hover:text-[#00327F]">
+                {{ $link['label'] }}
+                <span class="text-slate-400" aria-hidden="true">↗</span>
+              </a>
+            </li>
+          @endforeach
+        </ul>
+      @endif
+    </div>
+  </x-ui.card>
+
+  @if (count($workflowLinks) > 0)
+    <div class="flex flex-wrap gap-3">
+      @foreach ($workflowLinks as $link)
+        @if (($link['variant'] ?? 'secondary') === 'primary')
+          <a href="{{ $link['href'] }}" class="inline-flex rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00327F]">
+            {{ $link['label'] }}
+          </a>
+        @else
+          <a href="{{ $link['href'] }}" class="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
+            {{ $link['label'] }}
+          </a>
+        @endif
+      @endforeach
+    </div>
+  @endif
+
+</div>
+
+@endsection

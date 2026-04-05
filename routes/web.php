@@ -5,6 +5,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AnnouncementDismissController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\OrganizationSubmittedDocumentsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -15,34 +16,58 @@ Route::get('dashboard', function () {
     return redirect()->route('organizations.index');
 })->middleware('auth')->name('dashboard');
 
-Route::prefix('organizations')->name('organizations.')->middleware('auth')->controller(OrganizationController::class)->group(function () {
-    Route::get('/', 'index')->name('index');
-    Route::get('/manage', 'manage')->name('manage');
+Route::prefix('organizations')->name('organizations.')->middleware('auth')->group(function () {
+    Route::controller(OrganizationSubmittedDocumentsController::class)->group(function () {
+        Route::get('/submitted-documents', 'index')->name('submitted-documents');
+        Route::get('/submitted-documents/registrations/{registration}', 'showSubmittedRegistration')->name('submitted-documents.registrations.show');
+        Route::get('/submitted-documents/registrations/{registration}/files/{key}', 'streamSubmittedRegistrationRequirementFile')
+            ->name('submitted-documents.registrations.file')
+            ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/renewals/{renewal}', 'showSubmittedRenewal')->name('submitted-documents.renewals.show');
+        Route::get('/submitted-documents/renewals/{renewal}/files/{key}', 'streamSubmittedRenewalRequirementFile')
+            ->name('submitted-documents.renewals.file')
+            ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/activity-calendars/{calendar}', 'showSubmittedActivityCalendar')->name('submitted-documents.calendars.show');
+        Route::get('/submitted-documents/activity-calendars/{calendar}/file', 'streamSubmittedActivityCalendarMainFile')->name('submitted-documents.calendars.file');
+        Route::get('/submitted-documents/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('submitted-documents.proposals.show');
+        Route::get('/submitted-documents/activity-proposals/{proposal}/files/{key}', 'streamSubmittedActivityProposalFile')
+            ->name('submitted-documents.proposals.file')
+            ->where('key', '[a-z]+');
+        Route::get('/submitted-documents/after-activity-reports/{report}', 'showSubmittedAfterActivityReport')->name('submitted-documents.reports.show');
+        Route::get('/submitted-documents/after-activity-reports/{report}/files/{key}', 'streamSubmittedAfterActivityReportFile')
+            ->name('submitted-documents.reports.file')
+            ->where('key', '[a-z0-9_]+');
+    });
 
-    Route::get('/register', 'showRegistrationForm')->name('register');
-    Route::post('/register', 'storeRegistration')->name('register.store');
+    Route::controller(OrganizationController::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::get('/manage', 'manage')->name('manage');
 
-    Route::get('/renew', 'showRenewalForm')->name('renew');
-    Route::post('/renew', 'storeRenewal')->name('renew.store');
+        Route::get('/register', 'showRegistrationForm')->name('register');
+        Route::post('/register', 'storeRegistration')->name('register.store');
 
-    Route::get('/profile', 'profile')->name('profile');
-    Route::put('/profile', 'updateProfile')->name('profile.update');
+        Route::get('/renew', 'showRenewalForm')->name('renew');
+        Route::post('/renew', 'storeRenewal')->name('renew.store');
 
-    Route::get('/activity-submission', 'showActivitySubmissionHub')->name('activity-submission');
+        Route::get('/profile', 'profile')->name('profile');
+        Route::put('/profile', 'updateProfile')->name('profile.update');
 
-    Route::get('/activity-calendar-submission', 'showActivityCalendarSubmission')
-        ->name('activity-calendar-submission');
-    Route::post('/activity-calendar-submission', 'storeActivityCalendarSubmission')
-        ->name('activity-calendar-submission.store');
+        Route::get('/activity-submission', 'showActivitySubmissionHub')->name('activity-submission');
 
-    Route::get('/activity-proposal-submission', 'showActivityProposalSubmission')
-        ->name('activity-proposal-submission');
-    Route::post('/activity-proposal-submission', 'storeActivityProposalSubmission')
-        ->name('activity-proposal-submission.store');
+        Route::get('/activity-calendar-submission', 'showActivityCalendarSubmission')
+            ->name('activity-calendar-submission');
+        Route::post('/activity-calendar-submission', 'storeActivityCalendarSubmission')
+            ->name('activity-calendar-submission.store');
 
-    Route::get('/submit-report', 'showSubmitReportHub')->name('submit-report');
-    Route::get('/after-activity-report', 'showAfterActivityReportForm')->name('after-activity-report');
-    Route::post('/after-activity-report', 'storeAfterActivityReport')->name('after-activity-report.store');
+        Route::get('/activity-proposal-submission', 'showActivityProposalSubmission')
+            ->name('activity-proposal-submission');
+        Route::post('/activity-proposal-submission', 'storeActivityProposalSubmission')
+            ->name('activity-proposal-submission.store');
+
+        Route::get('/submit-report', 'showSubmitReportHub')->name('submit-report');
+        Route::get('/after-activity-report', 'showAfterActivityReportForm')->name('after-activity-report');
+        Route::post('/after-activity-report', 'storeAfterActivityReport')->name('after-activity-report.store');
+    });
 });
 
 Route::prefix('auth')->controller(AuthController::class)->group(function () {
