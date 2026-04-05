@@ -62,6 +62,23 @@ const setClientMsg = (item, text) => {
     el.classList.remove("hidden");
 };
 
+const REQUIREMENTS_MIN_ONE_MSG =
+    "Select at least one requirement you are submitting.";
+
+const clearRequirementsSectionClientError = (form) => {
+    const el = form.querySelector(".requirements-section-client-error");
+    if (!el) {
+        return;
+    }
+    el.textContent = "";
+    el.classList.add("hidden");
+};
+
+const hasAnyRequirementChecked = (form) =>
+    form.querySelectorAll(
+        'input[type="checkbox"][name="requirements[]"]:checked',
+    ).length > 0;
+
 const syncRequirementRow = (item) => {
     const checkbox = item.querySelector(
         'input[type="checkbox"][name="requirements[]"]',
@@ -99,7 +116,7 @@ const initRequirementAttachments = () => {
     );
 
     forms.forEach((form) => {
-        if (form.dataset.officerValidationPending === "true") {
+        if (form.dataset.orgFormBlocked === "true") {
             return;
         }
 
@@ -145,12 +162,39 @@ const initRequirementAttachments = () => {
             syncRequirementRow(item);
         });
 
+        form.addEventListener("change", (ev) => {
+            const t = ev.target;
+            if (
+                t instanceof HTMLInputElement &&
+                t.name === "requirements[]" &&
+                t.type === "checkbox"
+            ) {
+                clearRequirementsSectionClientError(form);
+            }
+        });
+
         form.addEventListener("submit", (e) => {
             if (!validateFormContactNo(form)) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 return;
             }
+
+            if (!hasAnyRequirementChecked(form)) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                const el = form.querySelector(".requirements-section-client-error");
+                if (el) {
+                    el.textContent = REQUIREMENTS_MIN_ONE_MSG;
+                    el.classList.remove("hidden");
+                }
+                form
+                    .querySelector("#requirements-section-validation")
+                    ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                return;
+            }
+
+            clearRequirementsSectionClientError(form);
 
             const othersSpec = form.querySelector(
                 'input[name="requirements_other"]',
@@ -205,6 +249,7 @@ const initRequirementAttachments = () => {
 
         form.addEventListener("reset", () => {
             window.setTimeout(() => {
+                clearRequirementsSectionClientError(form);
                 items.forEach((item) => {
                     syncRequirementRow(item);
                     clearClientMsg(item);

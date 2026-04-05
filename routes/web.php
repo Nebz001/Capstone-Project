@@ -28,6 +28,8 @@ Route::prefix('organizations')->name('organizations.')->middleware('auth')->cont
     Route::get('/profile', 'profile')->name('profile');
     Route::put('/profile', 'updateProfile')->name('profile.update');
 
+    Route::get('/activity-submission', 'showActivitySubmissionHub')->name('activity-submission');
+
     Route::get('/activity-calendar-submission', 'showActivityCalendarSubmission')
         ->name('activity-calendar-submission');
     Route::post('/activity-calendar-submission', 'storeActivityCalendarSubmission')

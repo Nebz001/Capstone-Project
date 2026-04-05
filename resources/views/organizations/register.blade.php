@@ -6,6 +6,9 @@
 
 @php
   $officerValidationPending = $officerValidationPending ?? false;
+  $alreadyLinkedToOrganization = $alreadyLinkedToOrganization ?? false;
+  $sessionErrorBlocksForm = session()->has('error');
+  $registrationFormBlocked = $officerValidationPending || $sessionErrorBlocksForm || $alreadyLinkedToOrganization;
 @endphp
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-10">
@@ -38,6 +41,12 @@
 
   @if (session('error'))
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
+  @elseif ($alreadyLinkedToOrganization)
+    <x-feedback.blocked-message
+      variant="error"
+      class="mb-6"
+      message="Your account is already linked to an organization. You cannot submit a new registration."
+    />
   @endif
 
   @if ($officerValidationPending)
@@ -52,15 +61,15 @@
     action="{{ route('organizations.register.store') }}"
     enctype="multipart/form-data"
     class="space-y-6"
-    data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
+    data-org-form-blocked="{{ $registrationFormBlocked ? 'true' : 'false' }}"
   >
     @csrf
 
     <fieldset
-      @disabled($officerValidationPending)
+      @disabled($registrationFormBlocked)
       @class([
         'min-w-0 space-y-6 border-0 p-0 m-0',
-        'opacity-50 select-none' => $officerValidationPending,
+        'pointer-events-none opacity-50' => $registrationFormBlocked,
       ])
     >
 
@@ -127,8 +136,10 @@
               type="text"
               inputmode="numeric"
               autocomplete="tel"
-              maxlength="13"
-              placeholder="09XXXXXXXXX"
+              maxlength="11"
+              pattern="09[0-9]{9}"
+              title="Exactly 11 digits starting with 09"
+              placeholder="09123456789"
               :value="old('contact_no')"
               required />
             @error('contact_no') <x-forms.error>{{ $message }}</x-forms.error> @enderror
@@ -235,8 +246,17 @@
         subtitle="Check each document you are submitting. When a requirement is selected, attach its file using the paperclip. PDF, Word, or image files only."
         content-padding="px-6" />
       <div class="px-6 py-6">
+        <div id="requirements-section-validation" class="mb-4 scroll-mt-24">
+          @error('requirements')
+            <p class="text-xs font-medium text-rose-600" role="alert">{{ $message }}</p>
+          @enderror
+          <p class="requirements-section-client-error hidden text-xs font-medium text-rose-600" role="alert"></p>
+        </div>
         <div class="rounded-2xl border border-slate-200 bg-slate-100 p-4 sm:p-5">
-          <p class="text-sm font-medium text-slate-900">New Registration Requirements</p>
+          <p class="text-sm font-medium text-slate-900">
+            New Registration Requirements <span class="text-rose-600" aria-hidden="true">*</span>
+            <span class="sr-only">(required)</span>
+          </p>
           <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <x-organizations.requirement-item
               checkbox-id="req_letter_intent"
@@ -346,8 +366,8 @@
     <x-ui.card padding="p-0">
       <div class="px-6 py-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-          <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto" :disabled="$officerValidationPending">Reset Form</x-ui.button>
-          <x-ui.button type="submit" class="w-full sm:w-auto" :disabled="$officerValidationPending">Submit Registration</x-ui.button>
+          <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto" :disabled="$registrationFormBlocked">Reset Form</x-ui.button>
+          <x-ui.button type="submit" class="w-full sm:w-auto" :disabled="$registrationFormBlocked">Submit Registration</x-ui.button>
         </div>
       </div>
     </x-ui.card>

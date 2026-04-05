@@ -6,6 +6,9 @@
 
 @php
     $officerValidationPending = $officerValidationPending ?? false;
+    $renewalBlockedNoOrganization = $renewalBlockedNoOrganization ?? (($organization ?? null) === null);
+    $sessionErrorBlocksForm = session()->has('error');
+    $renewalFormBlocked = $officerValidationPending || $sessionErrorBlocksForm || $renewalBlockedNoOrganization;
 @endphp
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-10">
@@ -39,6 +42,12 @@
 
     @if (session('error'))
         <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
+    @elseif ($renewalBlockedNoOrganization)
+        <x-feedback.blocked-message
+            variant="error"
+            class="mb-6"
+            message="No organization is linked to your account. Register your organization before submitting a renewal application."
+        />
     @endif
 
     @if ($officerValidationPending)
@@ -53,15 +62,15 @@
         action="{{ route('organizations.renew.store') }}"
         enctype="multipart/form-data"
         class="space-y-6"
-        data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
+        data-org-form-blocked="{{ $renewalFormBlocked ? 'true' : 'false' }}"
     >
         @csrf
 
         <fieldset
-            @disabled($officerValidationPending)
+            @disabled($renewalFormBlocked)
             @class([
                 'min-w-0 space-y-6 border-0 p-0 m-0',
-                'opacity-50 select-none' => $officerValidationPending,
+                'pointer-events-none opacity-50' => $renewalFormBlocked,
             ])
         >
 
@@ -133,8 +142,10 @@
                             type="text"
                             inputmode="numeric"
                             autocomplete="tel"
-                            maxlength="13"
-                            placeholder="09XXXXXXXXX"
+                            maxlength="11"
+                            pattern="09[0-9]{9}"
+                            title="Exactly 11 digits starting with 09"
+                            placeholder="09123456789"
                             :value="old('contact_no')"
                             required
                         />
@@ -248,8 +259,17 @@
                 content-padding="px-6"
             />
             <div class="px-6 py-6">
+                <div id="requirements-section-validation" class="mb-4 scroll-mt-24">
+                    @error('requirements')
+                        <p class="text-xs font-medium text-rose-600" role="alert">{{ $message }}</p>
+                    @enderror
+                    <p class="requirements-section-client-error hidden text-xs font-medium text-rose-600" role="alert"></p>
+                </div>
                 <div class="rounded-2xl border border-slate-200 bg-slate-100 p-4 sm:p-5">
-                    <p class="text-sm font-medium text-slate-900">Renewal Application Requirements</p>
+                    <p class="text-sm font-medium text-slate-900">
+                        Renewal Application Requirements <span class="text-rose-600" aria-hidden="true">*</span>
+                        <span class="sr-only">(required)</span>
+                    </p>
                     <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <x-organizations.requirement-item
                             checkbox-id="renew_req_letter_intent"
@@ -374,8 +394,8 @@
         <x-ui.card padding="p-0">
             <div class="px-6 py-6">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                    <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto" :disabled="$officerValidationPending">Reset Form</x-ui.button>
-                    <x-ui.button type="submit" class="w-full sm:w-auto" :disabled="$officerValidationPending">Submit Renewal</x-ui.button>
+                    <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto" :disabled="$renewalFormBlocked">Reset Form</x-ui.button>
+                    <x-ui.button type="submit" class="w-full sm:w-auto" :disabled="$renewalFormBlocked">Submit Renewal</x-ui.button>
                 </div>
             </div>
         </x-ui.card>

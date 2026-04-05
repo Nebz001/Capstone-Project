@@ -2,7 +2,7 @@
   <div class="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
 
     {{-- Left: Logo + Title --}}
-    <a href="{{ url('/') }}" class="flex min-w-0 items-center gap-3">
+    <a href="{{ route('organizations.index') }}" class="flex min-w-0 items-center gap-3">
       <img
         src="{{ asset('images/logos/nu-logo-onlyy.png') }}"
         alt="National University Lipa"

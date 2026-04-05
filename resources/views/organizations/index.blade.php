@@ -140,7 +140,7 @@
 
             {{-- ── Activity Submission (accent / main action) ──────── --}}
             <a
-                href="{{ route('organizations.activity-calendar-submission') }}"
+                href="{{ route('organizations.activity-submission') }}"
                 class="group flex items-start gap-5 rounded-3xl border border-[#E7C663]/60 bg-gradient-to-br from-[#FFF8DF] via-[#FFFBF0] to-[#FFFEF8] p-6 shadow-xl shadow-amber-200/50 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#F5C400]/25 text-[#8A6500] transition group-hover:bg-[#F5C400]/35">

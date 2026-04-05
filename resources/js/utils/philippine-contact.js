@@ -3,7 +3,7 @@
  */
 
 export const PH_CONTACT_INVALID_MSG =
-    "Enter a valid Philippine mobile number (e.g. 09XXXXXXXXX).";
+    "Enter exactly 11 digits starting with 09 (e.g. 09123456789).";
 
 export function digitsOnly(value) {
     return String(value ?? "").replace(/\D/g, "");
@@ -37,6 +37,10 @@ export function initPhilippineContactInputs() {
     );
 
     forms.forEach((form) => {
+        if (form.dataset.orgFormBlocked === "true") {
+            return;
+        }
+
         const input = form.querySelector('input[name="contact_no"]');
         if (!input) {
             return;
@@ -49,7 +53,7 @@ export function initPhilippineContactInputs() {
         input.addEventListener("input", () => {
             clearValidity();
             const digits = digitsOnly(input.value);
-            const next = digits.length > 13 ? digits.slice(0, 13) : digits;
+            const next = digits.length > 11 ? digits.slice(0, 11) : digits;
             if (input.value !== next) {
                 input.value = next;
             }

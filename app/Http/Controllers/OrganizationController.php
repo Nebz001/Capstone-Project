@@ -42,6 +42,8 @@ class OrganizationController extends Controller
         'others',
     ];
 
+    private const REQUIREMENTS_MIN_ONE_MESSAGE = 'Select at least one requirement you are submitting.';
+
     /** Form `school` select values → stored `organizations.college_department` label. */
     private const SCHOOL_CODE_LABELS = [
         'sace' => 'School of Architecture, Computer and Engineering',
@@ -102,8 +104,8 @@ class OrganizationController extends Controller
     }
 
     /**
-     * Philippine mobile: 09XXXXXXXXX, +639…, 639…, or grouped with spaces/dashes.
-     * Letters and invalid symbols are rejected; value is normalized after validation.
+     * Philippine mobile: exactly 11 digits including trunk 0 and 9 (09XXXXXXXXX).
+     * Also accepts +639… / 639… (normalized to 09…). Letters and invalid symbols rejected.
      *
      * @return array<int, mixed>
      */
@@ -121,7 +123,7 @@ class OrganizationController extends Controller
                     return;
                 }
                 if (preg_match('/[a-zA-Z]/', $raw)) {
-                    $fail('Contact number may not contain letters. Use digits only (e.g. 09XXXXXXXXX).');
+                    $fail('Contact number may not contain letters. Use exactly 11 digits starting with 09 (e.g. 09123456789).');
 
                     return;
                 }
@@ -132,7 +134,7 @@ class OrganizationController extends Controller
                 }
                 $digits = preg_replace('/\D/', '', $raw);
                 if ($digits === '') {
-                    $fail('Enter a valid Philippine mobile number (e.g. 09XXXXXXXXX).');
+                    $fail('Enter exactly 11 digits starting with 09 (e.g. 09123456789).');
 
                     return;
                 }
@@ -143,7 +145,7 @@ class OrganizationController extends Controller
                     $digits = substr($digits, 1);
                 }
                 if (! preg_match('/^9\d{9}$/', $digits)) {
-                    $fail('Enter a valid Philippine mobile number: 11 digits starting with 09 (e.g. 09XXXXXXXXX).');
+                    $fail('Contact number must be exactly 11 digits including 09 (e.g. 09123456789).');
                 }
             },
         ];
@@ -178,14 +180,20 @@ class OrganizationController extends Controller
         return view('organizations.submit-report');
     }
 
+    public function showActivitySubmissionHub()
+    {
+        return view('organizations.activity-submission');
+    }
+
     // ── Registration ────────────────────────────────────────────
 
     public function showRegistrationForm(Request $request)
     {
         $user = $request->user();
         $officerValidationPending = $user && ! $user->isOfficerValidated();
+        $alreadyLinkedToOrganization = $user && $user->currentOrganization() !== null;
 
-        return view('organizations.register', compact('officerValidationPending'));
+        return view('organizations.register', compact('officerValidationPending', 'alreadyLinkedToOrganization'));
     }
 
     public function storeRegistration(Request $request)
@@ -223,7 +231,7 @@ class OrganizationController extends Controller
             'organization_type' => ['required', 'in:co_curricular,extra_curricular'],
             'purpose' => ['required', 'string'],
             'school' => $this->schoolRules($request),
-            'requirements' => ['nullable', 'array'],
+            'requirements' => ['required', 'array', 'min:1'],
             'requirements.*' => ['string', Rule::in(self::REGISTRATION_REQUIREMENT_KEYS)],
             'requirements_other' => [
                 Rule::requiredIf(fn () => in_array('others', $request->input('requirements', []) ?? [], true)),
@@ -232,7 +240,10 @@ class OrganizationController extends Controller
                 'max:255',
             ],
             'requirement_files' => ['nullable', 'array'],
-        ], $this->requirementFileRules($request, self::REGISTRATION_REQUIREMENT_KEYS)));
+        ], $this->requirementFileRules($request, self::REGISTRATION_REQUIREMENT_KEYS)), [
+            'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
+            'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
+        ]);
 
         $validated['contact_no'] = $this->normalizePhilippineContactNo($validated['contact_no']);
 
@@ -299,8 +310,9 @@ class OrganizationController extends Controller
         }
 
         $officerValidationPending = $request->user() && ! $request->user()->isOfficerValidated();
+        $renewalBlockedNoOrganization = $organization === null;
 
-        return view('organizations.renew', compact('organization', 'schoolCodeDefault', 'officerValidationPending'));
+        return view('organizations.renew', compact('organization', 'schoolCodeDefault', 'officerValidationPending', 'renewalBlockedNoOrganization'));
     }
 
     public function storeRenewal(Request $request)
@@ -334,7 +346,7 @@ class OrganizationController extends Controller
             'purpose' => ['required', 'string'],
             'organization_type' => ['required', 'in:co_curricular,extra_curricular'],
             'school' => $this->schoolRules($request),
-            'requirements' => ['nullable', 'array'],
+            'requirements' => ['required', 'array', 'min:1'],
             'requirements.*' => ['string', Rule::in(self::RENEWAL_REQUIREMENT_KEYS)],
             'requirements_other' => [
                 Rule::requiredIf(fn () => in_array('others', $request->input('requirements', []) ?? [], true)),
@@ -343,7 +355,10 @@ class OrganizationController extends Controller
                 'max:255',
             ],
             'requirement_files' => ['nullable', 'array'],
-        ], $this->requirementFileRules($request, self::RENEWAL_REQUIREMENT_KEYS)));
+        ], $this->requirementFileRules($request, self::RENEWAL_REQUIREMENT_KEYS)), [
+            'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
+            'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
+        ]);
 
         $validated['contact_no'] = $this->normalizePhilippineContactNo($validated['contact_no']);
 
@@ -410,12 +425,64 @@ class OrganizationController extends Controller
                 ->with('error', $profileEditBlockedMessage);
         }
 
+        [$activeApplication, $applicationTypeLabel] = $this->resolveProfileActiveApplication($organization);
+        $applicationWorkflowStatus = $this->workflowStatusFromApplication($activeApplication);
+
         return view('organizations.profile', [
             'organization' => $organization,
             'editing' => (bool) ($request->query('edit') && $canEditProfile && $organization),
             'canEditProfile' => $organization ? $canEditProfile : false,
             'profileEditBlockedMessage' => $organization ? $profileEditBlockedMessage : '',
+            'activeApplication' => $activeApplication,
+            'applicationTypeLabel' => $applicationTypeLabel,
+            'applicationWorkflowStatus' => $applicationWorkflowStatus,
         ]);
+    }
+
+    /**
+     * @return array{0: OrganizationRegistration|OrganizationRenewal|null, 1: string|null}
+     */
+    private function resolveProfileActiveApplication(?Organization $organization): array
+    {
+        if (! $organization) {
+            return [null, null];
+        }
+
+        $registration = $organization->registrations()
+            ->latest('submission_date')
+            ->latest('id')
+            ->first();
+
+        $renewal = $organization->renewals()
+            ->latest('submission_date')
+            ->latest('id')
+            ->first();
+
+        $renTs = $renewal?->submission_date?->timestamp ?? 0;
+        $regTs = $registration?->submission_date?->timestamp ?? 0;
+
+        if ($renewal && (! $registration || $renTs >= $regTs)) {
+            return [$renewal, 'Renewal'];
+        }
+
+        if ($registration) {
+            return [$registration, 'New registration'];
+        }
+
+        return [null, null];
+    }
+
+    private function workflowStatusFromApplication(OrganizationRegistration|OrganizationRenewal|null $application): ?string
+    {
+        if (! $application) {
+            return null;
+        }
+
+        if ($application instanceof OrganizationRenewal) {
+            return $application->renewal_status;
+        }
+
+        return $application->registration_status;
     }
 
     public function updateProfile(Request $request)

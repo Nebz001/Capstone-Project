@@ -7,7 +7,7 @@ export function initOrganizationTypeSchoolToggle() {
     );
 
     forms.forEach((form) => {
-        if (form.dataset.officerValidationPending === "true") {
+        if (form.dataset.orgFormBlocked === "true") {
             return;
         }
 

@@ -23,7 +23,7 @@ $portalModules = [
 'title' => 'Activity Request',
 'description' => 'File activity and event-related requests with complete document attachments.',
 'action' => 'Request activity',
-'href' => route('organizations.activity-calendar-submission'),
+'href' => route('organizations.activity-submission'),
 'icon' => 'AR',
 ],
 ];
@@ -147,7 +147,7 @@ $portalModules = [
         <h3 class="mt-4 text-base font-semibold text-slate-900">Activity Request</h3>
         <p class="mt-2 flex-1 text-sm leading-6 text-slate-600">File activity and event-related requests with complete document attachments.</p>
         <a
-          href="{{ route('organizations.activity-calendar-submission') }}"
+          href="{{ route('organizations.activity-submission') }}"
           class="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-[#003E9F] transition-all hover:gap-2.5 hover:text-[#00327F]">
           Request activity
           <svg class="h-4 w-4 flex-none" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
