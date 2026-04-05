@@ -94,6 +94,50 @@
         @if ($organization && ! $editing && ! $canEditProfile)
             <x-feedback.blocked-message :message="$profileEditBlockedMessage" class="mt-4" />
         @endif
+<<<<<<< HEAD
+=======
+
+        @if ($organization && ! $editing && $organization->isProfileRevisionRequested())
+            @php
+                $revReg = $revisionRegistration ?? null;
+                $revisionFeedbackBlocks = [];
+                if ($revReg) {
+                    if (filled($revReg->additional_remarks)) {
+                        $revisionFeedbackBlocks['General remarks'] = $revReg->additional_remarks;
+                    }
+                    if (filled($revReg->revision_comment_application)) {
+                        $revisionFeedbackBlocks['Application Information'] = $revReg->revision_comment_application;
+                    }
+                    if (filled($revReg->revision_comment_contact)) {
+                        $revisionFeedbackBlocks['Contact Information'] = $revReg->revision_comment_contact;
+                    }
+                    if (filled($revReg->revision_comment_organizational)) {
+                        $revisionFeedbackBlocks['Organizational Details'] = $revReg->revision_comment_organizational;
+                    }
+                    if (filled($revReg->revision_comment_requirements)) {
+                        $revisionFeedbackBlocks['Requirements Attached'] = $revReg->revision_comment_requirements;
+                    }
+                }
+            @endphp
+            <x-feedback.blocked-message variant="warning" class="mt-4">
+                <p class="font-semibold">Profile information — For revision</p>
+                <p class="mt-1 text-sm font-normal">SDAO has requested updates to your organization profile. Use <strong>Edit Profile</strong> to correct the sections noted below and save your changes.</p>
+                @if (count($revisionFeedbackBlocks) > 0)
+                    <div class="mt-4 space-y-3">
+                        @foreach ($revisionFeedbackBlocks as $sectionTitle => $sectionBody)
+                            <div class="rounded-lg border border-yellow-200/90 bg-white/60 px-3 py-3">
+                                <p class="text-xs font-bold uppercase tracking-wide text-yellow-950">{{ $sectionTitle }}</p>
+                                <p class="mt-1.5 whitespace-pre-wrap text-sm font-normal leading-relaxed text-yellow-950/90">{{ $sectionBody }}</p>
+                            </div>
+                        @endforeach
+                    </div>
+                @elseif (filled($organization->profile_revision_notes))
+                    <p class="mt-3 text-sm font-semibold text-yellow-900">Instructions from SDAO</p>
+                    <p class="mt-1 whitespace-pre-wrap text-sm font-normal text-yellow-900/90">{{ $organization->profile_revision_notes }}</p>
+                @endif
+            </x-feedback.blocked-message>
+        @endif
+>>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
     </header>
 
     @if (session('success'))
@@ -206,6 +250,7 @@
                                     <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $applicationNotes ? trim($applicationNotes) : '—' }}</p>
                                 </div>
                             </div>
+<<<<<<< HEAD
                         </div>
                     </x-ui.card>
                 </section>
@@ -230,6 +275,28 @@
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact email</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_email ?? '—' }}</p>
                                 </div>
+=======
+                            <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Profile information (SDAO)</p>
+                                <div class="mt-2">
+                                    @if ($organization->isProfileRevisionRequested())
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-900">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-orange-500" aria-hidden="true"></span>
+                                            For revision
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                            No revision request
+                                        </span>
+                                    @endif
+                                </div>
+                            </div>
+                            <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last Updated</p>
+                                <p class="mt-2 text-sm font-semibold text-slate-900">
+                                    {{ $organization->updated_at?->format('F j, Y — g:i A') ?? '—' }}
+                                </p>
+>>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
                             </div>
                         </div>
                     </x-ui.card>
@@ -288,6 +355,15 @@
             </div>
 
         @else
+
+            @if ($organization->isProfileRevisionRequested())
+                <x-feedback.blocked-message variant="warning" class="mb-6">
+                    <p class="font-semibold">You are editing under an SDAO revision request</p>
+                    @if (filled($organization->profile_revision_notes))
+                        <p class="mt-2 whitespace-pre-wrap text-sm font-normal text-yellow-900/90">{{ $organization->profile_revision_notes }}</p>
+                    @endif
+                </x-feedback.blocked-message>
+            @endif
 
             <form method="POST" action="{{ route('organizations.profile.update') }}" class="space-y-6">
                 @csrf

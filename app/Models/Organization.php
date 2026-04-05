@@ -47,19 +47,39 @@ class Organization extends Model
         return $this->normalizedOrganizationStatus() === 'PENDING';
     }
 
+    /**
+     * SDAO has asked the officer to update organization profile fields (separate from accreditation status).
+     */
+    public function isProfileRevisionRequested(): bool
+    {
+        return (bool) $this->profile_information_revision_requested;
+    }
+
+    /**
+     * Officers may edit organization profile only when SDAO has opened a profile revision window.
+     * Revision must take precedence over "pending" accreditation so corrections can be made when requested.
+     */
     public function canEditProfile(): bool
     {
+        if ($this->isProfileRevisionRequested()) {
+            return true;
+        }
+
         if ($this->isOrganizationPending()) {
             return false;
         }
 
-        return (bool) $this->profile_information_revision_requested;
+        return false;
     }
 
     public function profileEditBlockedMessage(): string
     {
+        if ($this->isProfileRevisionRequested()) {
+            return '';
+        }
+
         if ($this->isOrganizationPending()) {
-            return 'Profile editing is unavailable while your organization is under pending review.';
+            return 'Profile editing is unavailable while your organization is under pending review, unless SDAO requests profile updates.';
         }
 
         return 'You can only edit this profile when SDAO requests revisions to your organization information.';

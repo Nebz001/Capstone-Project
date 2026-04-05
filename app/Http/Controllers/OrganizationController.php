@@ -425,17 +425,32 @@ class OrganizationController extends Controller
                 ->with('error', $profileEditBlockedMessage);
         }
 
+<<<<<<< HEAD
         [$activeApplication, $applicationTypeLabel] = $this->resolveProfileActiveApplication($organization);
         $applicationWorkflowStatus = $this->workflowStatusFromApplication($activeApplication);
+=======
+        $revisionRegistration = null;
+        if ($organization && $organization->isProfileRevisionRequested()) {
+            $revisionRegistration = $organization->registrations()
+                ->where('registration_status', 'REVISION')
+                ->latest('updated_at')
+                ->latest('id')
+                ->first();
+        }
+>>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
 
         return view('organizations.profile', [
             'organization' => $organization,
             'editing' => (bool) ($request->query('edit') && $canEditProfile && $organization),
             'canEditProfile' => $organization ? $canEditProfile : false,
             'profileEditBlockedMessage' => $organization ? $profileEditBlockedMessage : '',
+<<<<<<< HEAD
             'activeApplication' => $activeApplication,
             'applicationTypeLabel' => $applicationTypeLabel,
             'applicationWorkflowStatus' => $applicationWorkflowStatus,
+=======
+            'revisionRegistration' => $revisionRegistration,
+>>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
         ]);
     }
 
