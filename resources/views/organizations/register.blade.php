@@ -11,7 +11,7 @@
   $registrationFormBlocked = $officerValidationPending || $sessionErrorBlocksForm || $alreadyLinkedToOrganization;
 @endphp
 
-<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-10">
+<div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   {{-- ── Page Header ──────────────────────────────────────────────── --}}
   <header class="mb-8">
@@ -82,18 +82,20 @@
         :helper-html="true"
         content-padding="px-6" />
       <div class="px-6 py-6">
-        <div class="max-w-xs">
-          <x-forms.label for="academic_year" required>Academic Year</x-forms.label>
-          <x-forms.input
-            id="academic_year"
-            name="academic_year"
-            type="text"
-            inputmode="text"
-            placeholder="e.g., 2025-2026"
-            :value="old('academic_year')"
-            required />
-          <x-forms.helper>Use the format shown in the example.</x-forms.helper>
-          @error('academic_year') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <x-forms.label for="academic_year" required>Academic Year</x-forms.label>
+            <x-forms.input
+              id="academic_year"
+              name="academic_year"
+              type="text"
+              inputmode="text"
+              placeholder="e.g., 2025-2026"
+              :value="old('academic_year')"
+              required />
+            <x-forms.helper>Use the format shown in the example.</x-forms.helper>
+            @error('academic_year') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+          </div>
         </div>
       </div>
     </x-ui.card>
@@ -252,12 +254,12 @@
           @enderror
           <p class="requirements-section-client-error hidden text-xs font-medium text-rose-600" role="alert"></p>
         </div>
-        <div class="rounded-2xl border border-slate-200 bg-slate-100 p-4 sm:p-5">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-6">
           <p class="text-sm font-medium text-slate-900">
             New Registration Requirements <span class="text-rose-600" aria-hidden="true">*</span>
             <span class="sr-only">(required)</span>
           </p>
-          <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
             <x-organizations.requirement-item
               checkbox-id="req_letter_intent"
               value="letter_of_intent"

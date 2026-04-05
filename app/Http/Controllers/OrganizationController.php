@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
+use App\Models\ActivityCalendarEntry;
+use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
 use App\Models\Organization;
 use App\Models\OrganizationOfficer;
@@ -165,9 +167,59 @@ class OrganizationController extends Controller
         return '0'.$digits;
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        return view('organizations.index');
+        $calendarEvents = [];
+        $user = $request->user();
+        if ($user) {
+            $organization = $user->currentOrganization();
+            if ($organization) {
+                $calendarEvents = $this->buildOrganizationDashboardCalendarEvents($organization);
+            }
+        }
+
+        return view('organizations.index', [
+            'calendarEvents' => $calendarEvents,
+        ]);
+    }
+
+    /**
+     * @return list<array{title: string, start: string, end: string|null, status: string, time: string|null, venue: string|null}>
+     */
+    private function buildOrganizationDashboardCalendarEvents(Organization $organization): array
+    {
+        $events = [];
+
+        $proposals = $organization->activityProposals()
+            ->whereNotNull('proposed_start_date')
+            ->orderBy('proposed_start_date')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($proposals as $proposal) {
+            $start = $proposal->proposed_start_date->toDateString();
+
+            $end = null;
+            if ($proposal->proposed_end_date) {
+                if ($proposal->proposed_end_date->gt($proposal->proposed_start_date)) {
+                    $end = $proposal->proposed_end_date->copy()->addDay()->toDateString();
+                }
+            }
+
+            $normalizedStatus = strtoupper((string) ($proposal->proposal_status ?? 'PENDING'));
+            $calendarStatus = $normalizedStatus === 'APPROVED' ? 'scheduled' : 'pending';
+
+            $events[] = [
+                'title' => (string) $proposal->activity_title,
+                'start' => $start,
+                'end' => $end,
+                'status' => $calendarStatus,
+                'time' => $proposal->proposed_time ? (string) $proposal->proposed_time : null,
+                'venue' => $proposal->venue ? (string) $proposal->venue : null,
+            ];
+        }
+
+        return $events;
     }
 
     public function manage()
@@ -425,10 +477,9 @@ class OrganizationController extends Controller
                 ->with('error', $profileEditBlockedMessage);
         }
 
-<<<<<<< HEAD
         [$activeApplication, $applicationTypeLabel] = $this->resolveProfileActiveApplication($organization);
         $applicationWorkflowStatus = $this->workflowStatusFromApplication($activeApplication);
-=======
+
         $revisionRegistration = null;
         if ($organization && $organization->isProfileRevisionRequested()) {
             $revisionRegistration = $organization->registrations()
@@ -437,20 +488,16 @@ class OrganizationController extends Controller
                 ->latest('id')
                 ->first();
         }
->>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
 
         return view('organizations.profile', [
             'organization' => $organization,
             'editing' => (bool) ($request->query('edit') && $canEditProfile && $organization),
             'canEditProfile' => $organization ? $canEditProfile : false,
             'profileEditBlockedMessage' => $organization ? $profileEditBlockedMessage : '',
-<<<<<<< HEAD
             'activeApplication' => $activeApplication,
             'applicationTypeLabel' => $applicationTypeLabel,
             'applicationWorkflowStatus' => $applicationWorkflowStatus,
-=======
             'revisionRegistration' => $revisionRegistration,
->>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
         ]);
     }
 
@@ -587,41 +634,177 @@ class OrganizationController extends Controller
 
         $validated = $request->validate([
             'academic_year' => ['required', 'string', 'max:50'],
-            'semester' => ['required', 'string', 'max:50'],
-            'calendar_file' => ['required', 'file', 'mimes:pdf,doc,docx,xls,xlsx', 'max:10240'],
+            'term' => ['required', 'string', Rule::in(['term_1', 'term_2', 'term_3'])],
+            'organization_name' => ['required', 'string', 'max:255'],
+            'date_submitted' => ['required', 'date'],
+            'activities' => ['required', 'array', 'min:5'],
+            'activities.*.date' => ['required', 'date'],
+            'activities.*.name' => ['required', 'string', 'max:500'],
+            'activities.*.sdg' => ['required', 'string', 'max:64'],
+            'activities.*.venue' => ['required', 'string', 'max:255'],
+            'activities.*.participant_program' => ['required', 'string', 'max:2000'],
+            'activities.*.budget' => ['required', 'string', 'max:255'],
+        ], [
+            'activities.min' => 'Add at least five activities before submitting the activity calendar.',
         ]);
 
         $hasPendingSubmission = ActivityCalendar::query()
             ->where('organization_id', $organization->id)
             ->where('academic_year', $validated['academic_year'])
-            ->where('semester', $validated['semester'])
+            ->where('semester', $validated['term'])
             ->where('calendar_status', 'PENDING')
             ->exists();
 
         if ($hasPendingSubmission) {
             return back()
                 ->withErrors([
-                    'academic_year' => 'A pending activity calendar already exists for this academic year and semester.',
+                    'academic_year' => 'A pending activity calendar already exists for this academic year and term.',
                 ])
                 ->withInput();
         }
 
-        $calendarFilePath = $request->file('calendar_file')->store(
-            'activity-calendars/'.$organization->id,
-            'public'
-        );
+        DB::transaction(function () use ($organization, $validated): void {
+            $calendar = ActivityCalendar::create([
+                'organization_id' => $organization->id,
+                'submitted_organization_name' => $validated['organization_name'],
+                'academic_year' => $validated['academic_year'],
+                'semester' => $validated['term'],
+                'calendar_file' => null,
+                'submission_date' => $validated['date_submitted'],
+                'calendar_status' => 'PENDING',
+            ]);
 
-        ActivityCalendar::create([
-            'organization_id' => $organization->id,
-            'academic_year' => $validated['academic_year'],
-            'semester' => $validated['semester'],
-            'calendar_file' => $calendarFilePath,
-            'submission_date' => now()->toDateString(),
-        ]);
+            foreach ($validated['activities'] as $row) {
+                ActivityCalendarEntry::query()->create([
+                    'activity_calendar_id' => $calendar->id,
+                    'activity_date' => $row['date'],
+                    'activity_name' => $row['name'],
+                    'sdg' => $row['sdg'],
+                    'venue' => $row['venue'],
+                    'participant_program' => $row['participant_program'],
+                    'budget' => $row['budget'],
+                ]);
+            }
+        });
 
         return redirect()
             ->route('organizations.activity-calendar-submission')
             ->with('success', 'Activity calendar submitted successfully.');
+    }
+
+    // ── Activity Proposal Submission ──────────────────────────
+
+    public function showActivityProposalSubmission(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $activeOfficer = $this->resolveActiveOfficer($request);
+        $organization = $activeOfficer
+            ? Organization::query()->find($activeOfficer->organization_id)
+            : null;
+
+        if (! $organization) {
+            return redirect()
+                ->route('organizations.profile')
+                ->with('error', 'Your account is not linked to an active organization.');
+        }
+
+        return view('organizations.activity-proposal-submission', [
+            'organization' => $organization,
+            'schoolOptions' => self::SCHOOL_CODE_LABELS,
+            'schoolPrefill' => $this->schoolCodeFromDepartment($organization->college_department),
+            'officerValidationPending' => ! $user->isOfficerValidated(),
+        ]);
+    }
+
+    public function storeActivityProposalSubmission(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $activeOfficer = $this->resolveActiveOfficer($request);
+        $organization = $activeOfficer
+            ? Organization::query()->find($activeOfficer->organization_id)
+            : null;
+
+        if (! $organization) {
+            return redirect()
+                ->route('organizations.profile')
+                ->with('error', 'Your account is not linked to an active organization.');
+        }
+
+        if (! $user->isOfficerValidated()) {
+            return redirect()
+                ->route('organizations.activity-proposal-submission')
+                ->with('error', 'Your student officer account is pending SDAO validation.');
+        }
+
+        $validated = $request->validate([
+            'organization_name' => ['required', 'string', 'max:255'],
+            'organization_logo' => ['required', 'file', 'image', 'max:5120'],
+            'school' => ['required', 'string', Rule::in(array_keys(self::SCHOOL_CODE_LABELS))],
+            'department_program' => ['required', 'string', 'max:255'],
+            'academic_year' => ['required', 'string', 'max:50'],
+            'project_activity_title' => ['required', 'string', 'max:200'],
+            'proposed_start_date' => ['required', 'date'],
+            'proposed_end_date' => ['required', 'date', 'after_or_equal:proposed_start_date'],
+            'proposed_time' => ['required', 'string', 'max:32'],
+            'venue' => ['required', 'string', 'max:255'],
+            'overall_goal' => ['required', 'string', 'max:5000'],
+            'specific_objectives' => ['required', 'string', 'max:5000'],
+            'criteria_mechanics' => ['required', 'string', 'max:5000'],
+            'program_flow' => ['required', 'string', 'max:5000'],
+            'proposed_budget' => ['required', 'numeric', 'min:0'],
+            'source_of_funding' => ['required', 'string', 'max:255'],
+            'materials_supplies' => ['required', 'numeric', 'min:0'],
+            'food_beverage' => ['required', 'numeric', 'min:0'],
+            'other_expenses' => ['required', 'numeric', 'min:0'],
+            'resume_resource_persons' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:10240'],
+        ], [
+            'proposed_end_date.after_or_equal' => 'The proposed end date must be on or after the start date.',
+        ]);
+
+        $basePath = 'activity-proposals/'.$organization->id;
+
+        $logoPath = $request->file('organization_logo')->store($basePath, 'public');
+        $resumePath = null;
+        if ($request->hasFile('resume_resource_persons')) {
+            $resumePath = $request->file('resume_resource_persons')->store($basePath, 'public');
+        }
+
+        $summary = mb_substr(trim(strip_tags($validated['overall_goal'])), 0, 500);
+
+        ActivityProposal::create([
+            'organization_id' => $organization->id,
+            'calendar_id' => null,
+            'user_id' => $user->id,
+            'form_organization_name' => $validated['organization_name'],
+            'organization_logo_path' => $logoPath,
+            'school_code' => $validated['school'],
+            'department_program' => $validated['department_program'],
+            'academic_year' => $validated['academic_year'],
+            'activity_title' => $validated['project_activity_title'],
+            'activity_description' => $summary !== '' ? $summary : null,
+            'proposed_start_date' => $validated['proposed_start_date'],
+            'proposed_end_date' => $validated['proposed_end_date'],
+            'proposed_time' => $validated['proposed_time'],
+            'venue' => $validated['venue'],
+            'overall_goal' => $validated['overall_goal'],
+            'specific_objectives' => $validated['specific_objectives'],
+            'criteria_mechanics' => $validated['criteria_mechanics'],
+            'program_flow' => $validated['program_flow'],
+            'estimated_budget' => $validated['proposed_budget'],
+            'source_of_funding' => $validated['source_of_funding'],
+            'budget_materials_supplies' => $validated['materials_supplies'],
+            'budget_food_beverage' => $validated['food_beverage'],
+            'budget_other_expenses' => $validated['other_expenses'],
+            'resume_resource_persons_path' => $resumePath,
+            'submission_date' => now()->toDateString(),
+            'proposal_status' => 'PENDING',
+        ]);
+
+        return redirect()
+            ->route('organizations.activity-proposal-submission')
+            ->with('success', 'Activity proposal submitted successfully.');
     }
 
     // ── After Activity Report ─────────────────────────────────

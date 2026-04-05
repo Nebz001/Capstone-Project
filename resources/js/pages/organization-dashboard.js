@@ -6,9 +6,18 @@ export function initOrganizationDashboard() {
     if (!el) return;
 
     const statusColors = {
-        approved:  { bg: '#d1fae5', border: '#34d399', text: '#065f46', label: 'Approved' },
-        pending:   { bg: '#fef3c7', border: '#fbbf24', text: '#78350f', label: 'Pending Approval' },
-        scheduled: { bg: '#dbeafe', border: '#60a5fa', text: '#1e3a8a', label: 'Scheduled' },
+        pending: {
+            bg: '#fef3c7',
+            border: '#fbbf24',
+            text: '#78350f',
+            label: 'Pending for Approval',
+        },
+        scheduled: {
+            bg: '#dbeafe',
+            border: '#60a5fa',
+            text: '#1e3a8a',
+            label: 'Scheduled',
+        },
     };
 
     const jsonEl = document.getElementById('calendar-events-data');
@@ -18,7 +27,8 @@ export function initOrganizationDashboard() {
     }
 
     const mapped = events.map(e => {
-        const colors = statusColors[e.status] || statusColors.scheduled;
+        const key = e.status === 'approved' ? 'scheduled' : e.status;
+        const colors = statusColors[key] || statusColors.pending;
         return {
             title: e.title,
             start: e.start,
@@ -53,7 +63,8 @@ export function initOrganizationDashboard() {
         removePopover();
 
         const { title, start, end, extendedProps } = info.event;
-        const colors = statusColors[extendedProps.status] || statusColors.scheduled;
+        const key = extendedProps.status === 'approved' ? 'scheduled' : extendedProps.status;
+        const colors = statusColors[key] || statusColors.pending;
 
         const startStr = formatDate(start?.toISOString().split('T')[0]);
         let dateDisplay = startStr;

@@ -44,7 +44,7 @@
         : null;
 @endphp
 
-<div class="mx-auto max-w-4xl px-4 pb-24 pt-8 sm:px-6 lg:px-10">
+<div class="mx-auto max-w-screen-2xl px-4 py-8 pb-24 sm:px-6 lg:px-10">
 
     <header class="mb-8">
         <a href="{{ route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
@@ -94,8 +94,6 @@
         @if ($organization && ! $editing && ! $canEditProfile)
             <x-feedback.blocked-message :message="$profileEditBlockedMessage" class="mt-4" />
         @endif
-<<<<<<< HEAD
-=======
 
         @if ($organization && ! $editing && $organization->isProfileRevisionRequested())
             @php
@@ -137,7 +135,6 @@
                 @endif
             </x-feedback.blocked-message>
         @endif
->>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
     </header>
 
     @if (session('success'))
@@ -184,9 +181,9 @@
                             <h2 id="profile-section-status-heading" class="text-base font-bold text-slate-900">Status Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Accreditation status managed by SDAO.</p>
                         </div>
-                        <div class="bg-white px-6 pt-6 pb-10">
-                            <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                        <div class="bg-white px-6 py-6">
+                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Status</p>
                                     <div class="mt-2">
                                         <span class="inline-flex items-center gap-1.5 rounded-full border {{ $color['border'] }} {{ $color['bg'] }} px-3 py-1 text-xs font-semibold {{ $color['text'] }}">
@@ -195,20 +192,20 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last Updated</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">
                                         {{ $organization->updated_at?->format('F j, Y — g:i A') ?? '—' }}
                                     </p>
                                 </div>
                                 @if ($workflowDisplay)
-                                    <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
                                         <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Latest application review status</p>
                                         <p class="mt-2 text-sm font-semibold text-slate-900">{{ $workflowDisplay }}</p>
                                     </div>
                                 @endif
                                 @if ($organization->profile_revision_notes)
-                                    <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
                                         <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">SDAO remarks / revision notes</p>
                                         <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $organization->profile_revision_notes }}</p>
                                     </div>
@@ -229,28 +226,27 @@
                             <h2 id="profile-section-registration-heading" class="text-base font-bold text-slate-900">Registration Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Details from your latest registration or renewal submission.</p>
                         </div>
-                        <div class="bg-white px-6 pt-6 pb-10">
-                            <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                        <div class="bg-white px-6 py-6">
+                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Application type</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $applicationTypeLabel ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Academic year</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->academic_year ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission date</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">
                                         {{ $activeApplication?->submission_date?->format('F j, Y') ?? '—' }}
                                     </p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission notes</p>
                                     <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $applicationNotes ? trim($applicationNotes) : '—' }}</p>
                                 </div>
                             </div>
-<<<<<<< HEAD
                         </div>
                     </x-ui.card>
                 </section>
@@ -261,42 +257,20 @@
                             <h2 id="profile-section-contact-heading" class="text-base font-bold text-slate-900">Contact Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Contact person on file for your latest application.</p>
                         </div>
-                        <div class="bg-white px-6 pt-6 pb-10">
-                            <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                        <div class="bg-white px-6 py-6">
+                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact person</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_person ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact number</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_no ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact email</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_email ?? '—' }}</p>
                                 </div>
-=======
-                            <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Profile information (SDAO)</p>
-                                <div class="mt-2">
-                                    @if ($organization->isProfileRevisionRequested())
-                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-900">
-                                            <span class="h-1.5 w-1.5 rounded-full bg-orange-500" aria-hidden="true"></span>
-                                            For revision
-                                        </span>
-                                    @else
-                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                                            No revision request
-                                        </span>
-                                    @endif
-                                </div>
-                            </div>
-                            <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last Updated</p>
-                                <p class="mt-2 text-sm font-semibold text-slate-900">
-                                    {{ $organization->updated_at?->format('F j, Y — g:i A') ?? '—' }}
-                                </p>
->>>>>>> 3f926399ec68102d32de06d8f5777e3c69b0c1d9
                             </div>
                         </div>
                     </x-ui.card>
@@ -308,27 +282,27 @@
                             <h2 id="profile-section-org-details-heading" class="text-base font-bold text-slate-900">Organization Details</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Core information about your organization.</p>
                         </div>
-                        <div class="bg-white px-6 pt-6 pb-10">
-                            <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                        <div class="bg-white px-6 py-6">
+                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Name</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->organization_name }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Type</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $typeLabels[$organization->organization_type] ?? $organization->organization_type }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">College / Department</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->college_department }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Founded Date</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">
                                         {{ $organization->founded_date?->format('F j, Y') ?? '—' }}
                                     </p>
                                 </div>
-                                <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:col-span-2">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Purpose</p>
                                     <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $organization->purpose ?? '—' }}</p>
                                 </div>
@@ -343,8 +317,8 @@
                             <h2 id="profile-section-adviser-heading" class="text-base font-bold text-slate-900">Adviser Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Faculty adviser assigned to this organization.</p>
                         </div>
-                        <div class="bg-white px-6 pt-6 pb-10">
-                            <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:max-w-xl">
+                        <div class="bg-white px-6 py-6">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Adviser Name</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->adviser_name ?? '—' }}</p>
                             </div>
@@ -375,8 +349,8 @@
                             <h2 id="profile-edit-section-status-heading" class="text-base font-bold text-slate-900">Status Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Read-only — managed by SDAO.</p>
                         </div>
-                        <div class="bg-white px-6 pt-6 pb-10">
-                            <div class="rounded-xl border border-slate-100 bg-slate-50/90 p-4 sm:p-5 sm:max-w-md">
+                        <div class="bg-white px-6 py-6">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Status</p>
                                 <div class="mt-2">
                                     <span class="inline-flex items-center gap-1.5 rounded-full border {{ $color['border'] }} {{ $color['bg'] }} px-3 py-1 text-xs font-semibold {{ $color['text'] }}">
@@ -400,7 +374,7 @@
                             <h2 id="profile-edit-section-org-details-heading" class="text-base font-bold text-slate-900">Organization Details</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update your organization’s core information.</p>
                         </div>
-                    <div class="bg-white px-6 pt-6 pb-10">
+                    <div class="bg-white px-6 py-6">
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                             <div>
                                 <x-forms.label for="organization_name" required>Organization Name</x-forms.label>
@@ -467,23 +441,25 @@
                             <h2 id="profile-edit-section-adviser-heading" class="text-base font-bold text-slate-900">Adviser Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update the faculty adviser for this organization.</p>
                         </div>
-                        <div class="bg-white px-6 pt-6 pb-10">
-                            <div class="max-w-xl">
-                                <x-forms.label for="adviser_name">Adviser Name</x-forms.label>
-                                <x-forms.input
-                                    id="adviser_name"
-                                    name="adviser_name"
-                                    type="text"
-                                    placeholder="e.g., Prof. Juan Dela Cruz"
-                                    :value="old('adviser_name', $organization->adviser_name)"
-                                />
-                                @error('adviser_name') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+                        <div class="bg-white px-6 py-6">
+                            <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                <div>
+                                    <x-forms.label for="adviser_name">Adviser Name</x-forms.label>
+                                    <x-forms.input
+                                        id="adviser_name"
+                                        name="adviser_name"
+                                        type="text"
+                                        placeholder="e.g., Prof. Juan Dela Cruz"
+                                        :value="old('adviser_name', $organization->adviser_name)"
+                                    />
+                                    @error('adviser_name') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+                                </div>
                             </div>
                         </div>
                     </x-ui.card>
                 </section>
 
-                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                     <a
                         href="{{ route('organizations.profile') }}"
                         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"

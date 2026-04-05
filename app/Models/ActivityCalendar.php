@@ -10,6 +10,7 @@ class ActivityCalendar extends Model
 {
     protected $fillable = [
         'organization_id',
+        'submitted_organization_name',
         'academic_year',
         'semester',
         'calendar_file',
@@ -32,5 +33,10 @@ class ActivityCalendar extends Model
     public function activityProposals(): HasMany
     {
         return $this->hasMany(ActivityProposal::class, 'calendar_id');
+    }
+
+    public function entries(): HasMany
+    {
+        return $this->hasMany(ActivityCalendarEntry::class)->orderBy('activity_date')->orderBy('id');
     }
 }

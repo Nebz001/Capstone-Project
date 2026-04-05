@@ -9,7 +9,7 @@
     $fileClass = 'block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
 @endphp
 
-<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-10">
+<div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
     <header class="mb-8">
         <a href="{{ route('organizations.submit-report') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
@@ -63,8 +63,8 @@
                 content-padding="px-6"
             />
             <div class="px-6 py-6">
-                <div class="grid grid-cols-1 gap-6">
-                    <div>
+                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div class="md:col-span-2">
                         <x-forms.label for="activity_event_title" required>Name of Activity / Event Title</x-forms.label>
                         <x-forms.input
                             id="activity_event_title"
@@ -75,7 +75,7 @@
                         />
                         @error('activity_event_title') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:col-span-2">
                         <div>
                             <x-forms.label for="school" required>School</x-forms.label>
                             <x-forms.select id="school" name="school" required>
@@ -99,7 +99,7 @@
                             @error('department') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                         </div>
                     </div>
-                    <div>
+                    <div class="md:col-span-2">
                         <x-forms.label for="poster_image" required>Poster or Title Image of the Event</x-forms.label>
                         <input
                             id="poster_image"
@@ -124,9 +124,9 @@
                 content-padding="px-6"
             />
             <div class="px-6 py-6">
-                <div class="grid grid-cols-1 gap-6">
+                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
                     @if ($optionalProposals->isNotEmpty())
-                        <div>
+                        <div class="md:col-span-2">
                             <x-forms.label for="proposal_id">Linked activity proposal (optional)</x-forms.label>
                             <x-forms.select id="proposal_id" name="proposal_id">
                                 <option value="">— None —</option>
@@ -139,7 +139,7 @@
                             @error('proposal_id') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                         </div>
                     @endif
-                    <div>
+                    <div class="md:col-span-2">
                         <x-forms.label for="event_name" required>Name of Event</x-forms.label>
                         <x-forms.input
                             id="event_name"
@@ -150,7 +150,7 @@
                         />
                         @error('event_name') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:col-span-2">
                         <div>
                             <x-forms.label for="event_starts_at" required>Date and Time of Event</x-forms.label>
                             <x-forms.input
@@ -274,7 +274,7 @@
                 </div>
                 <div>
                     <x-forms.label for="participants_reached_percent" required>Percentage of Target Participants Reached</x-forms.label>
-                    <div class="mt-2 flex max-w-xs items-center gap-2">
+                    <div class="mt-2 flex max-w-md items-center gap-2">
                         <x-forms.input
                             id="participants_reached_percent"
                             name="participants_reached_percent"
@@ -331,7 +331,7 @@
 
         <x-ui.card padding="p-0">
             <div class="px-6 py-6">
-                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                     <a
                         href="{{ route('organizations.submit-report') }}"
                         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"

@@ -56,15 +56,11 @@
                     </span>
                 </div>
 
-                {{-- Legend --}}
+                {{-- Legend (pending vs finalized / scheduled only) --}}
                 <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-100 px-6 py-3">
                     <span class="flex items-center gap-2 text-xs text-slate-600">
-                        <span class="inline-block h-3 w-3 rounded border-l-[3px] border-emerald-400 bg-emerald-100" aria-hidden="true"></span>
-                        Approved
-                    </span>
-                    <span class="flex items-center gap-2 text-xs text-slate-600">
                         <span class="inline-block h-3 w-3 rounded border-l-[3px] border-amber-400 bg-amber-100" aria-hidden="true"></span>
-                        Pending Approval
+                        Pending for Approval
                     </span>
                     <span class="flex items-center gap-2 text-xs text-slate-600">
                         <span class="inline-block h-3 w-3 rounded border-l-[3px] border-blue-400 bg-blue-100" aria-hidden="true"></span>
@@ -77,31 +73,8 @@
                     <div id="activity-calendar"></div>
                 </div>
 
-                {{--
-                    Event data — passed from the server as JSON.
-                    Replace $calendarEvents below with real data from the controller,
-                    e.g. $calendarEvents = Activity::select('title','start','end','status')->get();
-                --}}
-                @php
-                    $som = now()->startOfMonth();
-                    $calendarEvents = [
-                        ['title' => 'Sportsfest 2025',               'start' => $som->copy()->addDays(1)->toDateString(),  'end' => $som->copy()->addDays(3)->toDateString(),  'status' => 'approved',  'time' => '8:00 AM – 5:00 PM', 'venue' => 'NU Lipa Gymnasium'],
-                        ['title' => 'Leadership Summit',             'start' => $som->copy()->addDays(6)->toDateString(),  'end' => null,                                       'status' => 'pending',   'time' => '9:00 AM – 12:00 PM', 'venue' => 'AVR 3, 5th Floor'],
-                        ['title' => 'Blood Donation Drive',          'start' => $som->copy()->addDays(6)->toDateString(),  'end' => null,                                       'status' => 'approved',  'time' => '8:00 AM – 3:00 PM', 'venue' => 'NU Lipa Lobby'],
-                        ['title' => 'Orientation Seminar',           'start' => $som->copy()->addDays(9)->toDateString(),  'end' => $som->copy()->addDays(10)->toDateString(), 'status' => 'scheduled', 'time' => '1:00 PM – 4:00 PM', 'venue' => 'Auditorium'],
-                        ['title' => 'Poster-Making Contest',         'start' => $som->copy()->addDays(9)->toDateString(),  'end' => null,                                       'status' => 'pending',   'time' => '9:00 AM – 12:00 PM', 'venue' => 'AVR 1, 3rd Floor'],
-                        ['title' => 'Community Outreach',            'start' => $som->copy()->addDays(13)->toDateString(), 'end' => null,                                       'status' => 'approved',  'time' => '6:00 AM – 3:00 PM', 'venue' => 'Brgy. Marawoy, Lipa City'],
-                        ['title' => 'General Assembly',              'start' => $som->copy()->addDays(16)->toDateString(), 'end' => null,                                       'status' => 'pending',   'time' => '10:00 AM – 12:00 PM', 'venue' => 'NU Lipa Auditorium'],
-                        ['title' => 'Campus Clean-Up Drive',         'start' => $som->copy()->addDays(16)->toDateString(), 'end' => null,                                       'status' => 'approved',  'time' => '7:00 AM – 10:00 AM', 'venue' => 'NU Lipa Campus Grounds'],
-                        ['title' => 'Film Screening',                'start' => $som->copy()->addDays(16)->toDateString(), 'end' => null,                                       'status' => 'scheduled', 'time' => '3:00 PM – 5:00 PM', 'venue' => 'AVR 2, 4th Floor'],
-                        ['title' => 'Acquaintance Party',            'start' => $som->copy()->addDays(20)->toDateString(), 'end' => $som->copy()->addDays(21)->toDateString(), 'status' => 'scheduled', 'time' => '6:00 PM – 10:00 PM', 'venue' => 'Function Hall A'],
-                        ['title' => 'Renewal Docs Submission',       'start' => $som->copy()->addDays(24)->toDateString(), 'end' => null,                                       'status' => 'pending',   'time' => '8:00 AM – 5:00 PM', 'venue' => 'SDAO Office, 2nd Floor'],
-                        ['title' => 'Year-End Recognition Ceremony', 'start' => $som->copy()->addDays(27)->toDateString(), 'end' => $som->copy()->addDays(28)->toDateString(), 'status' => 'approved',  'time' => '2:00 PM – 6:00 PM', 'venue' => 'NU Lipa Gymnasium'],
-                        ['title' => 'Debate Tournament Finals',      'start' => $som->copy()->addDays(27)->toDateString(), 'end' => null,                                       'status' => 'pending',   'time' => '9:00 AM – 1:00 PM', 'venue' => 'Auditorium'],
-                    ];
-                @endphp
                 <script id="calendar-events-data" type="application/json">
-                    @json($calendarEvents)
+                    @json($calendarEvents ?? [])
                 </script>
 
             </div>

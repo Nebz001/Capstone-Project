@@ -37,10 +37,33 @@
                 </svg>
             </div>
             <h3 class="mt-4 text-sm font-bold text-slate-900 transition group-hover:text-[#003E9F]">
-                Activity Calendar Submission
+                Activity Calendar
             </h3>
             <p class="mt-1.5 flex-1 text-xs leading-relaxed text-slate-500">
                 Submit your organization&rsquo;s term activity calendar for SDAO review.
+            </p>
+            <span class="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] transition-all duration-150 group-hover:gap-2">
+                Open
+                <svg class="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+            </span>
+        </a>
+
+        <a
+            href="{{ route('organizations.activity-proposal-submission') }}"
+            class="group flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
+        >
+            <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">
+                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                </svg>
+            </div>
+            <h3 class="mt-4 text-sm font-bold text-slate-900 transition group-hover:text-[#003E9F]">
+                Submit Proposal
+            </h3>
+            <p class="mt-1.5 flex-1 text-xs leading-relaxed text-slate-500">
+                Submit a detailed activity proposal with objectives, program flow, and budget for SDAO review.
             </p>
             <span class="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] transition-all duration-150 group-hover:gap-2">
                 Open

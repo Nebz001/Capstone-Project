@@ -35,6 +35,11 @@ Route::prefix('organizations')->name('organizations.')->middleware('auth')->cont
     Route::post('/activity-calendar-submission', 'storeActivityCalendarSubmission')
         ->name('activity-calendar-submission.store');
 
+    Route::get('/activity-proposal-submission', 'showActivityProposalSubmission')
+        ->name('activity-proposal-submission');
+    Route::post('/activity-proposal-submission', 'storeActivityProposalSubmission')
+        ->name('activity-proposal-submission.store');
+
     Route::get('/submit-report', 'showSubmitReportHub')->name('submit-report');
     Route::get('/after-activity-report', 'showAfterActivityReportForm')->name('after-activity-report');
     Route::post('/after-activity-report', 'storeAfterActivityReport')->name('after-activity-report.store');

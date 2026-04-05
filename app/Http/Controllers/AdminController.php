@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
+use App\Models\ActivityCalendarEntry;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
 use App\Models\Organization;
@@ -466,19 +467,34 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $calendar->load('organization');
+        $calendar->load(['organization', 'entries']);
+
+        $termLabels = [
+            'term_1' => 'Term 1',
+            'term_2' => 'Term 2',
+            'term_3' => 'Term 3',
+        ];
+        $termKey = $calendar->semester ?? '';
+        $termLabel = $termLabels[$termKey] ?? ($termKey !== '' ? $termKey : 'N/A');
+
+        $calendarFile = $calendar->calendar_file;
+        $calendarFileDisplay = $calendarFile
+            ? Storage::disk('public')->url($calendarFile)
+            : 'None (activities submitted via form)';
 
         return view('admin.review-show', [
             'pageTitle' => 'Activity Calendar Submission Details',
             'backRoute' => route('admin.calendars.index'),
             'status' => $calendar->calendar_status ?? 'PENDING',
             'details' => [
-                'Organization' => $calendar->organization?->organization_name ?? 'N/A',
+                'Organization (profile)' => $calendar->organization?->organization_name ?? 'N/A',
+                'RSO name (form)' => $calendar->submitted_organization_name ?? 'N/A',
                 'Academic Year' => $calendar->academic_year ?? 'N/A',
-                'Semester' => $calendar->semester ?? 'N/A',
+                'Term' => $termLabel,
                 'Submission Date' => optional($calendar->submission_date)->format('M d, Y') ?? 'N/A',
-                'Calendar File' => $calendar->calendar_file ?? 'N/A',
+                'Calendar File' => $calendarFileDisplay,
             ],
+            'calendarEntries' => $calendar->entries,
         ]);
     }
 
@@ -488,18 +504,51 @@ class AdminController extends Controller
 
         $proposal->load(['organization', 'user']);
 
+        $schoolLabels = [
+            'sace' => 'School of Architecture, Computer and Engineering',
+            'sahs' => 'School of Allied Health and Sciences',
+            'sabm' => 'School of Accounting and Business Management',
+            'shs' => 'Senior High School',
+        ];
+
+        $logoUrl = $proposal->organization_logo_path
+            ? Storage::disk('public')->url($proposal->organization_logo_path)
+            : null;
+        $resumeUrl = $proposal->resume_resource_persons_path
+            ? Storage::disk('public')->url($proposal->resume_resource_persons_path)
+            : null;
+
+        $details = [
+            'Organization (profile)' => $proposal->organization?->organization_name ?? 'N/A',
+            'Submitted By' => $proposal->user?->full_name ?? 'N/A',
+            'Submission Date' => optional($proposal->submission_date)->format('M d, Y') ?? 'N/A',
+            'Organization name (form)' => $proposal->form_organization_name ?? 'N/A',
+            'Academic Year' => $proposal->academic_year ?? 'N/A',
+            'School' => $proposal->school_code ? ($schoolLabels[$proposal->school_code] ?? $proposal->school_code) : 'N/A',
+            'Department / Program' => $proposal->department_program ?? 'N/A',
+            'Organization logo' => $logoUrl ?? 'N/A',
+            'Activity Title' => $proposal->activity_title ?? 'N/A',
+            'Proposed Start' => optional($proposal->proposed_start_date)->format('M d, Y') ?? 'N/A',
+            'Proposed End' => optional($proposal->proposed_end_date)->format('M d, Y') ?? 'N/A',
+            'Proposed Time' => $proposal->proposed_time ?? 'N/A',
+            'Venue' => $proposal->venue ?? 'N/A',
+            'Overall Goal' => $proposal->overall_goal ?? ($proposal->activity_description ?? 'N/A'),
+            'Specific Objectives' => $proposal->specific_objectives ?? 'N/A',
+            'Criteria / Mechanics' => $proposal->criteria_mechanics ?? 'N/A',
+            'Program Flow' => $proposal->program_flow ?? 'N/A',
+            'Proposed Budget (total)' => $proposal->estimated_budget !== null ? number_format((float) $proposal->estimated_budget, 2) : 'N/A',
+            'Source of Funding' => $proposal->source_of_funding ?? 'N/A',
+            'Materials and Supplies' => $proposal->budget_materials_supplies !== null ? number_format((float) $proposal->budget_materials_supplies, 2) : 'N/A',
+            'Food and Beverage' => $proposal->budget_food_beverage !== null ? number_format((float) $proposal->budget_food_beverage, 2) : 'N/A',
+            'Other Expenses' => $proposal->budget_other_expenses !== null ? number_format((float) $proposal->budget_other_expenses, 2) : 'N/A',
+            'Resume (resource persons)' => $resumeUrl ?? 'N/A',
+        ];
+
         return view('admin.review-show', [
             'pageTitle' => 'Activity Proposal Submission Details',
             'backRoute' => route('admin.proposals.index'),
             'status' => $proposal->proposal_status ?? 'PENDING',
-            'details' => [
-                'Organization' => $proposal->organization?->organization_name ?? 'N/A',
-                'Submitted By' => $proposal->user?->full_name ?? 'N/A',
-                'Activity Title' => $proposal->activity_title ?? 'N/A',
-                'Proposed Start' => optional($proposal->proposed_start_date)->format('M d, Y') ?? 'N/A',
-                'Proposed End' => optional($proposal->proposed_end_date)->format('M d, Y') ?? 'N/A',
-                'Submission Date' => optional($proposal->submission_date)->format('M d, Y') ?? 'N/A',
-            ],
+            'details' => $details,
             'organization' => $proposal->organization,
         ]);
     }
@@ -582,29 +631,42 @@ class AdminController extends Controller
                 ];
             });
 
-        $calendarSubmissionEvents = ActivityCalendar::query()
-            ->with('organization')
-            ->latest('submission_date')
+        $termLabels = [
+            'term_1' => 'Term 1',
+            'term_2' => 'Term 2',
+            'term_3' => 'Term 3',
+        ];
+
+        $calendarActivityEvents = ActivityCalendarEntry::query()
+            ->with(['activityCalendar.organization'])
+            ->orderBy('activity_date')
+            ->orderBy('id')
             ->get()
-            ->map(function (ActivityCalendar $calendar): array {
+            ->map(function (ActivityCalendarEntry $entry) use ($termLabels): array {
+                $calendar = $entry->activityCalendar;
+                $orgName = $calendar->submitted_organization_name
+                    ?: ($calendar->organization?->organization_name ?? 'N/A');
+                $termKey = $calendar->semester ?? '';
+                $termLabel = $termLabels[$termKey] ?? ($termKey !== '' ? $termKey : 'N/A');
+
                 return [
-                    'title' => 'Calendar Submission: '.($calendar->semester ?? 'Semester'),
-                    'start' => optional($calendar->submission_date)?->toDateString(),
+                    'title' => $entry->activity_name,
+                    'start' => optional($entry->activity_date)?->toDateString(),
                     'end' => null,
                     'status' => $calendar->calendar_status ?? 'PENDING',
-                    'organization_name' => $calendar->organization?->organization_name ?? 'N/A',
+                    'organization_name' => $orgName,
                     'submitted_by' => 'Organization Submission',
-                    'date' => optional($calendar->submission_date)->format('M d, Y') ?? 'N/A',
-                    'time' => 'N/A',
-                    'venue' => 'N/A',
-                    'submission_type' => 'Activity Calendar',
+                    'date' => optional($entry->activity_date)->format('M d, Y') ?? 'N/A',
+                    'time' => 'Not specified',
+                    'venue' => $entry->venue,
+                    'submission_type' => 'Activity Calendar ('.$termLabel.')',
                     'submission_date' => optional($calendar->submission_date)->format('M d, Y') ?? 'N/A',
                     'detail_route' => route('admin.calendars.show', $calendar),
                 ];
             });
 
         return $proposalEvents
-            ->concat($calendarSubmissionEvents)
+            ->concat($calendarActivityEvents)
             ->values();
     }
 }

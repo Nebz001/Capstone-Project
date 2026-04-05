@@ -1,4 +1,4 @@
-import { showConfirmAlert, showSuccessAlert, showWarningAlert } from '../components/alerts';
+import { showConfirmAlert, showWarningAlert } from '../components/alerts';
 import { initToast, showToast } from '../components/toast';
 
 const escapeHtml = (value) => {
@@ -202,9 +202,8 @@ export const initActivityCalendarSubmissionPage = () => {
 		const submitter = event.submitter;
 		if (submitter && submitter !== submitButton) return;
 
-		event.preventDefault();
-
 		if (activities.length < 5) {
+			event.preventDefault();
 			showWarningAlert(
 				'Incomplete Activity Calendar',
 				'Please add at least 5 activities before submitting the activity calendar.',
@@ -223,6 +222,7 @@ export const initActivityCalendarSubmissionPage = () => {
 
 			if (field instanceof HTMLSelectElement) {
 				if (!field.checkValidity()) {
+					event.preventDefault();
 					field.reportValidity();
 					return;
 				}
@@ -230,6 +230,7 @@ export const initActivityCalendarSubmissionPage = () => {
 			}
 
 			if (field.value.trim() === '') {
+				event.preventDefault();
 				field.setCustomValidity('Please fill out this field.');
 				field.reportValidity();
 				field.setCustomValidity('');
@@ -237,15 +238,13 @@ export const initActivityCalendarSubmissionPage = () => {
 			}
 
 			if (!field.checkValidity()) {
+				event.preventDefault();
 				field.reportValidity();
 				return;
 			}
 		}
 
-		showSuccessAlert(
-			'Activity Calendar Submitted',
-			'Your activity calendar has been submitted successfully.',
-		);
+		updateHidden();
 	};
 
 	mainForm.addEventListener('submit', handleSubmitCalendar);

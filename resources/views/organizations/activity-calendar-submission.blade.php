@@ -29,6 +29,12 @@
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
   @endif
 
+  @if (session('success'))
+    <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="alert">
+      {{ session('success') }}
+    </div>
+  @endif
+
   @if ($officerValidationPending)
     <x-feedback.blocked-message
       class="mb-6"
@@ -39,7 +45,7 @@
   <form
     id="activity-calendar-form"
     method="POST"
-    action=""
+    action="{{ route('organizations.activity-calendar-submission.store') }}"
     class="space-y-6"
     novalidate
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
@@ -259,7 +265,6 @@
           <x-ui.button
             id="submit-activity-calendar"
             type="submit"
-            formnovalidate
             class="w-full sm:w-auto"
             :disabled="$officerValidationPending"
           >

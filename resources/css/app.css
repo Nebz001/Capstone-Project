@@ -255,3 +255,41 @@
 details[data-org-announcements][open] > .org-announcements-popover {
     animation: org-announcements-popover-in 0.22s ease-out forwards;
 }
+
+/* ── Guest navbar: responsive visibility (source of truth) ────────── */
+
+#guest-navbar-auth > .hidden { display: none; }
+
+@media (min-width: 1024px) {
+    #guest-navbar-auth > [data-guest-nav-desktop] { display: flex !important; }
+    #guest-navbar-auth > [data-guest-nav-mobile]  { display: none  !important; }
+}
+
+@media (max-width: 1023.98px) {
+    #guest-navbar-auth > [data-guest-nav-desktop] { display: none  !important; }
+    #guest-navbar-auth > [data-guest-nav-mobile]  { display: block !important; }
+}
+
+/* ── Guest navbar: auth dropdown (small screens only) ─────────────── */
+
+[data-guest-nav-panel] {
+    transform-origin: top right;
+    transition:
+        opacity 0.2s ease-out,
+        transform 0.2s ease-out,
+        visibility 0.2s ease-out;
+}
+
+[data-guest-nav-panel]:not(.guest-nav-auth-panel--open) {
+    visibility: hidden;
+    opacity: 0;
+    transform: scale(0.98) translateY(-4px);
+    pointer-events: none;
+}
+
+[data-guest-nav-panel].guest-nav-auth-panel--open {
+    visibility: visible;
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: auto;
+}

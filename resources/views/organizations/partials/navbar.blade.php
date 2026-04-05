@@ -35,12 +35,12 @@
         </summary>
 
         <div
-          class="org-announcements-popover absolute right-0 top-full z-[70] mt-3 w-[min(calc(100vw-1.5rem),26rem)] max-h-[min(78vh,28rem)] origin-top-right overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-slate-900/15 ring-1 ring-slate-900/[0.04]"
+          class="org-announcements-popover fixed inset-x-4 top-[calc(env(safe-area-inset-top,0px)+4.75rem)] z-[70] mx-auto flex w-full max-w-[26rem] max-h-[min(85dvh,28rem)] flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-slate-900/15 ring-1 ring-slate-900/[0.04] origin-top lg:absolute lg:inset-x-auto lg:left-auto lg:right-0 lg:top-full lg:mx-0 lg:mt-3 lg:w-[min(calc(100dvw-1.5rem),26rem)] lg:max-h-[min(78vh,28rem)] lg:max-w-none lg:origin-top-right"
           role="region"
           aria-labelledby="org-announcements-heading"
         >
           {{-- Header --}}
-          <div class="relative border-b border-slate-200/80 bg-gradient-to-br from-[#003E9F]/[0.07] via-white to-slate-50/90 px-5 pb-5 pt-5">
+          <div class="relative shrink-0 border-b border-slate-200/80 bg-gradient-to-br from-[#003E9F]/[0.07] via-white to-slate-50/90 px-5 pb-5 pt-5">
             <button
               type="button"
               data-org-announcements-close
@@ -78,8 +78,8 @@
             </div>
           </div>
 
-          {{-- Body --}}
-          <div class="max-h-[min(52vh,20rem)] overflow-y-auto overflow-x-hidden bg-slate-50/60 px-3 py-4 sm:px-4">
+          {{-- Body (scrolls when tall; flex-1 keeps panel within max-h on small screens) --}}
+          <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/60 px-3 py-4 sm:px-4 lg:max-h-[min(52vh,20rem)] lg:flex-none">
             @forelse ($navbarAnnouncements as $announcement)
               <article
                 class="mb-3 overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/[0.03] last:mb-0"

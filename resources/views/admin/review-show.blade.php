@@ -40,6 +40,41 @@
     @endforeach
   </dl>
 
+  @isset($calendarEntries)
+    @if ($calendarEntries->isNotEmpty())
+      <div class="mt-8 border-t border-slate-200 pt-8">
+        <h2 class="text-base font-semibold text-slate-900">Submitted activities</h2>
+        <p class="mt-1 text-sm text-slate-600">Each row is a saved record linked to this activity calendar.</p>
+        <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="whitespace-nowrap px-4 py-3">Date</th>
+                <th class="min-w-[10rem] px-4 py-3">Activity</th>
+                <th class="whitespace-nowrap px-4 py-3">SDG</th>
+                <th class="min-w-[8rem] px-4 py-3">Venue</th>
+                <th class="min-w-[12rem] px-4 py-3">Participants / program</th>
+                <th class="whitespace-nowrap px-4 py-3">Budget</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 bg-white">
+              @foreach ($calendarEntries as $row)
+                <tr class="align-top">
+                  <td class="whitespace-nowrap px-4 py-3 text-slate-800">{{ optional($row->activity_date)->format('M d, Y') ?? '—' }}</td>
+                  <td class="px-4 py-3 text-slate-800">{{ $row->activity_name }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-slate-800">{{ $row->sdg }}</td>
+                  <td class="px-4 py-3 text-slate-800">{{ $row->venue }}</td>
+                  <td class="px-4 py-3 text-slate-700">{{ $row->participant_program }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-slate-800">{{ $row->budget }}</td>
+                </tr>
+              @endforeach
+            </tbody>
+          </table>
+        </div>
+      </div>
+    @endif
+  @endisset
+
   <div class="mt-6 flex flex-wrap gap-3">
     <a href="{{ $backRoute }}" class="inline-flex rounded-lg border border-[#003E9F] px-4 py-2 text-sm font-semibold text-[#003E9F] transition hover:bg-[#003E9F] hover:text-white">
       Back to Review List
