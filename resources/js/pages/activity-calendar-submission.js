@@ -28,7 +28,7 @@ const showSubmissionSuccessAlert = () => {
 		text: 'Your activity calendar has been submitted successfully. What would you like to do next?',
 		showConfirmButton: true,
 		showDenyButton: true,
-		confirmButtonText: 'Go to Submitted Documents',
+		confirmButtonText: 'Go to Activity Submission',
 		denyButtonText: 'Go to Proposal Submission',
 		allowOutsideClick: false,
 		customClass: {
@@ -37,8 +37,8 @@ const showSubmissionSuccessAlert = () => {
 			denyButton: ALERT_BUTTON_CLASSES.neutralCancel + ' w-full sm:w-auto',
 		},
 	}).then((result) => {
-		if (result.isConfirmed && data.submittedDocumentsUrl) {
-			window.location.href = data.submittedDocumentsUrl;
+		if (result.isConfirmed && (data.activitySubmissionUrl || data.submittedDocumentsUrl)) {
+			window.location.href = data.activitySubmissionUrl || data.submittedDocumentsUrl;
 		} else if (result.isDenied && data.proposalSubmissionUrl) {
 			window.location.href = data.proposalSubmissionUrl;
 		}

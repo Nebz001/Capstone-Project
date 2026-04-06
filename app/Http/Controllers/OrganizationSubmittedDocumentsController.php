@@ -225,8 +225,11 @@ class OrganizationSubmittedDocumentsController extends Controller
         $term = $this->activityCalendarTermLabel($calendar->semester);
         $titleLine = trim(($calendar->academic_year ?? 'Academic year N/A').' · '.$term.' activity calendar');
 
+        $nav = $this->detailBackNavigation($request);
+
         return view('organizations.submitted-documents.detail', [
-            'backRoute' => route('organizations.submitted-documents'),
+            'backRoute' => $nav['route'],
+            'backLabel' => $nav['label'],
             'pageTitle' => 'Activity calendar submission',
             'subtitle' => $titleLine,
             'statusLabel' => $sp['label'],
@@ -282,6 +285,12 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'logo']),
             ];
         }
+        if ($proposal->external_funding_support_path) {
+            $fileLinks[] = [
+                'label' => 'External funding support (letter / proof)',
+                'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'external']),
+            ];
+        }
         if ($proposal->resume_resource_persons_path) {
             $fileLinks[] = [
                 'label' => 'Résumé / resource persons',
@@ -291,8 +300,11 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         $school = $proposal->school_code ? (self::SCHOOL_LABELS[$proposal->school_code] ?? $proposal->school_code) : '—';
 
+        $nav = $this->detailBackNavigation($request);
+
         return view('organizations.submitted-documents.detail', [
-            'backRoute' => route('organizations.submitted-documents'),
+            'backRoute' => $nav['route'],
+            'backLabel' => $nav['label'],
             'pageTitle' => 'Activity proposal',
             'subtitle' => $proposal->activity_title ?? 'Submitted proposal',
             'statusLabel' => $sp['label'],
@@ -334,6 +346,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $relativePath = match ($key) {
             'logo' => $proposal->organization_logo_path,
             'resume' => $proposal->resume_resource_persons_path,
+            'external' => $proposal->external_funding_support_path,
             default => null,
         };
 
@@ -742,6 +755,27 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $disk->response($relativePath, basename($relativePath), [], 'inline');
     }
 
+    /**
+     * Activity calendar / proposal detail pages are reachable from both Submitted Documents (Manage org)
+     * and Activity Submission. Back navigation follows the route used to open the page.
+     *
+     * @return array{route: string, label: string}
+     */
+    private function detailBackNavigation(Request $request): array
+    {
+        if ($request->routeIs('organizations.activity-submission.calendars.show', 'organizations.activity-submission.proposals.show')) {
+            return [
+                'route' => route('organizations.activity-submission'),
+                'label' => 'Back to Activity Submission',
+            ];
+        }
+
+        return [
+            'route' => route('organizations.submitted-documents'),
+            'label' => 'Back to Submitted Documents',
+        ];
+    }
+
     private function buildSubmittedDocumentRows(Organization $organization): Collection
     {
         $rows = collect();
@@ -819,24 +853,24 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'academic_year' => $cal->academic_year,
                 'academic_context' => trim(collect([$cal->academic_year ? 'AY '.$cal->academic_year : null, $term !== '—' ? $term : null])->filter()->implode(' · ')) ?: null,
                 'remarks_preview' => null,
-                'detail_href' => route('organizations.submitted-documents.calendars.show', $cal),
+                'detail_href' => route('organizations.activity-submission.calendars.show', $cal),
                 'has_files' => $hasFile,
-                'files_href' => route('organizations.submitted-documents.calendars.show', $cal).'#submitted-files',
+                'files_href' => route('organizations.activity-submission.calendars.show', $cal).'#submitted-files',
                 'sort_timestamp' => $cal->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
-                    route('organizations.submitted-documents.calendars.show', $cal),
+                    route('organizations.activity-submission.calendars.show', $cal),
                     $hasFile,
-                    route('organizations.submitted-documents.calendars.show', $cal).'#submitted-files',
-                    [
-                        ['label' => 'Submit proposal', 'href' => route('organizations.activity-proposal-submission')],
-                    ],
+                    route('organizations.activity-submission.calendars.show', $cal).'#submitted-files',
+                    [],
                 ),
             ]);
         }
 
         foreach (ActivityProposal::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $proposal) {
             $sp = $this->submissionStatusPresentation($proposal->proposal_status, true);
-            $nAttach = ($proposal->organization_logo_path ? 1 : 0) + ($proposal->resume_resource_persons_path ? 1 : 0);
+            $nAttach = ($proposal->organization_logo_path ? 1 : 0)
+                + ($proposal->resume_resource_persons_path ? 1 : 0)
+                + ($proposal->external_funding_support_path ? 1 : 0);
             $rows->push([
                 'type_key' => 'activity_proposal',
                 'type_label' => 'Activity Proposal',
@@ -849,14 +883,14 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'academic_year' => $proposal->academic_year,
                 'academic_context' => $proposal->academic_year ? 'AY '.$proposal->academic_year : null,
                 'remarks_preview' => $this->truncatePreview($proposal->overall_goal ?? $proposal->activity_description, 120),
-                'detail_href' => route('organizations.submitted-documents.proposals.show', $proposal),
+                'detail_href' => route('organizations.activity-submission.proposals.show', $proposal),
                 'has_files' => $nAttach > 0,
-                'files_href' => route('organizations.submitted-documents.proposals.show', $proposal).'#submitted-files',
+                'files_href' => route('organizations.activity-submission.proposals.show', $proposal).'#submitted-files',
                 'sort_timestamp' => $proposal->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
-                    route('organizations.submitted-documents.proposals.show', $proposal),
+                    route('organizations.activity-submission.proposals.show', $proposal),
                     $nAttach > 0,
-                    route('organizations.submitted-documents.proposals.show', $proposal).'#submitted-files',
+                    route('organizations.activity-submission.proposals.show', $proposal).'#submitted-files',
                     [
                         ['label' => 'Submit another proposal', 'href' => route('organizations.activity-proposal-submission')],
                     ],

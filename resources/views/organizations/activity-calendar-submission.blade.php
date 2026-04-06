@@ -51,7 +51,7 @@
   @if (session('activity_calendar_submitted'))
     <script id="activity-calendar-submitted-flash" type="application/json">
       @json([
-        'submittedDocumentsUrl' => route('organizations.submitted-documents'),
+        'activitySubmissionUrl' => route('organizations.activity-submission'),
         'proposalSubmissionUrl' => route('organizations.activity-proposal-submission'),
       ])
     </script>

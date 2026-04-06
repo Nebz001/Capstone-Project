@@ -8,8 +8,15 @@
   $officerValidationPending = $officerValidationPending ?? false;
   $calendarEntry = $calendarEntry ?? null;
   $linkedProposal = $linkedProposal ?? null;
+  $proposalCalendar = $proposalCalendar ?? null;
+  $proposalCalendarEntries = $proposalCalendar?->entries ?? collect();
   $prefill = is_array($prefill ?? null) ? $prefill : [];
   $hasExistingLogo = (bool) ($linkedProposal?->organization_logo_path);
+  $sourceOfFundingValue = old('source_of_funding', $prefill['source_of_funding'] ?? '');
+  if ($sourceOfFundingValue === '' || $sourceOfFundingValue === null || ! in_array((string) $sourceOfFundingValue, ['Internal', 'External'], true)) {
+    $sourceOfFundingValue = 'Internal';
+  }
+  $hasExternalFundingFile = (bool) ($linkedProposal?->external_funding_support_path ?? false);
   // inline-block + w-auto: keeps the native file control only as wide as the visible picker so
   // browser validation popovers anchor near "Choose File" instead of a full-width hit box.
   $fileClass = 'inline-block w-auto max-w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
@@ -18,21 +25,12 @@
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   <header class="mb-8">
-    @if ($calendarEntry)
-      <a href="{{ route('organizations.submitted-documents.calendars.show', $calendarEntry->activity_calendar_id) }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
-        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-        </svg>
-        Back to activity calendar
-      </a>
-    @else
-      <a href="{{ route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
-        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-        </svg>
-        Back to Activity Submission
-      </a>
-    @endif
+    <a href="{{ route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+      <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+      </svg>
+      Back to Activity Submission
+    </a>
     <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
       Submit Proposal
     </h1>
@@ -45,28 +43,74 @@
     </p>
   </header>
 
-  @if ($calendarEntry)
-    <div class="mb-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-950 shadow-sm">
-      <p class="font-semibold text-sky-900">Calendar activity (read-only summary)</p>
-      <dl class="mt-3 grid gap-2 text-sky-900/90 sm:grid-cols-2">
-        <div>
-          <dt class="text-xs font-medium uppercase tracking-wide text-sky-800/80">Title</dt>
-          <dd class="mt-0.5 font-medium">{{ $calendarEntry->activity_name }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs font-medium uppercase tracking-wide text-sky-800/80">Date</dt>
-          <dd class="mt-0.5">{{ optional($calendarEntry->activity_date)->format('M j, Y') ?? '—' }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs font-medium uppercase tracking-wide text-sky-800/80">Venue</dt>
-          <dd class="mt-0.5">{{ $calendarEntry->venue ?: '—' }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs font-medium uppercase tracking-wide text-sky-800/80">SDG</dt>
-          <dd class="mt-0.5">{{ $calendarEntry->sdg ?: '—' }}</dd>
-        </div>
-      </dl>
-    </div>
+  @if ($proposalCalendar && $proposalCalendarEntries->isNotEmpty())
+    <x-ui.card padding="p-0" class="mb-6">
+      <x-ui.card-section-header
+        title="Select activity from submitted calendar"
+        subtitle="Choose one submitted activity. The proposal form below will load and save details for that selected row only."
+        content-padding="px-6"
+      />
+      <div class="border-t border-slate-100 px-6 py-5">
+        <form method="GET" action="{{ route('organizations.activity-proposal-submission') }}" class="max-w-4xl">
+          <div>
+            <x-forms.label for="calendar_entry_picker" required>Submitted calendar activity</x-forms.label>
+            <x-forms.select id="calendar_entry_picker" name="calendar_entry" required onchange="this.form.submit()">
+              <option value="" disabled @selected(! $calendarEntry)>Select an activity to load proposal fields</option>
+              @foreach ($proposalCalendarEntries as $entry)
+                @php
+                  $entryStatus = strtoupper((string) ($entry->proposal?->proposal_status ?? ''));
+                  $entryStatusLabel = match ($entryStatus) {
+                    'DRAFT' => 'Draft',
+                    'PENDING' => 'Submitted',
+                    'UNDER_REVIEW' => 'Under review',
+                    'REVISION' => 'For revision',
+                    'APPROVED' => 'Approved',
+                    'REJECTED' => 'Rejected',
+                    default => $entry->proposal ? 'No status' : 'No proposal yet',
+                  };
+                @endphp
+                <option value="{{ $entry->id }}" @selected((int) old('activity_calendar_entry_id', $calendarEntry?->id) === (int) $entry->id)>
+                  {{ optional($entry->activity_date)->format('M j, Y') ?? 'No date' }} — {{ $entry->activity_name }} ({{ $entryStatusLabel }})
+                </option>
+              @endforeach
+            </x-forms.select>
+            <x-forms.helper>
+              @php
+                $calendarTermLabel = match ((string) ($proposalCalendar->semester ?? '')) {
+                  'term_1' => 'Term 1',
+                  'term_2' => 'Term 2',
+                  'term_3' => 'Term 3',
+                  default => 'Term —',
+                };
+              @endphp
+              Calendar: {{ ($proposalCalendar->academic_year ?? '—') }} · {{ $calendarTermLabel }}.
+              Switch activities anytime to work on proposals one by one.
+            </x-forms.helper>
+          </div>
+        </form>
+
+        @if ($calendarEntry)
+          <div class="mt-5 rounded-xl border border-sky-200 bg-sky-50 px-5 py-5 text-sm text-sky-950 shadow-sm sm:px-6">
+            <p class="text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Selected activity summary</p>
+            <p class="mt-2 text-lg font-bold leading-snug text-sky-950 sm:text-xl">{{ $calendarEntry->activity_name }}</p>
+            <dl class="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 text-sky-900/90 sm:grid-cols-2">
+              <div>
+                <dt class="text-[11px] font-medium uppercase tracking-wide text-sky-700/75">Date</dt>
+                <dd class="mt-1 text-sm font-semibold text-sky-950">{{ optional($calendarEntry->activity_date)->format('M j, Y') ?? '—' }}</dd>
+              </div>
+              <div>
+                <dt class="text-[11px] font-medium uppercase tracking-wide text-sky-700/75">Venue</dt>
+                <dd class="mt-1 text-sm font-semibold text-sky-950">{{ $calendarEntry->venue ?: '—' }}</dd>
+              </div>
+              <div class="sm:col-span-2">
+                <dt class="text-[11px] font-medium uppercase tracking-wide text-sky-700/75">SDG</dt>
+                <dd class="mt-1 text-sm font-semibold text-sky-950">{{ $calendarEntry->sdg ?: '—' }}</dd>
+              </div>
+            </dl>
+          </div>
+        @endif
+      </div>
+    </x-ui.card>
   @endif
 
   @if (session('success'))
@@ -313,6 +357,12 @@
           content-padding="px-6"
         />
         <div class="px-6 py-6">
+          @error('budget_breakdown')
+            <div class="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 shadow-sm" role="alert">
+              {{ $message }}
+            </div>
+          @enderror
+          <div id="budget-breakdown-client-error" class="mb-4 hidden rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 shadow-sm" role="alert" aria-live="polite"></div>
           <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
               <x-forms.label for="proposed_budget" required>Proposed Budget (total)</x-forms.label>
@@ -327,16 +377,56 @@
                 required
               />
             </div>
-            <div>
-              <x-forms.label for="source_of_funding" required>Source of Funding</x-forms.label>
-              <x-forms.input
-                id="source_of_funding"
-                name="source_of_funding"
-                type="text"
-                placeholder="e.g., Organization funds, sponsorship"
-                :value="old('source_of_funding', $prefill['source_of_funding'] ?? '')"
-                required
-              />
+            <div class="md:col-span-2">
+              <span class="block text-sm font-semibold leading-snug text-slate-800">
+                Source of Funding
+                <span class="text-rose-600">*</span>
+              </span>
+              <div class="mt-2 flex flex-wrap gap-6">
+                <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                  <input
+                    type="radio"
+                    name="source_of_funding"
+                    value="Internal"
+                    class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
+                    @checked($sourceOfFundingValue === 'Internal')
+                  />
+                  Internal
+                </label>
+                <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                  <input
+                    type="radio"
+                    name="source_of_funding"
+                    value="External"
+                    class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
+                    @checked($sourceOfFundingValue === 'External')
+                  />
+                  External
+                </label>
+              </div>
+            </div>
+            <div
+              id="external-funding-attachment"
+              class="md:col-span-2 {{ $sourceOfFundingValue === 'External' ? '' : 'hidden' }}"
+            >
+              <x-forms.label for="external_funding_support" :required="! $hasExternalFundingFile">External funding support</x-forms.label>
+              <div class="mt-2 w-fit max-w-full">
+                <input
+                  id="external_funding_support"
+                  name="external_funding_support"
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                  class="{{ $fileClass }}"
+                />
+              </div>
+              <x-forms.helper>
+                Upload a letter, proof, or supporting document from the external funding source.
+                @if ($hasExternalFundingFile)
+                  A file is already on file; upload a new one only to replace it.
+                @else
+                  Required when you submit for review with External funding (optional while saving a draft).
+                @endif
+              </x-forms.helper>
             </div>
             <div>
               <x-forms.label for="materials_supplies" required>Materials and Supplies</x-forms.label>
@@ -466,6 +556,80 @@
       start.addEventListener('change', syncEndMin);
       start.addEventListener('input', syncEndMin);
       syncEndMin();
+    })();
+    (function () {
+      var wrap = document.getElementById('external-funding-attachment');
+      if (!wrap) return;
+      var radios = document.querySelectorAll('input[name="source_of_funding"]');
+      function sync() {
+        var v = '';
+        radios.forEach(function (r) {
+          if (r.checked) v = r.value;
+        });
+        if (v === 'External') {
+          wrap.classList.remove('hidden');
+        } else {
+          wrap.classList.add('hidden');
+        }
+      }
+      radios.forEach(function (r) {
+        r.addEventListener('change', sync);
+      });
+      sync();
+    })();
+    (function () {
+      var form = document.getElementById('activity-proposal-form');
+      var clientErr = document.getElementById('budget-breakdown-client-error');
+      if (!form || !clientErr) return;
+
+      var budgetFieldIds = ['proposed_budget', 'materials_supplies', 'food_beverage', 'other_expenses'];
+
+      function parseAmount(id) {
+        var el = document.getElementById(id);
+        if (!el) return 0;
+        var raw = String(el.value || '').trim().replace(',', '.');
+        if (raw === '') return 0;
+        var n = parseFloat(raw);
+        return isNaN(n) ? 0 : n;
+      }
+
+      function syncBudgetValidation() {
+        var total = Math.round(parseAmount('proposed_budget') * 100) / 100;
+        var sum =
+          Math.round(
+            (parseAmount('materials_supplies') + parseAmount('food_beverage') + parseAmount('other_expenses')) * 100
+          ) / 100;
+        if (Math.abs(total - sum) > 0.01) {
+          clientErr.textContent =
+            'Proposed Budget (total) must equal Materials and Supplies + Food and Beverage + Other Expenses. Your total is ' +
+            total.toFixed(2) +
+            ' but the expense lines sum to ' +
+            sum.toFixed(2) +
+            '.';
+          clientErr.classList.remove('hidden');
+        } else {
+          clientErr.textContent = '';
+          clientErr.classList.add('hidden');
+        }
+      }
+
+      budgetFieldIds.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', syncBudgetValidation);
+          el.addEventListener('change', syncBudgetValidation);
+        }
+      });
+
+      syncBudgetValidation();
+
+      form.addEventListener('submit', function (e) {
+        syncBudgetValidation();
+        if (!clientErr.classList.contains('hidden')) {
+          e.preventDefault();
+          clientErr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
     })();
   </script>
 @endunless

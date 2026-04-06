@@ -31,6 +31,7 @@ class ActivityProposal extends Model
         'program_flow',
         'estimated_budget',
         'source_of_funding',
+        'external_funding_support_path',
         'budget_materials_supplies',
         'budget_food_beverage',
         'budget_other_expenses',

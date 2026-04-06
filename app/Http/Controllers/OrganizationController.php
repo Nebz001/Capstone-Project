@@ -732,6 +732,7 @@ class OrganizationController extends Controller
         $schoolPrefill = $this->schoolCodeFromDepartment($organization->college_department);
         $calendarEntry = null;
         $linkedProposal = null;
+        $proposalCalendar = null;
 
         if ($request->filled('calendar_entry')) {
             $calendarEntry = ActivityCalendarEntry::query()
@@ -755,9 +756,26 @@ class OrganizationController extends Controller
 
             if ($linkedProposal && ! in_array($linkedProposal->proposal_status, ['DRAFT', 'REVISION'], true)) {
                 return redirect()
-                    ->route('organizations.submitted-documents.proposals.show', $linkedProposal)
-                    ->with('error', 'This activity already has a submitted proposal. View it in Submitted Documents.');
+                    ->route('organizations.activity-submission.proposals.show', $linkedProposal)
+                    ->with('error', 'This activity already has a submitted proposal. Open it from Activity Submission to view details.');
             }
+
+            $proposalCalendar = $calendarEntry->activityCalendar()
+                ->with([
+                    'entries' => fn ($q) => $q->orderBy('activity_date')->orderBy('id')->with('proposal'),
+                ])
+                ->first();
+        }
+
+        if (! $proposalCalendar) {
+            $proposalCalendar = ActivityCalendar::query()
+                ->where('organization_id', $organization->id)
+                ->with([
+                    'entries' => fn ($q) => $q->orderBy('activity_date')->orderBy('id')->with('proposal'),
+                ])
+                ->latest('submission_date')
+                ->latest('id')
+                ->first();
         }
 
         $prefill = $this->buildActivityProposalFormPrefill($organization, $calendarEntry, $linkedProposal, $schoolPrefill);
@@ -769,6 +787,7 @@ class OrganizationController extends Controller
             'officerValidationPending' => ! $user->isOfficerValidated(),
             'calendarEntry' => $calendarEntry,
             'linkedProposal' => $linkedProposal,
+            'proposalCalendar' => $proposalCalendar,
             'prefill' => $prefill,
         ]);
     }
@@ -820,8 +839,8 @@ class OrganizationController extends Controller
 
         if ($existing && ! in_array($existing->proposal_status, ['DRAFT', 'REVISION'], true)) {
             return redirect()
-                ->route('organizations.submitted-documents.proposals.show', $existing)
-                ->with('error', 'This proposal can no longer be edited from the submission form.');
+                ->route('organizations.activity-submission.proposals.show', $existing)
+                ->with('error', 'This proposal can no longer be edited from the submission form. View it under Activity Submission.');
         }
 
         $proposalAction = (string) $request->input('proposal_action', 'submit');
@@ -850,7 +869,16 @@ class OrganizationController extends Controller
             'criteria_mechanics' => ['required', 'string', 'max:5000'],
             'program_flow' => ['required', 'string', 'max:5000'],
             'proposed_budget' => ['required', 'numeric', 'min:0'],
-            'source_of_funding' => ['required', 'string', 'max:255'],
+            'source_of_funding' => ['required', 'string', Rule::in(['Internal', 'External'])],
+            'external_funding_support' => [
+                Rule::requiredIf(fn () => ! $asDraft
+                    && $request->input('source_of_funding') === 'External'
+                    && ($existing === null || ! $existing->external_funding_support_path)),
+                'nullable',
+                'file',
+                'mimes:pdf,jpg,jpeg,png,webp',
+                'max:10240',
+            ],
             'materials_supplies' => ['required', 'numeric', 'min:0'],
             'food_beverage' => ['required', 'numeric', 'min:0'],
             'other_expenses' => ['required', 'numeric', 'min:0'],
@@ -859,6 +887,19 @@ class OrganizationController extends Controller
         ], [
             'proposed_end_date.after_or_equal' => 'The proposed end date must be on or after the start date.',
         ]);
+
+        $proposedTotal = round((float) $validated['proposed_budget'], 2);
+        $expenseSum = round(
+            (float) $validated['materials_supplies'] + (float) $validated['food_beverage'] + (float) $validated['other_expenses'],
+            2
+        );
+        if (abs($proposedTotal - $expenseSum) > 0.01) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'budget_breakdown' => 'Proposed Budget (total) must equal Materials and Supplies + Food and Beverage + Other Expenses. Current total is '.number_format($proposedTotal, 2).' but the expense lines sum to '.number_format($expenseSum, 2).'.',
+                ]);
+        }
 
         if ($asDraft) {
             if ($existing && $existing->proposal_status === 'REVISION') {
@@ -885,6 +926,13 @@ class OrganizationController extends Controller
             $resumePath = $request->file('resume_resource_persons')->store($basePath, 'public');
         }
 
+        $externalFundingPath = $existing?->external_funding_support_path;
+        if ($validated['source_of_funding'] === 'Internal') {
+            $externalFundingPath = null;
+        } elseif ($request->hasFile('external_funding_support')) {
+            $externalFundingPath = $request->file('external_funding_support')->store($basePath, 'public');
+        }
+
         $summary = mb_substr(trim(strip_tags($validated['overall_goal'])), 0, 500);
 
         $payload = [
@@ -909,6 +957,7 @@ class OrganizationController extends Controller
             'program_flow' => $validated['program_flow'],
             'estimated_budget' => $validated['proposed_budget'],
             'source_of_funding' => $validated['source_of_funding'],
+            'external_funding_support_path' => $externalFundingPath,
             'budget_materials_supplies' => $validated['materials_supplies'],
             'budget_food_beverage' => $validated['food_beverage'],
             'budget_other_expenses' => $validated['other_expenses'],
@@ -968,7 +1017,9 @@ class OrganizationController extends Controller
                 'criteria_mechanics' => $linked->criteria_mechanics ?? '',
                 'program_flow' => $linked->program_flow ?? '',
                 'proposed_budget' => $linked->estimated_budget !== null ? (string) $linked->estimated_budget : '',
-                'source_of_funding' => $linked->source_of_funding ?? '',
+                'source_of_funding' => in_array((string) ($linked->source_of_funding ?? ''), ['Internal', 'External'], true)
+                    ? (string) $linked->source_of_funding
+                    : 'Internal',
                 'materials_supplies' => $linked->budget_materials_supplies !== null ? (string) $linked->budget_materials_supplies : '',
                 'food_beverage' => $linked->budget_food_beverage !== null ? (string) $linked->budget_food_beverage : '',
                 'other_expenses' => $linked->budget_other_expenses !== null ? (string) $linked->budget_other_expenses : '',
