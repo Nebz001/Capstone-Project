@@ -1,4 +1,4 @@
-@extends('layouts.organization')
+@extends('layouts.organization-portal')
 
 @section('title', $pageTitle.' — NU Lipa SDAO')
 

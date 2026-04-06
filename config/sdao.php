@@ -4,11 +4,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | SDAO web admin accounts
+    | SDAO web admin accounts (Super Admins)
     |--------------------------------------------------------------------------
     |
     | Staff accounts that may use the SDAO admin dashboard and signatory flows.
     | Only these records (role ADMIN + email listed here) are treated as SDAO admins.
+    |
+    | Super Admins have full admin access and may use organization-side workflows
+    | (registration, renewal, calendars, etc.) using the admin UI. Optional
+    | `school_id` identifies the SDAO staff account in listings and seeders.
     |
     */
 

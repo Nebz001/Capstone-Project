@@ -22,7 +22,7 @@
           <img src="{{ asset('images/logos/nu-logo-onlyy.png') }}" alt="NU Lipa" class="h-10 w-auto" />
           <div class="min-w-0">
             <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-[#F5C400]">NU Lipa</p>
-            <p class="truncate text-sm font-semibold">SDAO Admin</p>
+            <p class="truncate text-sm font-semibold">{{ auth()->user()?->isSuperAdmin() ? 'Super Admin' : 'SDAO Admin' }}</p>
           </div>
         </a>
       </div>
@@ -37,6 +37,36 @@
             Dashboard
           </a>
         </div>
+
+        @if (auth()->user()?->isSuperAdmin())
+          <div class="space-y-1">
+            <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Submissions (SDAO)</p>
+            <a
+              href="{{ route('admin.submissions.register') }}"
+              class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.register') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
+            >
+              Register organization
+            </a>
+            <a
+              href="{{ route('admin.submissions.renew') }}"
+              class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.renew') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
+            >
+              Renew organization
+            </a>
+            <a
+              href="{{ route('admin.submissions.activity-calendar') }}"
+              class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.activity-calendar') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
+            >
+              Submit activity calendar
+            </a>
+            <a
+              href="{{ route('admin.submissions.activity-proposal') }}"
+              class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.activity-proposal') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
+            >
+              Submit activity proposal
+            </a>
+          </div>
+        @endif
 
         <div class="space-y-1">
           <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Review Modules</p>
@@ -75,10 +105,10 @@
         <div class="space-y-1">
           <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Account Management</p>
           <a
-            href="{{ route('admin.officer-accounts.index') }}"
-            class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.officer-accounts.*') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
+            href="{{ route('admin.accounts.index') }}"
+            class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.accounts.*') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
           >
-            Student Officer Accounts
+            User accounts
           </a>
         </div>
 
@@ -102,10 +132,39 @@
       <header class="border-b border-slate-200 bg-white">
         <div class="mx-auto flex w-full max-w-screen-2xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <div>
-            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">SDAO Admin Portal</p>
+            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">{{ auth()->user()?->isSuperAdmin() ? 'SDAO Super Admin Portal' : 'SDAO Admin Portal' }}</p>
             <p class="text-xs text-slate-500">{{ now()->format('l, F j, Y') }}</p>
+            @if (! auth()->user()?->isSuperAdmin())
+              <x-active-term-status variant="admin" />
+            @endif
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+            @if (auth()->user()?->isSuperAdmin())
+              @php
+                $headerActiveSemester = \App\Models\SystemSetting::activeSemester();
+              @endphp
+              <form
+                method="POST"
+                action="{{ route('admin.settings.active-term') }}"
+                class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm"
+                id="admin-active-term-form"
+              >
+                @csrf
+                @method('PATCH')
+                <label for="admin-active-term" class="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Active term</label>
+                <select
+                  id="admin-active-term"
+                  name="active_semester"
+                  class="min-w-[8.5rem] cursor-pointer rounded-lg border border-slate-300 bg-white py-1.5 pl-2.5 pr-8 text-xs font-semibold text-slate-800 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
+                  onchange="this.form.submit()"
+                  title="Official active term for the current academic year (system-wide)"
+                >
+                  <option value="term_1" @selected($headerActiveSemester === 'term_1')>1st Term</option>
+                  <option value="term_2" @selected($headerActiveSemester === 'term_2')>2nd Term</option>
+                  <option value="term_3" @selected($headerActiveSemester === 'term_3')>3rd Term</option>
+                </select>
+              </form>
+            @endif
             <span class="hidden text-sm font-medium text-slate-700 sm:block">{{ auth()->user()?->full_name }}</span>
             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-[#003E9F]/10 text-sm font-bold text-[#003E9F]">
               {{ strtoupper(substr(auth()->user()?->first_name ?? 'A', 0, 1)) }}
@@ -115,6 +174,11 @@
       </header>
 
       <main class="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+        @if (session('success'))
+          <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm" role="status">
+            {{ session('success') }}
+          </div>
+        @endif
         @yield('content')
       </main>
     </div>

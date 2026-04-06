@@ -1,8 +1,13 @@
-@extends('layouts.organization')
+@extends('layouts.organization-portal')
 
 @section('title', 'Organization Dashboard — NU Lipa SDAO')
 
 @section('content')
+
+@php
+  $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
+  $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
+@endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
@@ -25,7 +30,11 @@
             </div>
             <span class="inline-flex w-fit items-center gap-1.5 rounded-full border border-[#E7C663]/80 bg-[#FFF8DF] px-3 py-1.5 text-xs font-semibold text-[#6A5200]">
                 <span class="h-2 w-2 rounded-full bg-[#F5C400]" aria-hidden="true"></span>
-                Organization Officer
+                @if (auth()->user()?->isSuperAdmin())
+                    Super Admin
+                @else
+                    Organization Officer
+                @endif
             </span>
         </div>
     </header>
@@ -87,7 +96,7 @@
 
             {{-- ── Manage Organization ─────────────────────────────── --}}
             <a
-                href="{{ route('organizations.manage') }}"
+                href="{{ route('organizations.manage') }}{{ $saQ }}"
                 class="group flex items-start gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">
@@ -113,7 +122,7 @@
 
             {{-- ── Activity Submission (accent / main action) ──────── --}}
             <a
-                href="{{ route('organizations.activity-submission') }}"
+                href="{{ route('organizations.activity-submission') }}{{ $saQ }}"
                 class="group flex items-start gap-5 rounded-3xl border border-[#E7C663]/60 bg-gradient-to-br from-[#FFF8DF] via-[#FFFBF0] to-[#FFFEF8] p-6 shadow-xl shadow-amber-200/50 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#F5C400]/25 text-[#8A6500] transition group-hover:bg-[#F5C400]/35">
@@ -144,7 +153,7 @@
 
             {{-- ── Submit Report ────────────────────────────────────── --}}
             <a
-                href="{{ route('organizations.submit-report') }}"
+                href="{{ route('organizations.submit-report') }}{{ $saQ }}"
                 class="group flex items-start gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">

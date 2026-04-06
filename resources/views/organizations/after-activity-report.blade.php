@@ -1,4 +1,4 @@
-@extends('layouts.organization')
+@extends('layouts.organization-portal')
 
 @section('title', 'After Activity Report — NU Lipa SDAO')
 
@@ -7,12 +7,16 @@
 @php
     $officerValidationPending = $officerValidationPending ?? false;
     $fileClass = 'block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
+    $saOrg = auth()->user()->isSuperAdmin()
+        ? (optional($organization ?? null)->id ?: ($superAdminOrganizationId ?? null))
+        : null;
+    $saQ = $saOrg ? '?organization_id='.(int) $saOrg : '';
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
     <header class="mb-8">
-        <a href="{{ route('organizations.submit-report') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+        <a href="{{ route('organizations.submit-report') }}{{ $saQ }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
             <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
             </svg>
@@ -45,6 +49,7 @@
         <x-feedback.blocked-message message="Your student officer account is pending SDAO validation. You cannot submit reports until validation is complete." class="mb-6" />
     @endif
 
+    @if ($organization)
     <form
         method="POST"
         action="{{ route('organizations.after-activity-report.store') }}"
@@ -52,6 +57,9 @@
         class="space-y-6 @if($officerValidationPending) pointer-events-none opacity-50 @endif"
     >
         @csrf
+        @if (auth()->user()->isSuperAdmin())
+            <input type="hidden" name="organization_id" value="{{ $organization->id }}" />
+        @endif
 
         {{-- 1. Basic Information --}}
         <x-ui.card padding="p-0">
@@ -333,7 +341,7 @@
             <div class="px-6 py-6">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                     <a
-                        href="{{ route('organizations.submit-report') }}"
+                        href="{{ route('organizations.submit-report') }}{{ $saQ }}"
                         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"
                     >
                         Cancel
@@ -345,6 +353,7 @@
             </div>
         </x-ui.card>
     </form>
+    @endif
 </div>
 
 @endsection

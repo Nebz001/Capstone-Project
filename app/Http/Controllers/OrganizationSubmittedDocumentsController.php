@@ -11,6 +11,7 @@ use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -71,10 +72,17 @@ class OrganizationSubmittedDocumentsController extends Controller
         'others' => 'Other requirement',
     ];
 
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
+        $user = $request->user();
+
+        if ($user && $user->isSuperAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
         $organization = $this->organizationForActiveOfficer($request);
-        $allRows = $this->buildSubmittedDocumentRows($organization);
+
+        $allRows = $this->buildSubmittedDocumentRows($organization, $request);
 
         $academicYearOptions = $allRows->pluck('academic_year')->filter()->unique()->sort()->values();
 
@@ -141,7 +149,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $fileLinks = $this->registrationFileLinks($registration);
 
         return view('organizations.submitted-documents.detail', [
-            'backRoute' => route('organizations.submitted-documents'),
+            'backRoute' => $this->submittedDocumentsListUrl($request),
             'pageTitle' => 'Registration submission',
             'subtitle' => 'Organization registration application on file with SDAO.',
             'statusLabel' => $sp['label'],
@@ -177,7 +185,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $fileLinks = $this->renewalFileLinks($renewal);
 
         return view('organizations.submitted-documents.detail', [
-            'backRoute' => route('organizations.submitted-documents'),
+            'backRoute' => $this->submittedDocumentsListUrl($request),
             'pageTitle' => 'Renewal submission',
             'subtitle' => 'Organization renewal application on file with SDAO.',
             'statusLabel' => $sp['label'],
@@ -397,7 +405,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $school = $report->school_code ? (self::SCHOOL_LABELS[$report->school_code] ?? $report->school_code) : '—';
 
         return view('organizations.submitted-documents.detail', [
-            'backRoute' => route('organizations.submitted-documents'),
+            'backRoute' => $this->submittedDocumentsListUrl($request),
             'pageTitle' => 'After activity report',
             'subtitle' => 'After Activity Report — '.($report->event_name ?? $report->activity_event_title ?? 'Event'),
             'statusLabel' => $sp['label'],
@@ -415,7 +423,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'remarkHighlight' => $this->truncatePreview($report->evaluation_report, 200),
             'fileLinks' => $fileLinks,
             'workflowLinks' => [
-                ['label' => 'Submit another report', 'href' => route('organizations.after-activity-report'), 'variant' => 'secondary'],
+                ['label' => 'Submit another report', 'href' => $this->withSuperAdminOrgQuery($request, route('organizations.after-activity-report')), 'variant' => 'secondary'],
             ],
             'calendarEntries' => null,
         ]);
@@ -506,6 +514,18 @@ class OrganizationSubmittedDocumentsController extends Controller
 
     private function ensureOfficerOwnsOrganization(Request $request, int $organizationId): void
     {
+        /** @var User|null $user */
+        $user = $request->user();
+
+        if ($user && $user->isSuperAdmin()) {
+            $qid = (int) $request->integer('organization_id');
+            if ($qid > 0 && $qid !== $organizationId) {
+                abort(403);
+            }
+
+            return;
+        }
+
         $officer = $this->resolveActiveOfficer($request);
         if ((int) $officer->organization_id !== $organizationId) {
             abort(403);
@@ -763,26 +783,60 @@ class OrganizationSubmittedDocumentsController extends Controller
      */
     private function detailBackNavigation(Request $request): array
     {
+        $suffix = $this->superAdminOrganizationQuerySuffix($request);
+
         if ($request->routeIs('organizations.activity-submission.calendars.show', 'organizations.activity-submission.proposals.show')) {
             return [
-                'route' => route('organizations.activity-submission'),
+                'route' => route('organizations.activity-submission').$suffix,
                 'label' => 'Back to Activity Submission',
             ];
         }
 
         return [
-            'route' => route('organizations.submitted-documents'),
+            'route' => route('organizations.submitted-documents').$suffix,
             'label' => 'Back to Submitted Documents',
         ];
     }
 
-    private function buildSubmittedDocumentRows(Organization $organization): Collection
+    private function superAdminOrganizationQuerySuffix(Request $request): string
     {
+        if (! $request->user()?->isSuperAdmin()) {
+            return '';
+        }
+        $id = (int) $request->integer('organization_id');
+        if ($id < 1) {
+            return '';
+        }
+
+        return '?organization_id='.$id;
+    }
+
+    private function withSuperAdminOrgQuery(Request $request, string $url): string
+    {
+        $suffix = $this->superAdminOrganizationQuerySuffix($request);
+        if ($suffix === '') {
+            return $url;
+        }
+
+        $sep = str_contains($url, '?') ? '&' : '?';
+
+        return $url.$sep.ltrim($suffix, '?');
+    }
+
+    private function submittedDocumentsListUrl(Request $request): string
+    {
+        return $this->withSuperAdminOrgQuery($request, route('organizations.submitted-documents'));
+    }
+
+    private function buildSubmittedDocumentRows(Organization $organization, Request $request): Collection
+    {
+        $q = fn (string $url): string => $this->withSuperAdminOrgQuery($request, $url);
         $rows = collect();
 
         foreach (OrganizationRegistration::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $reg) {
             $sp = $this->submissionStatusPresentation($reg->registration_status);
             $nFiles = $this->countRequirementFiles(is_array($reg->requirement_files) ? $reg->requirement_files : null);
+            $detail = $q(route('organizations.submitted-documents.registrations.show', $reg));
             $rows->push([
                 'type_key' => 'registration',
                 'type_label' => 'Registration',
@@ -795,14 +849,14 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'academic_year' => $reg->academic_year,
                 'academic_context' => $reg->academic_year ? 'AY '.$reg->academic_year : null,
                 'remarks_preview' => $this->registrationRemarksPreview($reg),
-                'detail_href' => route('organizations.submitted-documents.registrations.show', $reg),
+                'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
-                'files_href' => route('organizations.submitted-documents.registrations.show', $reg).'#submitted-files',
+                'files_href' => $detail.'#submitted-files',
                 'sort_timestamp' => $reg->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
-                    route('organizations.submitted-documents.registrations.show', $reg),
+                    $detail,
                     $nFiles > 0,
-                    route('organizations.submitted-documents.registrations.show', $reg).'#submitted-files',
+                    $detail.'#submitted-files',
                     [],
                 ),
             ]);
@@ -811,6 +865,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         foreach (OrganizationRenewal::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $renewal) {
             $sp = $this->submissionStatusPresentation($renewal->renewal_status);
             $nFiles = $this->countRequirementFiles(is_array($renewal->requirement_files) ? $renewal->requirement_files : null);
+            $detail = $q(route('organizations.submitted-documents.renewals.show', $renewal));
             $rows->push([
                 'type_key' => 'renewal',
                 'type_label' => 'Renewal',
@@ -823,14 +878,14 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'academic_year' => $renewal->academic_year,
                 'academic_context' => $renewal->academic_year ? 'AY '.$renewal->academic_year : null,
                 'remarks_preview' => $this->renewalRemarksPreview($renewal),
-                'detail_href' => route('organizations.submitted-documents.renewals.show', $renewal),
+                'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
-                'files_href' => route('organizations.submitted-documents.renewals.show', $renewal).'#submitted-files',
+                'files_href' => $detail.'#submitted-files',
                 'sort_timestamp' => $renewal->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
-                    route('organizations.submitted-documents.renewals.show', $renewal),
+                    $detail,
                     $nFiles > 0,
-                    route('organizations.submitted-documents.renewals.show', $renewal).'#submitted-files',
+                    $detail.'#submitted-files',
                     [],
                 ),
             ]);
@@ -841,6 +896,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             $term = $this->activityCalendarTermLabel($cal->semester);
             $title = trim(($cal->academic_year ?? 'AY —').' · '.$term.' Activity Calendar');
             $hasFile = is_string($cal->calendar_file) && $cal->calendar_file !== '';
+            $detail = $q(route('organizations.activity-submission.calendars.show', $cal));
             $rows->push([
                 'type_key' => 'activity_calendar',
                 'type_label' => 'Activity Calendar',
@@ -853,14 +909,14 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'academic_year' => $cal->academic_year,
                 'academic_context' => trim(collect([$cal->academic_year ? 'AY '.$cal->academic_year : null, $term !== '—' ? $term : null])->filter()->implode(' · ')) ?: null,
                 'remarks_preview' => null,
-                'detail_href' => route('organizations.activity-submission.calendars.show', $cal),
+                'detail_href' => $detail,
                 'has_files' => $hasFile,
-                'files_href' => route('organizations.activity-submission.calendars.show', $cal).'#submitted-files',
+                'files_href' => $detail.'#submitted-files',
                 'sort_timestamp' => $cal->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
-                    route('organizations.activity-submission.calendars.show', $cal),
+                    $detail,
                     $hasFile,
-                    route('organizations.activity-submission.calendars.show', $cal).'#submitted-files',
+                    $detail.'#submitted-files',
                     [],
                 ),
             ]);
@@ -871,6 +927,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             $nAttach = ($proposal->organization_logo_path ? 1 : 0)
                 + ($proposal->resume_resource_persons_path ? 1 : 0)
                 + ($proposal->external_funding_support_path ? 1 : 0);
+            $detail = $q(route('organizations.activity-submission.proposals.show', $proposal));
             $rows->push([
                 'type_key' => 'activity_proposal',
                 'type_label' => 'Activity Proposal',
@@ -883,16 +940,16 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'academic_year' => $proposal->academic_year,
                 'academic_context' => $proposal->academic_year ? 'AY '.$proposal->academic_year : null,
                 'remarks_preview' => $this->truncatePreview($proposal->overall_goal ?? $proposal->activity_description, 120),
-                'detail_href' => route('organizations.activity-submission.proposals.show', $proposal),
+                'detail_href' => $detail,
                 'has_files' => $nAttach > 0,
-                'files_href' => route('organizations.activity-submission.proposals.show', $proposal).'#submitted-files',
+                'files_href' => $detail.'#submitted-files',
                 'sort_timestamp' => $proposal->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
-                    route('organizations.activity-submission.proposals.show', $proposal),
+                    $detail,
                     $nAttach > 0,
-                    route('organizations.activity-submission.proposals.show', $proposal).'#submitted-files',
+                    $detail.'#submitted-files',
                     [
-                        ['label' => 'Submit another proposal', 'href' => route('organizations.activity-proposal-submission')],
+                        ['label' => 'Submit another proposal', 'href' => $q(route('organizations.activity-proposal-submission'))],
                     ],
                 ),
             ]);
@@ -906,6 +963,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 + ($report->evaluation_form_sample_path ? 1 : 0)
                 + ($report->attendance_sheet_path ? 1 : 0);
             $eventTitle = $report->event_name ?? $report->activity_event_title ?? 'Event';
+            $detail = $q(route('organizations.submitted-documents.reports.show', $report));
             $rows->push([
                 'type_key' => 'after_activity_report',
                 'type_label' => 'After Activity Report',
@@ -918,16 +976,16 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'academic_year' => null,
                 'academic_context' => null,
                 'remarks_preview' => $this->truncatePreview($report->evaluation_report, 120),
-                'detail_href' => route('organizations.submitted-documents.reports.show', $report),
+                'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
-                'files_href' => route('organizations.submitted-documents.reports.show', $report).'#submitted-files',
+                'files_href' => $detail.'#submitted-files',
                 'sort_timestamp' => $report->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
-                    route('organizations.submitted-documents.reports.show', $report),
+                    $detail,
                     $nFiles > 0,
-                    route('organizations.submitted-documents.reports.show', $report).'#submitted-files',
+                    $detail.'#submitted-files',
                     [
-                        ['label' => 'Submit another report', 'href' => route('organizations.after-activity-report')],
+                        ['label' => 'Submit another report', 'href' => $q(route('organizations.after-activity-report'))],
                     ],
                 ),
             ]);

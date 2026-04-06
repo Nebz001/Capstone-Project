@@ -2,17 +2,28 @@
 
 use App\Http\Controllers\AdminAnnouncementController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AdminSubmissionController;
 use App\Http\Controllers\AnnouncementDismissController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationSubmittedDocumentsController;
+use App\Models\Organization;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    $approvedOrganizations = Organization::query()
+        ->where('organization_status', 'ACTIVE')
+        ->orderBy('organization_name')
+        ->get(['organization_name', 'college_department', 'organization_type']);
+
+    return view('welcome', compact('approvedOrganizations'));
 });
 
 Route::get('dashboard', function () {
+    if (auth()->user()?->isSuperAdmin()) {
+        return redirect()->route('admin.dashboard');
+    }
+
     return redirect()->route('organizations.index');
 })->middleware('auth')->name('dashboard');
 
@@ -105,12 +116,24 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->group(function () {
     });
 });
 
+Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminSubmissionController::class)->group(function () {
+    Route::get('/submissions/register', 'showRegistration')->name('submissions.register');
+    Route::post('/submissions/register', 'storeRegistration')->name('submissions.register.store');
+    Route::get('/submissions/renew', 'showRenew')->name('submissions.renew');
+    Route::post('/submissions/renew', 'storeRenew')->name('submissions.renew.store');
+    Route::get('/submissions/activity-calendar', 'showActivityCalendar')->name('submissions.activity-calendar');
+    Route::post('/submissions/activity-calendar', 'storeActivityCalendar')->name('submissions.activity-calendar.store');
+    Route::get('/submissions/activity-proposal', 'showActivityProposal')->name('submissions.activity-proposal');
+    Route::post('/submissions/activity-proposal', 'storeActivityProposal')->name('submissions.activity-proposal.store');
+});
+
 Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminController::class)->group(function () {
     Route::get('/dashboard', 'dashboard')->name('dashboard');
+    Route::patch('/settings/active-term', 'updateActiveTerm')->name('settings.active-term');
     Route::get('/calendar', 'centralizedCalendar')->name('calendar');
-    Route::get('/officer-accounts', 'officerAccounts')->name('officer-accounts.index');
-    Route::get('/officer-accounts/{user}', 'showOfficerAccount')->name('officer-accounts.show');
-    Route::patch('/officer-accounts/{user}', 'updateOfficerValidation')->name('officer-accounts.update');
+    Route::get('/accounts', 'userAccounts')->name('accounts.index');
+    Route::get('/accounts/{user}', 'showUserAccount')->name('accounts.show');
+    Route::patch('/accounts/{user}', 'updateUserAccountOfficerValidation')->name('accounts.update');
 
     Route::get('/registrations', 'registrations')->name('registrations.index');
     Route::get('/registrations/{registration}/requirements/{key}', 'showRegistrationRequirementFile')

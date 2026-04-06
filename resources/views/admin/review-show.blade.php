@@ -24,12 +24,6 @@
   </span>
 </div>
 
-@if (session('success'))
-  <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="alert">
-    {{ session('success') }}
-  </div>
-@endif
-
 <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
   <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
     @foreach ($details as $label => $value)

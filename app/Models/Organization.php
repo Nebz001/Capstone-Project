@@ -61,6 +61,14 @@ class Organization extends Model
      */
     public function canEditProfile(): bool
     {
+        $user = auth()->user();
+        if ($user && $user->isSuperAdmin()) {
+            $picked = (int) request()->integer('organization_id');
+            if ($picked > 0 && $picked === (int) $this->id) {
+                return true;
+            }
+        }
+
         if ($this->isProfileRevisionRequested()) {
             return true;
         }
@@ -74,6 +82,14 @@ class Organization extends Model
 
     public function profileEditBlockedMessage(): string
     {
+        $user = auth()->user();
+        if ($user && $user->isSuperAdmin()) {
+            $picked = (int) request()->integer('organization_id');
+            if ($picked > 0 && $picked === (int) $this->id) {
+                return '';
+            }
+        }
+
         if ($this->isProfileRevisionRequested()) {
             return '';
         }

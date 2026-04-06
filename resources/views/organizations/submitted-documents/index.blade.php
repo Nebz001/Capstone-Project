@@ -1,10 +1,12 @@
-@extends('layouts.organization')
+@extends('layouts.organization-portal')
 
 @section('title', 'Submitted Documents — NU Lipa SDAO')
 
 @section('content')
 
 @php
+  $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
+  $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
   $badgeByVariant = [
     'draft' => 'bg-slate-200 text-slate-800 border border-slate-300',
     'pending' => 'bg-amber-100 text-amber-800 border border-amber-200',
@@ -19,7 +21,7 @@
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   <header class="mb-8">
-    <a href="{{ route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+    <a href="{{ route('organizations.manage') }}{{ $saQ }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
       </svg>
@@ -37,6 +39,14 @@
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
   @endif
 
+  @if (! $organization && auth()->user()->isSuperAdmin())
+    <x-ui.card padding="p-0" class="mb-8">
+      <div class="px-6 py-12 text-center text-sm text-slate-600">
+        Choose an organization above to load this RSO&rsquo;s submitted documents.
+      </div>
+    </x-ui.card>
+  @else
+
   <x-ui.card padding="p-0" class="mb-8">
     <x-ui.card-section-header
       title="Filter & sort"
@@ -44,6 +54,9 @@
       content-padding="px-6" />
     <div class="border-t border-slate-100 px-6 py-5">
       <form method="get" action="{{ route('organizations.submitted-documents') }}" class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5 lg:items-end">
+        @if (auth()->user()->isSuperAdmin() && $organization)
+          <input type="hidden" name="organization_id" value="{{ $organization->id }}" />
+        @endif
         <div>
           <x-forms.label for="filter_type">Submission type</x-forms.label>
           <x-forms.select id="filter_type" name="type">
@@ -86,7 +99,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
           <x-ui.button type="submit" class="w-full sm:w-auto">Apply</x-ui.button>
-          <a href="{{ route('organizations.submitted-documents') }}" class="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto">
+          <a href="{{ route('organizations.submitted-documents', array_filter(['organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null])) }}" class="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto">
             Reset
           </a>
         </div>
@@ -107,10 +120,10 @@
           When your organization files registration, renewal, activity calendars, proposals, or after-activity reports, they will appear here with status and links to details.
         </p>
         <div class="mt-6 flex flex-wrap justify-center gap-3">
-          <a href="{{ route('organizations.manage') }}" class="inline-flex rounded-xl bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00327F]">
+          <a href="{{ route('organizations.manage') }}{{ $saQ }}" class="inline-flex rounded-xl bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00327F]">
             Back to Manage Organization
           </a>
-          <a href="{{ route('organizations.activity-submission') }}" class="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
+          <a href="{{ route('organizations.activity-submission') }}{{ $saQ }}" class="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
             Activity submission
           </a>
         </div>
@@ -120,7 +133,7 @@
     <x-ui.card padding="p-0">
       <div class="px-6 py-12 text-center text-sm text-slate-600">
         No records match your filters.
-        <a href="{{ route('organizations.submitted-documents') }}" class="ml-1 font-semibold text-[#003E9F] hover:text-[#00327F]">Clear filters</a>
+        <a href="{{ route('organizations.submitted-documents', array_filter(['organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null])) }}" class="ml-1 font-semibold text-[#003E9F] hover:text-[#00327F]">Clear filters</a>
       </div>
     </x-ui.card>
   @else
@@ -194,6 +207,8 @@
         </section>
       @endforeach
     </div>
+  @endif
+
   @endif
 
 </div>

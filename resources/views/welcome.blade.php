@@ -78,6 +78,55 @@ $portalModules = [
 
 </section>
 
+{{-- ───────────── RECOGNIZED STUDENT ORGANIZATIONS (PUBLIC) ───────────── --}}
+<section id="recognized-rsos" class="border-t border-slate-200/80 bg-slate-50 px-4 py-14 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
+  <div class="mx-auto w-full max-w-7xl">
+    <div class="border-l-4 border-[#003E9F] pl-4">
+      <div class="flex items-center gap-2 text-[#003E9F]">
+        <svg class="h-4 w-4 flex-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.09 9.09 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-.679 1.133c-.481.19-.99.299-1.513.299m0 0A3 3 0 0 1 6 18.719m12 0a3 3 0 0 1-3-3v-1.5m-6 0v1.5a3 3 0 0 1-3 3" />
+        </svg>
+        <span class="text-[10px] font-bold uppercase tracking-[0.2em]">Directory</span>
+      </div>
+      <h2 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Recognized student organizations</h2>
+      <p class="mt-1.5 max-w-2xl text-sm text-slate-600">
+        Student organizations officially recognized by SDAO and active in the current system. This list is updated as organizations complete accreditation.
+      </p>
+    </div>
+
+    @if ($approvedOrganizations->isEmpty())
+      <div class="mt-8 rounded-2xl border border-dashed border-slate-200 bg-white/80 px-6 py-12 text-center">
+        <p class="text-sm text-slate-600">There are no active recognized organizations listed yet. Check back after new groups complete the registration process.</p>
+      </div>
+    @else
+      <p class="mt-6 text-xs font-medium text-slate-500">
+        @php $n = $approvedOrganizations->count(); @endphp
+        {{ $n }} organization{{ $n === 1 ? '' : 's' }}
+      </p>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        @foreach ($approvedOrganizations as $org)
+          @php
+            $typeLine = match ($org->organization_type ?? '') {
+              'extra_curricular' => 'Extra-curricular',
+              'co_curricular' => 'Co-curricular',
+              default => null,
+            };
+          @endphp
+          <article class="flex flex-col rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm transition hover:border-[#003E9F]/25 hover:shadow-md hover:shadow-[#003E9F]/5">
+            <h3 class="text-base font-semibold leading-snug text-slate-900">{{ $org->organization_name }}</h3>
+            @if (filled($org->college_department))
+              <p class="mt-2 text-sm leading-relaxed text-slate-600">{{ $org->college_department }}</p>
+            @endif
+            @if ($typeLine)
+              <p class="mt-3 text-xs font-medium uppercase tracking-wide text-slate-400">{{ $typeLine }}</p>
+            @endif
+          </article>
+        @endforeach
+      </div>
+    @endif
+  </div>
+</section>
+
 {{-- ─────────────────── PORTAL SERVICES ─────────────────── --}}
 <section id="services" class="bg-white px-4 py-14 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
   <div class="mx-auto w-full max-w-7xl">

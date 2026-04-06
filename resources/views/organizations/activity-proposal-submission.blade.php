@@ -1,6 +1,6 @@
-@extends('layouts.organization')
+@extends($layout ?? 'layouts.organization-portal')
 
-@section('title', 'Submit Proposal — NU Lipa SDAO')
+@section('title', ($pageTitle ?? 'Submit Proposal').' — NU Lipa SDAO')
 
 @section('content')
 
@@ -20,22 +20,30 @@
   // inline-block + w-auto: keeps the native file control only as wide as the visible picker so
   // browser validation popovers anchor near "Choose File" instead of a full-width hit box.
   $fileClass = 'inline-block w-auto max-w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
+  $isAdminSubmission = ($submissionContext ?? '') === 'admin';
+  $proposalGetRoute = $activityProposalGetRoute ?? 'organizations.activity-proposal-submission';
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   <header class="mb-8">
-    <a href="{{ route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+    <a href="{{ $backRoute ?? route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
       </svg>
-      Back to Activity Submission
+      @if ($isAdminSubmission)
+        Back to Admin Dashboard
+      @else
+        Back to Activity Submission
+      @endif
     </a>
     <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-      Submit Proposal
+      {{ $pageHeading ?? 'Submit Proposal' }}
     </h1>
     <p class="mt-1 text-sm text-slate-500">
-      @if ($calendarEntry)
+      @if ($pageSubheading ?? null)
+        {{ $pageSubheading }}
+      @elseif ($calendarEntry)
         You are completing the detailed proposal for one calendar activity. Other activities keep their own proposal records.
       @else
         Submit a detailed activity proposal for SDAO review.
@@ -43,7 +51,36 @@
     </p>
   </header>
 
-  @if ($proposalCalendar && $proposalCalendarEntries->isNotEmpty())
+  @if ($isAdminSubmission && ! $organization)
+    <x-ui.card padding="p-0" class="mb-6">
+      <x-ui.card-section-header
+        title="Load organization"
+        subtitle="Enter the exact registered organization name to load submitted calendar activities and the proposal form."
+        content-padding="px-6"
+      />
+      <div class="border-t border-slate-100 px-6 py-5">
+        <form method="GET" action="{{ route('admin.submissions.activity-proposal') }}" class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <div class="min-w-[220px] flex-1">
+            <x-forms.label for="lookup_organization_name_proposal" required>Registered organization name</x-forms.label>
+            <x-forms.input
+              id="lookup_organization_name_proposal"
+              name="lookup_organization_name"
+              type="text"
+              :value="$lookupOrganizationName ?? ''"
+              placeholder="e.g., Computer Society"
+              required
+            />
+          </div>
+          <x-ui.button type="submit" class="w-full sm:w-auto">Continue</x-ui.button>
+        </form>
+        @if (! empty($lookupOrganizationNameError))
+          <p class="mt-3 text-sm font-medium text-red-700">{{ $lookupOrganizationNameError }}</p>
+        @endif
+      </div>
+    </x-ui.card>
+  @endif
+
+  @if ($organization && $proposalCalendar && $proposalCalendarEntries->isNotEmpty())
     <x-ui.card padding="p-0" class="mb-6">
       <x-ui.card-section-header
         title="Select activity from submitted calendar"
@@ -51,7 +88,10 @@
         content-padding="px-6"
       />
       <div class="border-t border-slate-100 px-6 py-5">
-        <form method="GET" action="{{ route('organizations.activity-proposal-submission') }}" class="max-w-4xl">
+        <form method="GET" action="{{ route($proposalGetRoute) }}" class="max-w-4xl">
+          @if ($isAdminSubmission && $organization)
+            <input type="hidden" name="lookup_organization_name" value="{{ request('lookup_organization_name', $organization->organization_name) }}" />
+          @endif
           <div>
             <x-forms.label for="calendar_entry_picker" required>Submitted calendar activity</x-forms.label>
             <x-forms.select id="calendar_entry_picker" name="calendar_entry" required onchange="this.form.submit()">
@@ -141,10 +181,11 @@
     </div>
   @endif
 
+  @if ($organization)
   <form
     id="activity-proposal-form"
     method="POST"
-    action="{{ route('organizations.activity-proposal-submission.store') }}"
+    action="{{ route($proposalStoreRoute ?? 'organizations.activity-proposal-submission.store') }}"
     enctype="multipart/form-data"
     class="space-y-6"
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
@@ -198,7 +239,7 @@
                 name="organization_name"
                 type="text"
                 placeholder="e.g., Computer Society"
-                :value="old('organization_name', $prefill['organization_name'] ?? $organization->organization_name)"
+                :value="old('organization_name', $prefill['organization_name'] ?? $organization?->organization_name)"
                 required
               />
             </div>
@@ -230,7 +271,7 @@
                 name="department_program"
                 type="text"
                 placeholder="e.g., Computer Engineering"
-                :value="old('department_program', $prefill['department_program'] ?? $organization->college_department)"
+                :value="old('department_program', $prefill['department_program'] ?? $organization?->college_department)"
                 required
               />
             </div>
@@ -537,6 +578,7 @@
 
     </fieldset>
   </form>
+  @endif
 
 </div>
 

@@ -1,6 +1,6 @@
-@extends('layouts.organization')
+@extends($layout ?? 'layouts.organization-portal')
 
-@section('title', 'Activity Calendar Submission — NU Lipa SDAO')
+@section('title', ($pageTitle ?? 'Activity Calendar Submission').' — NU Lipa SDAO')
 
 @section('content')
 
@@ -10,32 +10,70 @@
   $activityCalendarFormBlocked = $officerValidationPending || $calendarSubmittedLocked;
   $calLock = $calendarSubmittedLocked && ($latestCalendar ?? null);
   $academicYearVal = old('academic_year', $calLock ? ($latestCalendar->academic_year ?? '') : '');
-  $termVal = old('term', $calLock ? ($latestCalendar->semester ?? '') : '');
-  $orgNameVal = old('organization_name', $calLock ? ($latestCalendar->submitted_organization_name ?? '') : '');
+  $termVal = old('term', $calLock ? ($latestCalendar->semester ?? '') : \App\Models\SystemSetting::activeSemester());
+  $orgNameVal = old(
+      'organization_name',
+      $calLock
+          ? ($latestCalendar->submitted_organization_name ?? '')
+          : (($organization ?? null)?->organization_name ?? '')
+  );
   $dateSubmittedVal = old(
       'date_submitted',
       $calLock && $latestCalendar->submission_date
           ? $latestCalendar->submission_date->format('Y-m-d')
           : ''
   );
+  $isAdminSubmission = ($submissionContext ?? '') === 'admin';
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   <header class="mb-8">
-    <a href="{{ route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+    <a href="{{ $backRoute ?? route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
       </svg>
-      Back to Activity Submission
+      @if ($isAdminSubmission)
+        Back to Admin Dashboard
+      @else
+        Back to Activity Submission
+      @endif
     </a>
     <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-      Activity Calendar Submission
+      {{ $pageHeading ?? 'Activity Calendar Submission' }}
     </h1>
     <p class="mt-1 text-sm text-slate-500">
-      Submit your organization&rsquo;s term activity calendar for review.
+      {{ $pageSubheading ?? 'Submit your organization\'s term activity calendar for review.' }}
     </p>
   </header>
+
+  @if ($isAdminSubmission)
+    <x-ui.card padding="p-0" class="mb-6">
+      <x-ui.card-section-header
+        title="Optional: load existing calendar status"
+        subtitle="Enter the exact registered organization name to preview lock status and past rows before filing a new calendar."
+        content-padding="px-6"
+      />
+      <div class="border-t border-slate-100 px-6 py-5">
+        <form method="GET" action="{{ route('admin.submissions.activity-calendar') }}" class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <div class="min-w-[220px] flex-1">
+            <x-forms.label for="lookup_organization_name">Registered organization name</x-forms.label>
+            <x-forms.input
+              id="lookup_organization_name"
+              name="lookup_organization_name"
+              type="text"
+              :value="$lookupOrganizationName ?? ''"
+              placeholder="e.g., Computer Society"
+            />
+          </div>
+          <x-ui.button type="submit" class="w-full sm:w-auto">Load calendar status</x-ui.button>
+        </form>
+        @if (! empty($lookupOrganizationNameError))
+          <p class="mt-3 text-sm font-medium text-red-700">{{ $lookupOrganizationNameError }}</p>
+        @endif
+      </div>
+    </x-ui.card>
+  @endif
 
   @if (session('error'))
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
@@ -51,8 +89,8 @@
   @if (session('activity_calendar_submitted'))
     <script id="activity-calendar-submitted-flash" type="application/json">
       @json([
-        'activitySubmissionUrl' => route('organizations.activity-submission'),
-        'proposalSubmissionUrl' => route('organizations.activity-proposal-submission'),
+        'activitySubmissionUrl' => $isAdminSubmission ? route('admin.dashboard') : route('organizations.activity-submission'),
+        'proposalSubmissionUrl' => $isAdminSubmission ? route('admin.submissions.activity-proposal') : route('organizations.activity-proposal-submission'),
       ])
     </script>
   @endif
@@ -64,10 +102,11 @@
     />
   @endif
 
+  @if ($organization !== null || $isAdminSubmission)
   <form
     id="activity-calendar-form"
     method="POST"
-    action="{{ route('organizations.activity-calendar-submission.store') }}"
+    action="{{ route($calendarStoreRoute ?? 'organizations.activity-calendar-submission.store') }}"
     class="space-y-6"
     novalidate
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
@@ -336,6 +375,7 @@
 
     </fieldset>
   </form>
+  @endif
 
 </div>
 

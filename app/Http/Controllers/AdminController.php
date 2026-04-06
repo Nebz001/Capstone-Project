@@ -8,6 +8,7 @@ use App\Models\ActivityReport;
 use App\Models\Organization;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
+use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -45,7 +46,28 @@ class AdminController extends Controller
 
         $calendarEvents = $this->buildCentralizedCalendarEvents();
 
-        return view('admin.dashboard', compact('counts', 'calendarEvents'));
+        $registeredOrganizations = Organization::query()
+            ->orderBy('organization_name')
+            ->get(['id', 'organization_name', 'organization_status', 'college_department', 'organization_type']);
+
+        return view('admin.dashboard', compact('counts', 'calendarEvents', 'registeredOrganizations'));
+    }
+
+    public function updateActiveTerm(Request $request): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+
+        abort_unless($request->user()?->isSuperAdmin(), 403);
+
+        $validated = $request->validate([
+            'active_semester' => ['required', 'string', Rule::in(['term_1', 'term_2', 'term_3'])],
+        ]);
+
+        SystemSetting::put('active_semester', $validated['active_semester']);
+
+        return redirect()
+            ->back()
+            ->with('success', 'The active academic term has been updated for the entire system.');
     }
 
     public function registrations(Request $request): View
@@ -178,28 +200,30 @@ class AdminController extends Controller
         ]);
     }
 
-    public function officerAccounts(Request $request): View
+    public function userAccounts(Request $request): View
     {
         $this->authorizeAdmin($request);
 
         $accounts = User::query()
-            ->where('role_type', 'ORG_OFFICER')
+            ->withoutSdaoAdminAccounts()
             ->with([
                 'organizationOfficers' => fn ($query) => $query
                     ->latest('id')
                     ->with('organization'),
             ])
-            ->latest('created_at')
-            ->paginate(12);
+            ->orderByRaw("CASE role_type WHEN 'ORG_OFFICER' THEN 0 WHEN 'APPROVER' THEN 1 WHEN 'ADMIN' THEN 2 ELSE 3 END")
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate(15);
 
-        return view('admin.officer-accounts.index', compact('accounts'));
+        return view('admin.user-accounts.index', compact('accounts'));
     }
 
-    public function showOfficerAccount(Request $request, User $user): View
+    public function showUserAccount(Request $request, User $user): View
     {
         $this->authorizeAdmin($request);
 
-        abort_if($user->role_type !== 'ORG_OFFICER', 404);
+        abort_if($user->isSdaoAdmin(), 404);
 
         $user->load([
             'organizationOfficers' => fn ($query) => $query->latest('id')->with('organization'),
@@ -208,16 +232,17 @@ class AdminController extends Controller
 
         $latestOfficerRecord = $user->organizationOfficers->first();
 
-        return view('admin.officer-accounts.show', [
-            'studentOfficer' => $user,
+        return view('admin.user-accounts.show', [
+            'account' => $user,
             'latestOfficerRecord' => $latestOfficerRecord,
         ]);
     }
 
-    public function updateOfficerValidation(Request $request, User $user)
+    public function updateUserAccountOfficerValidation(Request $request, User $user): RedirectResponse
     {
         $this->authorizeAdmin($request);
 
+        abort_if($user->isSdaoAdmin(), 404);
         abort_if($user->role_type !== 'ORG_OFFICER', 404);
 
         $validated = $request->validate([
@@ -233,8 +258,8 @@ class AdminController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.officer-accounts.show', $user)
-            ->with('success', 'Student officer validation has been updated.');
+            ->route('admin.accounts.show', $user)
+            ->with('success', 'Officer validation has been updated.');
     }
 
     public function centralizedCalendar(Request $request): View

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -42,7 +43,40 @@ class User extends Authenticatable
 
     public function getFullNameAttribute(): string
     {
-        return trim($this->first_name . ' ' . $this->last_name);
+        return trim($this->first_name.' '.$this->last_name);
+    }
+
+    /**
+     * Human-readable account role for admin listings (maps users.role_type).
+     */
+    public function roleDisplayLabel(): string
+    {
+        return match ($this->role_type) {
+            'ORG_OFFICER' => 'Student officer',
+            'APPROVER' => 'Signatory',
+            'ADMIN' => 'Administrator',
+            default => $this->role_type ?? 'Unknown',
+        };
+    }
+
+    /**
+     * Exclude SDAO dashboard accounts (config/sdao.php admin_accounts) from general user listings.
+     */
+    public function scopeWithoutSdaoAdminAccounts(Builder $query): void
+    {
+        $emails = collect(config('sdao.admin_accounts', []))
+            ->pluck('email')
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($emails === []) {
+            return;
+        }
+
+        $query->whereNot(function (Builder $q) use ($emails): void {
+            $q->where('role_type', 'ADMIN')->whereIn('email', $emails);
+        });
     }
 
     // ── Relationships ──────────────────────────────────────────
@@ -130,11 +164,24 @@ class User extends Authenticatable
     }
 
     /**
+     * SDAO Super Admin: full admin access plus admin-side RSO submission routes (see admin.submissions.*).
+     * Same identity as {@see isSdaoAdmin()} (ADMIN + config/sdao.php admin_accounts).
+     */
+    public function isSuperAdmin(): bool
+    {
+        return $this->isSdaoAdmin();
+    }
+
+    /**
      * Officer is cleared for org-level actions when validation is Approved or Active
      * (DB may use either value depending on workflow).
      */
     public function isOfficerValidated(): bool
     {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
         if ($this->role_type !== 'ORG_OFFICER') {
             return false;
         }

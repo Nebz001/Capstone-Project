@@ -1,4 +1,4 @@
-@extends('layouts.organization')
+@extends('layouts.organization-portal')
 
 @section('title', 'Organization Profile — NU Lipa SDAO')
 
@@ -42,12 +42,14 @@
             ? $activeApplication->renewal_notes
             : $activeApplication->registration_notes)
         : null;
+    $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
+    $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 pb-24 sm:px-6 lg:px-10">
 
     <header class="mb-8">
-        <a href="{{ route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+        <a href="{{ route('organizations.manage') }}{{ $saQ }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
             <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
             </svg>
@@ -66,7 +68,7 @@
             @if ($organization && !$editing)
                 @if ($canEditProfile)
                     <a
-                        href="{{ route('organizations.profile', ['edit' => 1]) }}"
+                        href="{{ route('organizations.profile', array_filter(['edit' => 1, 'organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null])) }}"
                         class="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40 active:bg-[#002d75]"
                     >
                         <svg class="h-4 w-4 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
@@ -342,6 +344,9 @@
             <form method="POST" action="{{ route('organizations.profile.update') }}" class="space-y-6">
                 @csrf
                 @method('PUT')
+                @if (auth()->user()->isSuperAdmin() && $organization)
+                    <input type="hidden" name="organization_id" value="{{ $organization->id }}" />
+                @endif
 
                 <section aria-labelledby="profile-edit-section-status-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
@@ -461,7 +466,7 @@
 
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                     <a
-                        href="{{ route('organizations.profile') }}"
+                        href="{{ route('organizations.profile', array_filter(['organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null])) }}"
                         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"
                     >
                         Cancel

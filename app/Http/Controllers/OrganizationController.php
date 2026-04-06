@@ -10,7 +10,9 @@ use App\Models\Organization;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
+use App\Models\SystemSetting;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +55,14 @@ class OrganizationController extends Controller
         'sabm' => 'School of Accounting and Business Management',
         'shs' => 'Senior High School',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    public static function schoolCodeLabelMap(): array
+    {
+        return self::SCHOOL_CODE_LABELS;
+    }
 
     /** Stored in `college_department` when organization type is extra-curricular (non-academic). */
     private const NON_ACADEMIC_DEPARTMENT_LABEL = 'Non-academic (Extra-Curricular)';
@@ -167,8 +177,28 @@ class OrganizationController extends Controller
         return '0'.$digits;
     }
 
+    /**
+     * Match a submitted organization name to a registered organization (case-insensitive, trimmed).
+     */
+    public function resolveOrganizationByRegisteredName(string $name): ?Organization
+    {
+        $normalized = mb_strtolower(trim($name));
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        return Organization::query()
+            ->whereRaw('LOWER(TRIM(organization_name)) = ?', [$normalized])
+            ->first();
+    }
+
     public function index(Request $request)
     {
+        if ($request->user()?->isSuperAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
         $calendarEvents = [];
         $user = $request->user();
         if ($user) {
@@ -223,18 +253,30 @@ class OrganizationController extends Controller
         return $events;
     }
 
-    public function manage()
+    public function manage(Request $request)
     {
+        if ($request->user()?->isSuperAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
         return view('organizations.manage');
     }
 
-    public function showSubmitReportHub()
+    public function showSubmitReportHub(Request $request)
     {
+        if ($request->user()?->isSuperAdmin()) {
+            return redirect()->route('admin.reports.index');
+        }
+
         return view('organizations.submit-report');
     }
 
-    public function showActivitySubmissionHub()
+    public function showActivitySubmissionHub(Request $request)
     {
+        if ($request->user()?->isSuperAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
         return view('organizations.activity-submission');
     }
 
@@ -242,11 +284,30 @@ class OrganizationController extends Controller
 
     public function showRegistrationForm(Request $request)
     {
+        if ($request->user()?->isSuperAdmin()) {
+            return redirect()->route('admin.submissions.register');
+        }
+
         $user = $request->user();
         $officerValidationPending = $user && ! $user->isOfficerValidated();
         $alreadyLinkedToOrganization = $user && $user->currentOrganization() !== null;
 
         return view('organizations.register', compact('officerValidationPending', 'alreadyLinkedToOrganization'));
+    }
+
+    /**
+     * SDAO admin registration: creates org + registration under the admin account without linking the admin as an organization officer.
+     */
+    public function storeRegistrationForAdmin(Request $request): RedirectResponse
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+
+        if (! $user || ! $user->isSdaoAdmin()) {
+            abort(403, 'Only authorized SDAO admins can submit registration from the admin portal.');
+        }
+
+        return $this->processRegistrationSubmission($request, forAdmin: true);
     }
 
     public function storeRegistration(Request $request)
@@ -258,6 +319,12 @@ class OrganizationController extends Controller
             return redirect()
                 ->route('login')
                 ->with('error', 'Please log in to submit organization registration.');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return redirect()
+                ->route('admin.submissions.register')
+                ->with('error', 'Use the Register Organization form in the admin portal.');
         }
 
         if ($user->role_type !== 'ORG_OFFICER') {
@@ -272,6 +339,19 @@ class OrganizationController extends Controller
             return back()
                 ->with('error', 'Your account is already linked to an organization.')
                 ->withInput();
+        }
+
+        return $this->processRegistrationSubmission($request, forAdmin: false);
+    }
+
+    private function processRegistrationSubmission(Request $request, bool $forAdmin): RedirectResponse
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+        if (! $user) {
+            return redirect()
+                ->route('login')
+                ->with('error', 'Please log in to submit organization registration.');
         }
 
         $validated = $request->validate(array_merge([
@@ -302,7 +382,9 @@ class OrganizationController extends Controller
 
         $reqs = collect($validated['requirements'] ?? []);
 
-        DB::transaction(function () use ($validated, $reqs, $user, $request): void {
+        $registration = null;
+
+        DB::transaction(function () use ($validated, $reqs, $user, $request, $forAdmin, &$registration): void {
             $organization = Organization::create([
                 'organization_name' => $validated['organization_name'],
                 'organization_type' => $validated['organization_type'],
@@ -312,12 +394,14 @@ class OrganizationController extends Controller
                 'organization_status' => 'PENDING',
             ]);
 
-            OrganizationOfficer::create([
-                'organization_id' => $organization->id,
-                'user_id' => $user->id,
-                'position_title' => 'President',
-                'officer_status' => 'ACTIVE',
-            ]);
+            if (! $forAdmin) {
+                OrganizationOfficer::create([
+                    'organization_id' => $organization->id,
+                    'user_id' => $user->id,
+                    'position_title' => 'President',
+                    'officer_status' => 'ACTIVE',
+                ]);
+            }
 
             $filePaths = $this->storeRequirementFilesForKeys(
                 $request,
@@ -326,7 +410,7 @@ class OrganizationController extends Controller
                 "organization-requirements/{$organization->id}/registration"
             );
 
-            OrganizationRegistration::create([
+            $registration = OrganizationRegistration::create([
                 'organization_id' => $organization->id,
                 'user_id' => $user->id,
                 'academic_year' => $validated['academic_year'],
@@ -346,6 +430,12 @@ class OrganizationController extends Controller
             ]);
         });
 
+        if ($forAdmin) {
+            return redirect()
+                ->route('admin.registrations.show', $registration)
+                ->with('success', 'Registration application submitted successfully. File under the submitting SDAO admin account.');
+        }
+
         return redirect()
             ->route('organizations.register')
             ->with('success', 'Registration application submitted successfully.')
@@ -356,13 +446,18 @@ class OrganizationController extends Controller
 
     public function showRenewalForm(Request $request)
     {
-        $organization = $request->user()?->currentOrganization();
+        if ($request->user()?->isSuperAdmin()) {
+            return redirect()->route('admin.submissions.renew');
+        }
+
+        $user = $request->user();
+        $organization = $user?->currentOrganization();
         $schoolCodeDefault = null;
         if ($organization) {
             $schoolCodeDefault = $this->schoolCodeFromDepartment($organization->college_department);
         }
 
-        $officerValidationPending = $request->user() && ! $request->user()->isOfficerValidated();
+        $officerValidationPending = $user && ! $user->isOfficerValidated();
         $renewalBlockedNoOrganization = $organization === null;
 
         return view('organizations.renew', compact('organization', 'schoolCodeDefault', 'officerValidationPending', 'renewalBlockedNoOrganization'));
@@ -379,19 +474,20 @@ class OrganizationController extends Controller
                 ->with('error', 'Please log in to submit a renewal application.');
         }
 
-        $organization = $user->currentOrganization();
+        $isAdminRenewal = $request->routeIs('admin.submissions.renew.store');
+
+        if ($user->isSuperAdmin() && ! $isAdminRenewal) {
+            return redirect()
+                ->route('admin.submissions.renew')
+                ->with('error', 'Use the Renew Organization form in the admin portal.');
+        }
 
         if (! $user->isOfficerValidated()) {
             return back()->with('error', 'Your student officer account is pending SDAO validation.');
         }
 
-        if (! $organization) {
-            return back()
-                ->with('error', 'No organization found for your account. Please register first.')
-                ->withInput();
-        }
-
         $validated = $request->validate(array_merge([
+            'organization_name' => ['required', 'string', 'max:150'],
             'contact_person' => ['required', 'string', 'max:255'],
             'contact_no' => $this->contactNoRules(),
             'email_address' => ['required', 'email', 'max:150'],
@@ -412,6 +508,27 @@ class OrganizationController extends Controller
             'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
             'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
         ]);
+
+        if ($user->isSuperAdmin()) {
+            $organization = $this->resolveOrganizationByRegisteredName($validated['organization_name']);
+            if (! $organization) {
+                return back()
+                    ->withErrors(['organization_name' => 'No registered organization matches this name.'])
+                    ->withInput();
+            }
+        } else {
+            $organization = $user->currentOrganization();
+            if (! $organization) {
+                return back()
+                    ->with('error', 'No organization found for your account. Please register first.')
+                    ->withInput();
+            }
+            if (mb_strtolower(trim($validated['organization_name'])) !== mb_strtolower(trim($organization->organization_name))) {
+                return back()
+                    ->withErrors(['organization_name' => 'Organization name must match your registered organization.'])
+                    ->withInput();
+            }
+        }
 
         $validated['contact_no'] = $this->normalizePhilippineContactNo($validated['contact_no']);
 
@@ -455,10 +572,19 @@ class OrganizationController extends Controller
             $renewal->update(['requirement_files' => $filePaths]);
         }
 
+        if ($isAdminRenewal) {
+            return redirect()
+                ->route('admin.renewals.show', $renewal)
+                ->with('success', 'Renewal application submitted successfully. Recorded under your SDAO admin account.');
+        }
+
+        $renewProfileUrl = route('organizations.profile');
+        $renewBackUrl = route('organizations.renew');
+
         return redirect()
-            ->route('organizations.renew')
+            ->to($renewBackUrl)
             ->with('success', 'Renewal application submitted successfully.')
-            ->with('renewal_redirect_to', route('organizations.profile'));
+            ->with('renewal_redirect_to', $renewProfileUrl);
     }
 
     // ── Organization Profile ────────────────────────────────────
@@ -467,7 +593,12 @@ class OrganizationController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $organization = $user?->currentOrganization();
+
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
+        $organization = $user->currentOrganization();
 
         $canEditProfile = $organization?->canEditProfile() ?? false;
         $profileEditBlockedMessage = $organization?->profileEditBlockedMessage() ?? '';
@@ -552,7 +683,12 @@ class OrganizationController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $organization = $user?->currentOrganization();
+
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
+        $organization = $user->currentOrganization();
 
         if (! $organization) {
             return back()->with('error', 'No organization found for your account.');
@@ -589,15 +725,14 @@ class OrganizationController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $activeOfficer = $this->resolveActiveOfficer($request);
-        $organization = $activeOfficer
-          ? Organization::query()->find($activeOfficer->organization_id)
-          : null;
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('admin.submissions.activity-calendar');
+        }
+
+        $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return redirect()
-                ->route('organizations.profile')
-                ->with('error', 'Your account is not linked to an active organization.');
+            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
         }
 
         $latestCalendar = $organization->activityCalendars()
@@ -623,21 +758,35 @@ class OrganizationController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $activeOfficer = $this->resolveActiveOfficer($request);
-        $organization = $activeOfficer
-          ? Organization::query()->find($activeOfficer->organization_id)
-          : null;
+        $isAdminCalendar = $request->routeIs('admin.submissions.activity-calendar.store');
 
-        if (! $organization) {
+        if ($user->isSuperAdmin() && ! $isAdminCalendar) {
             return redirect()
-                ->route('organizations.profile')
-                ->with('error', 'Your account is not linked to an active organization.');
+                ->route('admin.submissions.activity-calendar')
+                ->with('error', 'Use the Submit Activity Calendar form in the admin portal.');
         }
 
         if (! $user->isOfficerValidated()) {
             return redirect()
                 ->route('organizations.activity-calendar-submission')
                 ->with('error', 'Your student officer account is pending SDAO validation.');
+        }
+
+        if ($user->isSuperAdmin()) {
+            $request->validate([
+                'organization_name' => ['required', 'string', 'max:255'],
+            ]);
+            $organization = $this->resolveOrganizationByRegisteredName($request->string('organization_name')->toString());
+            if (! $organization) {
+                return back()
+                    ->withErrors(['organization_name' => 'No registered organization matches this name.'])
+                    ->withInput();
+            }
+        } else {
+            $organization = $this->resolveOrganizationForWorkflows($request);
+            if (! $organization) {
+                return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
+            }
         }
 
         $latestLockedCalendar = ActivityCalendar::query()
@@ -647,9 +796,17 @@ class OrganizationController extends Controller
             ->first();
 
         if ($latestLockedCalendar && strtoupper((string) $latestLockedCalendar->calendar_status) !== 'REVISION') {
+            $calUrl = $isAdminCalendar
+                ? route('admin.submissions.activity-calendar')
+                : route('organizations.activity-calendar-submission');
+
             return redirect()
-                ->route('organizations.activity-calendar-submission')
+                ->to($calUrl)
                 ->with('error', 'This activity calendar has already been submitted and can no longer be edited.');
+        }
+
+        if (! $request->filled('term')) {
+            $request->merge(['term' => SystemSetting::activeSemester()]);
         }
 
         $validated = $request->validate([
@@ -707,6 +864,12 @@ class OrganizationController extends Controller
             }
         });
 
+        if ($isAdminCalendar) {
+            return redirect()
+                ->route('admin.calendars.index')
+                ->with('success', 'Activity calendar submitted successfully. Recorded under your SDAO admin account.');
+        }
+
         return redirect()
             ->route('organizations.activity-calendar-submission')
             ->with('activity_calendar_submitted', true);
@@ -718,16 +881,41 @@ class OrganizationController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $activeOfficer = $this->resolveActiveOfficer($request);
-        $organization = $activeOfficer
-            ? Organization::query()->find($activeOfficer->organization_id)
-            : null;
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('admin.submissions.activity-proposal');
+        }
+
+        $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return redirect()
-                ->route('organizations.profile')
-                ->with('error', 'Your account is not linked to an active organization.');
+            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
         }
+
+        $viewData = $this->activityProposalFormViewData($request, $organization, false);
+
+        return $viewData instanceof RedirectResponse
+            ? $viewData
+            : view('organizations.activity-proposal-submission', $viewData);
+    }
+
+    /**
+     * Shared data for the activity proposal form (student portal or admin submission module).
+     *
+     * @return array<string, mixed>|RedirectResponse
+     */
+    public function activityProposalFormViewData(Request $request, Organization $organization, bool $forAdminPortal = false)
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $proposalIndexRoute = $forAdminPortal ? 'admin.submissions.activity-proposal' : 'organizations.activity-proposal-submission';
+        $proposalShowRoute = $forAdminPortal ? 'admin.proposals.show' : 'organizations.activity-submission.proposals.show';
+
+        $proposalIndexQuery = $forAdminPortal
+            ? array_filter([
+                'lookup_organization_name' => $request->query('lookup_organization_name') ?: $organization->organization_name,
+            ], fn ($v) => $v !== null && $v !== '')
+            : [];
 
         $schoolPrefill = $this->schoolCodeFromDepartment($organization->college_department);
         $calendarEntry = null;
@@ -745,7 +933,7 @@ class OrganizationController extends Controller
 
             if (! $calendarEntry) {
                 return redirect()
-                    ->route('organizations.activity-proposal-submission')
+                    ->route($proposalIndexRoute, $proposalIndexQuery)
                     ->with('error', 'That calendar activity was not found or does not belong to your organization.');
             }
 
@@ -756,7 +944,7 @@ class OrganizationController extends Controller
 
             if ($linkedProposal && ! in_array($linkedProposal->proposal_status, ['DRAFT', 'REVISION'], true)) {
                 return redirect()
-                    ->route('organizations.activity-submission.proposals.show', $linkedProposal)
+                    ->route($proposalShowRoute, $linkedProposal)
                     ->with('error', 'This activity already has a submitted proposal. Open it from Activity Submission to view details.');
             }
 
@@ -780,7 +968,7 @@ class OrganizationController extends Controller
 
         $prefill = $this->buildActivityProposalFormPrefill($organization, $calendarEntry, $linkedProposal, $schoolPrefill);
 
-        return view('organizations.activity-proposal-submission', [
+        return [
             'organization' => $organization,
             'schoolOptions' => self::SCHOOL_CODE_LABELS,
             'schoolPrefill' => $schoolPrefill,
@@ -789,22 +977,36 @@ class OrganizationController extends Controller
             'linkedProposal' => $linkedProposal,
             'proposalCalendar' => $proposalCalendar,
             'prefill' => $prefill,
-        ]);
+        ];
     }
 
     public function storeActivityProposalSubmission(Request $request)
     {
         /** @var User $user */
         $user = $request->user();
-        $activeOfficer = $this->resolveActiveOfficer($request);
-        $organization = $activeOfficer
-            ? Organization::query()->find($activeOfficer->organization_id)
-            : null;
+        $isAdminProposal = $request->routeIs('admin.submissions.activity-proposal.store');
 
-        if (! $organization) {
+        if ($user->isSuperAdmin() && ! $isAdminProposal) {
             return redirect()
-                ->route('organizations.profile')
-                ->with('error', 'Your account is not linked to an active organization.');
+                ->route('admin.submissions.activity-proposal')
+                ->with('error', 'Use the Submit Activity Proposal form in the admin portal.');
+        }
+
+        if ($user->isSuperAdmin()) {
+            $request->validate([
+                'organization_name' => ['required', 'string', 'max:255'],
+            ]);
+            $organization = $this->resolveOrganizationByRegisteredName($request->string('organization_name')->toString());
+            if (! $organization) {
+                return back()
+                    ->withErrors(['organization_name' => 'No registered organization matches this name.'])
+                    ->withInput();
+            }
+        } else {
+            $organization = $this->resolveOrganizationForWorkflows($request);
+            if (! $organization) {
+                return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
+            }
         }
 
         if (! $user->isOfficerValidated()) {
@@ -839,7 +1041,7 @@ class OrganizationController extends Controller
 
         if ($existing && ! in_array($existing->proposal_status, ['DRAFT', 'REVISION'], true)) {
             return redirect()
-                ->route('organizations.activity-submission.proposals.show', $existing)
+                ->route($isAdminProposal ? 'admin.proposals.show' : 'organizations.activity-submission.proposals.show', $existing)
                 ->with('error', 'This proposal can no longer be edited from the submission form. View it under Activity Submission.');
         }
 
@@ -968,13 +1170,20 @@ class OrganizationController extends Controller
 
         if ($existing) {
             $existing->update($payload);
+            $proposal = $existing;
         } else {
-            ActivityProposal::create($payload);
+            $proposal = ActivityProposal::create($payload);
         }
 
         $successMessage = $asDraft
             ? 'Proposal saved as draft. You can continue editing anytime.'
             : 'Activity proposal submitted successfully for SDAO review.';
+
+        if ($isAdminProposal) {
+            return redirect()
+                ->route('admin.proposals.show', $proposal)
+                ->with('success', $successMessage.' Recorded under your SDAO admin account.');
+        }
 
         if ($calendarEntry) {
             return redirect()
@@ -1080,15 +1289,15 @@ class OrganizationController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $activeOfficer = $this->resolveActiveOfficer($request);
-        $organization = $activeOfficer
-            ? Organization::query()->find($activeOfficer->organization_id)
-            : null;
+
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('admin.reports.index');
+        }
+
+        $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return redirect()
-                ->route('organizations.manage')
-                ->with('error', 'Your account is not linked to an active organization.');
+            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.manage');
         }
 
         return view('organizations.after-activity-report', [
@@ -1104,15 +1313,17 @@ class OrganizationController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $activeOfficer = $this->resolveActiveOfficer($request);
-        $organization = $activeOfficer
-            ? Organization::query()->find($activeOfficer->organization_id)
-            : null;
+
+        if ($user->isSuperAdmin()) {
+            return redirect()
+                ->route('admin.reports.index')
+                ->with('error', 'After-activity reports are submitted by student officers from the organization portal.');
+        }
+
+        $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return redirect()
-                ->route('organizations.manage')
-                ->with('error', 'Your account is not linked to an active organization.');
+            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.manage');
         }
 
         if (! $user->isOfficerValidated()) {
@@ -1197,6 +1408,38 @@ class OrganizationController extends Controller
             ->route('organizations.after-activity-report')
             ->with('success', 'After activity report submitted successfully.')
             ->with('after_activity_report_redirect_to', route('organizations.index'));
+    }
+
+    private function redirectWhenNoOrganizationForWorkflow(Request $request, string $studentFallbackRoute): RedirectResponse
+    {
+        $user = $request->user();
+        if ($user && $user->isSuperAdmin()) {
+            return redirect()
+                ->route('admin.dashboard')
+                ->with('error', 'Use the admin submission forms or the student officer portal with an organization-linked account.');
+        }
+
+        return redirect()
+            ->route($studentFallbackRoute)
+            ->with('error', 'Your account is not linked to an active organization.');
+    }
+
+    /**
+     * Organization for calendar, proposals, reports, etc. (student officers only).
+     */
+    private function resolveOrganizationForWorkflows(Request $request): ?Organization
+    {
+        $user = $request->user();
+        if (! $user) {
+            return null;
+        }
+
+        $officer = $this->resolveActiveOfficer($request);
+        if (! $officer) {
+            return null;
+        }
+
+        return Organization::query()->find($officer->organization_id);
     }
 
     private function resolveActiveOfficer(Request $request): ?OrganizationOfficer

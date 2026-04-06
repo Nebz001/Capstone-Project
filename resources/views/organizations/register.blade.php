@@ -1,6 +1,6 @@
-@extends('layouts.organization')
+@extends($layout ?? 'layouts.organization-portal')
 
-@section('title', 'Register Organization — NU Lipa SDAO')
+@section('title', ($pageTitle ?? 'Register Organization').' — NU Lipa SDAO')
 
 @section('content')
 
@@ -15,17 +15,17 @@
 
   {{-- ── Page Header ──────────────────────────────────────────────── --}}
   <header class="mb-8">
-    <a href="{{ route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+    <a href="{{ $backRoute ?? route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
       </svg>
-      Back to Manage Organization
+      {{ $backLabel ?? 'Back to Manage Organization' }}
     </a>
     <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-      New Organization Registration
+      {{ $pageHeading ?? 'New Organization Registration' }}
     </h1>
     <p class="mt-1 text-sm text-slate-500">
-      Complete all required fields to register your student organization with SDAO.
+      {{ $pageSubheading ?? 'Complete all required fields to register your student organization with SDAO.' }}
     </p>
   </header>
 
@@ -58,7 +58,7 @@
 
   <form
     method="POST"
-    action="{{ route('organizations.register.store') }}"
+    action="{{ route($registerStoreRoute ?? 'organizations.register.store') }}"
     enctype="multipart/form-data"
     class="space-y-6"
     data-org-form-blocked="{{ $registrationFormBlocked ? 'true' : 'false' }}"

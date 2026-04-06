@@ -18,12 +18,6 @@
   </a>
 </header>
 
-@if (session('success'))
-  <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-    {{ session('success') }}
-  </div>
-@endif
-
 <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
   <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-slate-200">
