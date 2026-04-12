@@ -15,8 +15,12 @@
       </div>
     </a>
 
-    {{-- Right: Authenticated user controls --}}
+    {{-- Right: Active term (display only) + user controls --}}
     <div class="ml-4 flex flex-none items-center gap-1 sm:gap-2">
+
+      <x-active-term-status variant="navbar" />
+
+      <div class="mx-0.5 hidden h-6 w-px shrink-0 bg-white/20 sm:mx-1 sm:block" aria-hidden="true"></div>
 
       {{-- Notifications: announcement-style popover --}}
       <details class="relative z-[60]" data-org-navbar-panel data-org-announcements>

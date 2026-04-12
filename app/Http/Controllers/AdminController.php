@@ -32,6 +32,48 @@ class AdminController extends Controller
         'others',
     ];
 
+    /** Admin per-section review keys (registration show page). */
+    private const REGISTRATION_REVIEW_SECTION_KEYS = ['application', 'contact', 'organizational', 'requirements'];
+
+    /** @return array<string, string> section_key => revision_comment column */
+    private function registrationReviewSectionRevisionColumns(): array
+    {
+        return [
+            'application' => 'revision_comment_application',
+            'contact' => 'revision_comment_contact',
+            'organizational' => 'revision_comment_organizational',
+            'requirements' => 'revision_comment_requirements',
+        ];
+    }
+
+    /**
+     * @return array<string, 'pending'|'validated'|'revision'>
+     */
+    private function initialRegistrationSectionReviewState(OrganizationRegistration $registration): array
+    {
+        $stored = $registration->section_review_state;
+        if (is_array($stored)) {
+            $out = [];
+            foreach (self::REGISTRATION_REVIEW_SECTION_KEYS as $k) {
+                $v = $stored[$k] ?? 'pending';
+                $out[$k] = in_array($v, ['validated', 'revision', 'pending'], true) ? $v : 'pending';
+            }
+
+            return $out;
+        }
+
+        if (strtoupper((string) $registration->registration_status) === 'APPROVED') {
+            return array_fill_keys(self::REGISTRATION_REVIEW_SECTION_KEYS, 'validated');
+        }
+
+        $out = [];
+        foreach ($this->registrationReviewSectionRevisionColumns() as $key => $col) {
+            $out[$key] = trim((string) ($registration->{$col} ?? '')) !== '' ? 'revision' : 'pending';
+        }
+
+        return $out;
+    }
+
     public function dashboard(Request $request): View
     {
         $this->authorizeAdmin($request);
@@ -277,7 +319,10 @@ class AdminController extends Controller
 
         $registration->load(['organization', 'user']);
 
-        return view('admin.registrations.show', compact('registration'));
+        return view('admin.registrations.show', [
+            'registration' => $registration,
+            'initialSectionReviewState' => $this->initialRegistrationSectionReviewState($registration),
+        ]);
     }
 
     /**
@@ -322,8 +367,17 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $validator = Validator::make($request->all(), [
-            'decision' => ['required', Rule::in(['APPROVED', 'REJECTED', 'REVISION'])],
+        $sectionKeys = self::REGISTRATION_REVIEW_SECTION_KEYS;
+        $sectionReviewRules = [];
+        foreach ($sectionKeys as $k) {
+            $sectionReviewRules['section_review.'.$k] = [
+                Rule::requiredIf(fn () => $request->input('decision') !== 'REJECTED'),
+                Rule::in(['validated', 'revision', 'pending']),
+            ];
+        }
+
+        $validator = Validator::make($request->all(), array_merge([
+            'decision' => ['required', Rule::in(['APPROVED', 'REJECTED'])],
             'remarks' => [
                 Rule::when(
                     $request->input('decision') === 'REJECTED',
@@ -335,25 +389,58 @@ class AdminController extends Controller
             'revision_comment_contact' => ['nullable', 'string', 'max:5000'],
             'revision_comment_organizational' => ['nullable', 'string', 'max:5000'],
             'revision_comment_requirements' => ['nullable', 'string', 'max:5000'],
-        ]);
+            'section_review' => [
+                Rule::requiredIf(fn () => $request->input('decision') !== 'REJECTED'),
+                'array',
+            ],
+        ], $sectionReviewRules));
 
-        $validator->after(function ($validator) use ($request): void {
-            if ($request->input('decision') !== 'REVISION') {
+        $validator->after(function ($validator) use ($request, $sectionKeys): void {
+            if ($request->input('decision') === 'REJECTED') {
                 return;
             }
-            $generalOk = strlen(trim((string) $request->input('remarks', ''))) >= 3;
-            $sectionTexts = [
-                $request->input('revision_comment_application'),
-                $request->input('revision_comment_contact'),
-                $request->input('revision_comment_organizational'),
-                $request->input('revision_comment_requirements'),
-            ];
-            $anySection = collect($sectionTexts)->contains(fn ($t) => strlen(trim((string) $t)) >= 3);
-            if (! $generalOk && ! $anySection) {
-                $validator->errors()->add(
-                    'remarks',
-                    'For revision, add general remarks (at least 3 characters) and/or at least one section comment (at least 3 characters).',
-                );
+
+            $sections = $request->input('section_review', []);
+            if (! is_array($sections)) {
+                $validator->errors()->add('section_review', 'Section review data is missing.');
+
+                return;
+            }
+
+            foreach ($sectionKeys as $k) {
+                if (($sections[$k] ?? 'pending') === 'pending') {
+                    $validator->errors()->add(
+                        'section_review',
+                        'Review every section: mark each as Verified or Need revision before submitting.',
+                    );
+                    break;
+                }
+            }
+
+            $colMap = $this->registrationReviewSectionRevisionColumns();
+            foreach ($colMap as $sk => $column) {
+                if (($sections[$sk] ?? '') === 'revision') {
+                    $text = trim((string) $request->input($column, ''));
+                    if (strlen($text) < 3) {
+                        $validator->errors()->add(
+                            $column,
+                            'Add section feedback (at least 3 characters) for this part of the form.',
+                        );
+                    }
+                }
+            }
+
+            $anyRevision = collect($sectionKeys)->contains(fn ($k) => ($sections[$k] ?? '') === 'revision');
+            if ($anyRevision) {
+                $generalOk = strlen(trim((string) $request->input('remarks', ''))) >= 3;
+                $sectionTexts = collect($colMap)->map(fn ($col) => $request->input($col))->all();
+                $anySectionText = collect($sectionTexts)->contains(fn ($t) => strlen(trim((string) $t)) >= 3);
+                if (! $generalOk && ! $anySectionText) {
+                    $validator->errors()->add(
+                        'remarks',
+                        'For revision, add general remarks (at least 3 characters) and/or section feedback for each part marked Need revision.',
+                    );
+                }
             }
         });
 
@@ -362,19 +449,38 @@ class AdminController extends Controller
         /** @var User $admin */
         $admin = $request->user();
         $decision = $validated['decision'];
+
+        /** @var array<string, string> $sectionStates */
+        $sectionStates = $validated['section_review'] ?? [];
+
+        if ($decision !== 'REJECTED') {
+            $anyRevision = in_array('revision', $sectionStates, true);
+            $decision = $anyRevision ? 'REVISION' : 'APPROVED';
+        }
+
         $remarks = trim((string) ($validated['remarks'] ?? ''));
 
-        $sectionFields = [
-            'revision_comment_application' => trim((string) $request->input('revision_comment_application', '')),
-            'revision_comment_contact' => trim((string) $request->input('revision_comment_contact', '')),
-            'revision_comment_organizational' => trim((string) $request->input('revision_comment_organizational', '')),
-            'revision_comment_requirements' => trim((string) $request->input('revision_comment_requirements', '')),
-        ];
+        $colMap = $this->registrationReviewSectionRevisionColumns();
+        $sectionFields = [];
+        foreach ($colMap as $sk => $column) {
+            $raw = trim((string) $request->input($column, ''));
+            if ($decision === 'REVISION' && ($sectionStates[$sk] ?? '') === 'revision') {
+                $sectionFields[$column] = $raw;
+            } else {
+                $sectionFields[$column] = '';
+            }
+        }
 
-        DB::transaction(function () use ($registration, $decision, $remarks, $admin, $sectionFields): void {
+        DB::transaction(function () use ($registration, $decision, $remarks, $admin, $sectionFields, $sectionStates): void {
             $registration->registration_status = $decision;
             $registration->approved_by_sdao = $admin->full_name;
             $registration->approval_date = now()->toDateString();
+
+            if ($decision === 'REJECTED') {
+                $registration->section_review_state = null;
+            } else {
+                $registration->section_review_state = $sectionStates;
+            }
 
             if ($decision === 'REVISION') {
                 foreach ($sectionFields as $column => $value) {

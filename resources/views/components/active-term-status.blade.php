@@ -11,11 +11,10 @@
       {{ $label }}
     </span>
   </p>
-@elseif ($variant === 'organization')
-  <div class="border-b border-[#003E9F]/20 bg-[#E8F0FF] px-4 py-2 sm:px-6 lg:px-8" role="status" aria-live="polite">
-    <div class="mx-auto flex max-w-7xl items-center justify-center gap-2 sm:justify-start">
-      <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">Active term</span>
-      <span class="text-xs font-semibold text-slate-900">{{ $label }}</span>
-    </div>
+@elseif ($variant === 'navbar')
+  {{-- Matches navbar title stack: 10px gold eyebrow + sm primary line (#003E9F bar palette only) --}}
+  <div class="flex min-w-0 flex-col items-end pr-1 text-right sm:pr-2" role="status" aria-live="polite">
+    <span class="text-[10px] font-bold uppercase leading-none tracking-[0.2em] text-[#F5C400]/90">Active term</span>
+    <span class="mt-0.5 max-w-[11rem] truncate text-sm font-bold leading-snug tracking-tight text-white sm:max-w-[14rem] md:max-w-[18rem]">{{ $label }}</span>
   </div>
 @endif

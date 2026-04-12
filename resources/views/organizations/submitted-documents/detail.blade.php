@@ -24,6 +24,15 @@
     </div>
   </header>
 
+  @if (! empty($progressStages ?? null))
+    <x-submission-progress-card
+      variant="embed"
+      :document-label="$progressDocumentLabel ?? ''"
+      :stages="$progressStages"
+      :summary="$progressSummary ?? ''"
+    />
+  @endif
+
   @if ($remarkHighlight)
     <div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
       <p class="text-xs font-semibold uppercase tracking-wide text-amber-800">Remarks / notes preview</p>

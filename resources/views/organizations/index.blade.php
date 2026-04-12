@@ -39,6 +39,45 @@
         </div>
     </header>
 
+    {{-- Activity proposal — primary dashboard focus (8-step routing) --}}
+    @php
+        $pd = $proposalDashboard ?? ['empty' => true];
+        $pdEmpty = ! empty($pd['empty']);
+        $pdProposal = $pd['proposal'] ?? null;
+        $proposalTertiary = [['href' => route('organizations.activity-proposal-submission').$saQ, 'label' => 'New proposal']];
+    @endphp
+
+    <section class="mb-6" @if (! $pdEmpty) aria-labelledby="dashboard-proposal-heading" @endif>
+        @if ($pdEmpty)
+            <x-submission-progress-card
+                mode="empty"
+                document-label="Activity proposal"
+                title="No proposal on file yet"
+                subtitle="Start an activity proposal to see the full eight-step campus routing and SDAO review progress here."
+                :primary-action="$pd['primary_action'] ?? null"
+                :secondary-action="$pd['secondary_action'] ?? null"
+                heading-id="dashboard-proposal-heading"
+            />
+        @else
+            <x-submission-progress-card
+                document-label="Activity proposal"
+                :hub-href="route('organizations.activity-submission').$saQ"
+                hub-label="Activity submission hub"
+                :title="$pdProposal->activity_title ?: 'Activity proposal'"
+                :subtitle="$pd['subtitle'] ?? null"
+                :status-label="$pd['status_label'] ?? 'Status'"
+                :status-badge-class="$pd['status_badge_class'] ?? 'bg-slate-100 text-slate-700 border border-slate-200'"
+                :stages="$pd['stages'] ?? []"
+                :summary="$pd['summary'] ?? ''"
+                :meta="$pd['meta'] ?? []"
+                :primary-action="$pd['primary_action'] ?? null"
+                :secondary-action="$pd['secondary_action'] ?? null"
+                :tertiary-links="$proposalTertiary"
+                heading-id="dashboard-proposal-heading"
+            />
+        @endif
+    </section>
+
     {{-- ── Two-column Grid ──────────────────────────────────────────── --}}
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-[7fr_3fr] lg:items-start">
 
@@ -176,63 +215,6 @@
                     </span>
                 </div>
             </a>
-
-            {{-- ── Approval Workflow Status ─────────────────────────── --}}
-            <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40">
-                <h3 class="text-sm font-bold text-slate-900">Approval Workflow</h3>
-                <p class="mt-0.5 text-xs text-slate-500">Current document routing progress.</p>
-
-                @php
-                    $stages = [
-                        ['name' => 'President',      'status' => 'completed'],
-                        ['name' => 'Adviser',        'status' => 'current'],
-                        ['name' => 'Program Chair',  'status' => 'pending'],
-                        ['name' => 'Dean',           'status' => 'pending'],
-                        ['name' => 'Acad. Director', 'status' => 'pending'],
-                        ['name' => 'Exec. Director', 'status' => 'pending'],
-                    ];
-                @endphp
-
-                <div class="mt-5 flex flex-wrap items-start justify-center gap-x-1 gap-y-4 sm:flex-nowrap sm:justify-between">
-
-                    @foreach ($stages as $stage)
-                        <div class="flex flex-col items-center" style="min-width: 52px;">
-
-                            @if ($stage['status'] === 'completed')
-                                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
-                                    <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                    </svg>
-                                </div>
-                            @elseif ($stage['status'] === 'current')
-                                <div class="relative flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#003E9F] bg-[#003E9F]/5">
-                                    <span class="absolute h-3 w-3 animate-ping rounded-full bg-[#003E9F] opacity-25"></span>
-                                    <span class="h-3 w-3 rounded-full bg-[#003E9F]"></span>
-                                </div>
-                            @else
-                                <div class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-slate-200 bg-slate-50">
-                                    <span class="h-2 w-2 rounded-full bg-slate-300"></span>
-                                </div>
-                            @endif
-
-                            <p class="mt-1.5 max-w-[56px] text-center text-[9px] font-semibold leading-tight
-                                {{ $stage['status'] === 'completed' ? 'text-emerald-600' : ($stage['status'] === 'current' ? 'text-[#003E9F]' : 'text-slate-400') }}">
-                                {{ $stage['name'] }}
-                            </p>
-                        </div>
-
-                        @if (!$loop->last)
-                            <div class="mt-4 hidden h-0.5 flex-1 sm:block {{ $stage['status'] === 'completed' ? 'bg-emerald-300' : 'bg-slate-200' }}"></div>
-                        @endif
-                    @endforeach
-
-                </div>
-
-                <p class="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs leading-5 text-slate-600">
-                    <span class="font-semibold text-slate-800">Status:</span>
-                    Document approved by President, forwarded to Adviser.
-                </p>
-            </div>
 
         </div>
         {{-- ── End right column ──────────────────────────────────── --}}

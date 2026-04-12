@@ -21,8 +21,6 @@
 
   @include('organizations.partials.navbar')
 
-  <x-active-term-status variant="organization" />
-
   <main>
     @yield('content')
   </main>

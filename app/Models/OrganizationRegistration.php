@@ -45,6 +45,7 @@ class OrganizationRegistration extends Model
         'revision_comment_contact',
         'revision_comment_organizational',
         'revision_comment_requirements',
+        'section_review_state',
     ];
 
     protected function casts(): array
@@ -61,6 +62,7 @@ class OrganizationRegistration extends Model
             'req_proposed_projects' => 'boolean',
             'req_others' => 'boolean',
             'requirement_files' => 'array',
+            'section_review_state' => 'array',
         ];
     }
 

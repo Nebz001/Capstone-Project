@@ -4,11 +4,15 @@
 
 @section('content')
 @php
+  $initialSectionReviewState = $initialSectionReviewState ?? [
+    'application' => 'pending',
+    'contact' => 'pending',
+    'organizational' => 'pending',
+    'requirements' => 'pending',
+  ];
   $defaultDecision = old(
     'decision',
-    in_array($registration->registration_status, ['APPROVED', 'REJECTED', 'REVISION'], true)
-      ? $registration->registration_status
-      : ''
+    $registration->registration_status === 'REJECTED' ? 'REJECTED' : 'APPROVED',
   );
   $status = $registration->registration_status ?? 'PENDING';
   $statusClass = match ($status) {
@@ -50,7 +54,7 @@
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
   <div>
     <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Registration Submission Details</h1>
-    <p class="mt-1 text-sm text-slate-500">Review the full application by section, add section comments when sending for revision, then record a decision.</p>
+    <p class="mt-1 text-sm text-slate-500">Verify each section or request targeted revisions. The form approves only when every section is marked Verified.</p>
   </div>
   <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $statusClass }}">
     {{ str_replace('_', ' ', $status) }}
@@ -69,6 +73,9 @@
 
   @error('decision')
     <p class="text-sm text-rose-600">{{ $message }}</p>
+  @enderror
+  @error('section_review')
+    <p class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ $message }}</p>
   @enderror
 
   {{-- Application Information --}}
@@ -103,21 +110,14 @@
         </div>
       @endif
     </dl>
-    <div class="mt-6 border-t border-slate-100 pt-5">
-      <label for="revision-comment-application" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Comment for Application Information <span class="font-normal normal-case text-slate-400">(for revision)</span>
-      </label>
-      <textarea
-        id="revision-comment-application"
-        name="revision_comment_application"
-        rows="3"
-        class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-        placeholder="Section-specific feedback for the RSO officer (e.g. academic year format, submission details)."
-      >{{ old('revision_comment_application', $registration->revision_comment_application) }}</textarea>
-      @error('revision_comment_application')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
+    @include('admin.registrations.partials.section-review-toolbar', [
+      'sectionKey' => 'application',
+      'sectionTitle' => 'Application Information',
+      'revisionFieldName' => 'revision_comment_application',
+      'revisionTextareaId' => 'revision-comment-application',
+      'registration' => $registration,
+      'initialSectionReviewState' => $initialSectionReviewState,
+    ])
   </section>
 
   {{-- Contact Information --}}
@@ -142,21 +142,14 @@
         <dd class="mt-1 text-sm text-slate-800">{{ $registration->contact_email ?? 'N/A' }}</dd>
       </div>
     </dl>
-    <div class="mt-6 border-t border-slate-100 pt-5">
-      <label for="revision-comment-contact" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Comment for Contact Information <span class="font-normal normal-case text-slate-400">(for revision)</span>
-      </label>
-      <textarea
-        id="revision-comment-contact"
-        name="revision_comment_contact"
-        rows="3"
-        class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-        placeholder="Section-specific feedback (e.g. contact person, phone format, email domain)."
-      >{{ old('revision_comment_contact', $registration->revision_comment_contact) }}</textarea>
-      @error('revision_comment_contact')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
+    @include('admin.registrations.partials.section-review-toolbar', [
+      'sectionKey' => 'contact',
+      'sectionTitle' => 'Contact Information',
+      'revisionFieldName' => 'revision_comment_contact',
+      'revisionTextareaId' => 'revision-comment-contact',
+      'registration' => $registration,
+      'initialSectionReviewState' => $initialSectionReviewState,
+    ])
   </section>
 
   {{-- Organizational Details --}}
@@ -181,21 +174,14 @@
         <dd class="mt-1 whitespace-pre-wrap text-sm text-slate-800">{{ $org?->purpose ?? 'N/A' }}</dd>
       </div>
     </dl>
-    <div class="mt-6 border-t border-slate-100 pt-5">
-      <label for="revision-comment-organizational" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Comment for Organizational Details <span class="font-normal normal-case text-slate-400">(for revision)</span>
-      </label>
-      <textarea
-        id="revision-comment-organizational"
-        name="revision_comment_organizational"
-        rows="3"
-        class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-        placeholder="Section-specific feedback (e.g. purpose clarity, school selection, organization type)."
-      >{{ old('revision_comment_organizational', $registration->revision_comment_organizational) }}</textarea>
-      @error('revision_comment_organizational')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
+    @include('admin.registrations.partials.section-review-toolbar', [
+      'sectionKey' => 'organizational',
+      'sectionTitle' => 'Organizational Details',
+      'revisionFieldName' => 'revision_comment_organizational',
+      'revisionTextareaId' => 'revision-comment-organizational',
+      'registration' => $registration,
+      'initialSectionReviewState' => $initialSectionReviewState,
+    ])
   </section>
 
   {{-- Requirements Attached --}}
@@ -235,42 +221,35 @@
         </li>
       @endforeach
     </ul>
-    <div class="mt-6 border-t border-slate-100 pt-5">
-      <label for="revision-comment-requirements" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Comment for Requirements Attached <span class="font-normal normal-case text-slate-400">(for revision)</span>
-      </label>
-      <textarea
-        id="revision-comment-requirements"
-        name="revision_comment_requirements"
-        rows="3"
-        class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-        placeholder="Section-specific feedback (e.g. missing documents, wrong file, unclear scans)."
-      >{{ old('revision_comment_requirements', $registration->revision_comment_requirements) }}</textarea>
-      @error('revision_comment_requirements')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
+    @include('admin.registrations.partials.section-review-toolbar', [
+      'sectionKey' => 'requirements',
+      'sectionTitle' => 'Requirements Attached',
+      'revisionFieldName' => 'revision_comment_requirements',
+      'revisionTextareaId' => 'revision-comment-requirements',
+      'registration' => $registration,
+      'initialSectionReviewState' => $initialSectionReviewState,
+    ])
   </section>
 
   {{-- Review decision --}}
   <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <h2 class="text-base font-bold text-slate-900">Review decision</h2>
-    <p class="mt-1 text-sm text-slate-600">Choose an outcome and add remarks where required. For revision, use section comments above and/or general remarks below.</p>
-    <p class="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-      <span class="font-semibold text-slate-700">For revision:</span> saves section comments and general remarks, sets the registration to revision, and <span class="font-semibold text-slate-700">unlocks organization profile editing</span> for the RSO officer. Officers see each section comment on their profile.
+    <h2 class="text-base font-bold text-slate-900">Finalize review</h2>
+    <p class="mt-1 text-sm text-slate-600">
+      With <span class="font-semibold text-slate-800">Submit review</span>, the system <span class="font-semibold text-emerald-700">approves</span> only when every section is Verified. If any section is Need revision (with feedback), the registration returns for updates and profile editing is unlocked for the officer.
     </p>
+    <p id="section-review-summary" class="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" role="status"></p>
 
     <fieldset class="mt-6">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-slate-500">Decision</legend>
+      <legend class="text-xs font-semibold uppercase tracking-wide text-slate-500">Outcome</legend>
       <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50">
+        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-[#003E9F] has-[:checked]:bg-blue-50">
           <input type="radio" name="decision" value="APPROVED" class="sr-only" {{ $defaultDecision === 'APPROVED' ? 'checked' : '' }} />
-          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-blue-100 text-[#003E9F]">
+            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15l3-3m6 3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
           </span>
           <span>
-            <span class="block text-sm font-bold text-slate-900">Approved</span>
-            <span class="block text-xs text-slate-500">Recognize this registration</span>
+            <span class="block text-sm font-bold text-slate-900">Submit review</span>
+            <span class="block text-xs text-slate-500">Auto-approve if all verified, or request revision</span>
           </span>
         </label>
         <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50">
@@ -279,18 +258,8 @@
             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
           </span>
           <span>
-            <span class="block text-sm font-bold text-slate-900">Rejected</span>
-            <span class="block text-xs text-slate-500">Decline with reason</span>
-          </span>
-        </label>
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-amber-500 has-[:checked]:bg-amber-50">
-          <input type="radio" name="decision" value="REVISION" class="sr-only" {{ $defaultDecision === 'REVISION' ? 'checked' : '' }} />
-          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-amber-100 text-amber-800">
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 11.664 0 8.25 8.25 0 0 0 0-11.664m-11.664 0L2.985 16.65" /></svg>
-          </span>
-          <span>
-            <span class="block text-sm font-bold text-slate-900">For revision</span>
-            <span class="block text-xs text-slate-500">Request updates from the org</span>
+            <span class="block text-sm font-bold text-slate-900">Reject</span>
+            <span class="block text-xs text-slate-500">Decline with a reason (section review not required)</span>
           </span>
         </label>
       </div>
@@ -300,15 +269,15 @@
       <label for="registration-remarks" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
         General remarks / instructions
         <span id="registration-remarks-required" class="hidden font-normal normal-case text-rose-600">(required for rejection)</span>
-        <span id="registration-remarks-revision" class="hidden font-normal normal-case text-amber-700">(optional if you added section comments — otherwise at least 3 characters required)</span>
-        <span id="registration-remarks-optional" class="font-normal normal-case text-slate-400">(optional for approved)</span>
+        <span id="registration-revision-hint" class="hidden font-normal normal-case text-amber-700">(optional if every Need revision section has feedback — otherwise at least 3 characters)</span>
+        <span id="registration-remarks-optional" class="font-normal normal-case text-slate-400">(optional when all sections are verified)</span>
       </label>
       <textarea
         id="registration-remarks"
         name="remarks"
         rows="4"
         class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-        placeholder="Overall notes, or use section comments above for targeted feedback when sending for revision."
+        placeholder="Optional overall context. Section-specific feedback is added via Need revision on each section."
       >{{ old('remarks', $registration->additional_remarks) }}</textarea>
       @error('remarks')
         <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
@@ -317,7 +286,7 @@
 
     <div class="mt-6 flex flex-wrap gap-3">
       <button type="submit" class="inline-flex rounded-lg bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00327F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/40">
-        Submit decision
+        Save outcome
       </button>
       <a href="{{ route('admin.registrations.index') }}" class="inline-flex rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
         Back to list
@@ -326,9 +295,31 @@
   </section>
 </form>
 
+<div id="section-revision-modal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-950/50 px-4">
+  <div class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <h3 id="section-revision-modal-title" class="text-lg font-bold text-slate-900">Section feedback</h3>
+    <p class="mt-1 text-sm text-slate-600">Describe what must be corrected for this section only. The submitter will see it labeled by section.</p>
+    <label for="section-revision-modal-body" class="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">Revision details</label>
+    <textarea
+      id="section-revision-modal-body"
+      rows="5"
+      class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
+      placeholder="Be specific (e.g. upload a clearer scan, fix the contact number format, expand the purpose statement)."
+    ></textarea>
+    <div class="mt-5 flex flex-wrap items-center justify-end gap-2">
+      <button type="button" id="section-revision-modal-cancel" class="rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+        Cancel
+      </button>
+      <button type="button" id="section-revision-modal-save" class="rounded-lg border border-[#003E9F] bg-[#003E9F] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#00327F]">
+        Save for this section
+      </button>
+    </div>
+  </div>
+</div>
+
 <div id="registration-decision-modal" class="fixed inset-0 z-[80] hidden items-center justify-center bg-slate-950/50 px-4">
   <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-    <h3 class="text-lg font-bold text-slate-900">Confirm decision</h3>
+    <h3 class="text-lg font-bold text-slate-900">Confirm</h3>
     <p id="registration-decision-modal-text" class="mt-1 text-sm text-slate-600"></p>
     <div class="mt-5 flex items-center justify-end gap-2">
       <button type="button" id="registration-decision-cancel" class="rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
@@ -350,49 +341,201 @@
     const confirmBtn = document.getElementById('registration-decision-confirm');
     const remarks = document.getElementById('registration-remarks');
     const reqReject = document.getElementById('registration-remarks-required');
-    const reqRevision = document.getElementById('registration-remarks-revision');
+    const reqRevision = document.getElementById('registration-revision-hint');
     const optLabel = document.getElementById('registration-remarks-optional');
-    const sectionCommentIds = [
-      'revision-comment-application',
-      'revision-comment-contact',
-      'revision-comment-organizational',
-      'revision-comment-requirements',
-    ];
+    const summaryEl = document.getElementById('section-review-summary');
+    const revModal = document.getElementById('section-revision-modal');
+    const revTitle = document.getElementById('section-revision-modal-title');
+    const revBody = document.getElementById('section-revision-modal-body');
+    const revCancel = document.getElementById('section-revision-modal-cancel');
+    const revSave = document.getElementById('section-revision-modal-save');
 
-    if (!form || !modal || !modalText || !cancel || !confirmBtn || !remarks || !reqReject || !reqRevision || !optLabel) return;
+    if (!form || !modal || !modalText || !cancel || !confirmBtn || !remarks || !reqReject || !reqRevision || !optLabel || !summaryEl || !revModal || !revTitle || !revBody || !revCancel || !revSave) return;
 
-    const decisionLabels = { APPROVED: 'approve this registration', REJECTED: 'reject this registration', REVISION: 'mark this registration for revision' };
+    let activeSectionRoot = null;
 
     function selectedDecision() {
       const r = form.querySelector('input[name="decision"]:checked');
       return r ? r.value : '';
     }
 
-    function anySectionCommentOk() {
-      return sectionCommentIds.some((id) => {
-        const el = document.getElementById(id);
-        return el && el.value.trim().length >= 3;
+    function getStateInputs() {
+      return Array.from(form.querySelectorAll('.section-review-state'));
+    }
+
+    function getHiddenRevisionTextarea(root) {
+      const id = root.dataset.revisionInputId;
+      return id ? document.getElementById(id) : null;
+    }
+
+    function refreshSection(root) {
+      const stateEl = root.querySelector('.section-review-state');
+      const statusEl = root.querySelector('.section-review-status');
+      const hintEl = root.querySelector('.section-review-hint');
+      const btnV = root.querySelector('.section-review-btn-verified');
+      const btnR = root.querySelector('.section-review-btn-revision');
+      const btnE = root.querySelector('.section-review-btn-edit');
+      const card = root.closest('section');
+      const state = stateEl ? stateEl.value : 'pending';
+      const ta = getHiddenRevisionTextarea(root);
+      const text = ta ? ta.value.trim() : '';
+
+      const title = root.dataset.sectionTitle || 'This section';
+
+      if (statusEl) {
+        if (state === 'validated') statusEl.textContent = 'Verified — no issues noted for this section.';
+        else if (state === 'revision') statusEl.textContent = 'Need revision — feedback recorded for this section.';
+        else statusEl.textContent = 'Pending — choose Verified or Need revision.';
+      }
+      if (hintEl) {
+        if (state === 'validated') hintEl.textContent = 'You can change your choice anytime before saving.';
+        else if (state === 'revision') {
+          hintEl.textContent = text.length >= 3
+            ? 'Submitter will see this note under “' + title + '”.'
+            : 'Add at least 3 characters of feedback (use Need revision or Edit note).';
+        } else hintEl.textContent = 'Both options are required for every section before you can submit review.';
+      }
+
+      if (btnV) {
+        btnV.classList.toggle('ring-2', state === 'validated');
+        btnV.classList.toggle('ring-emerald-500', state === 'validated');
+        btnV.classList.toggle('bg-emerald-50', state === 'validated');
+      }
+      if (btnR) {
+        btnR.classList.toggle('ring-2', state === 'revision');
+        btnR.classList.toggle('ring-amber-500', state === 'revision');
+        btnR.classList.toggle('bg-amber-50', state === 'revision');
+      }
+      if (btnE) btnE.classList.toggle('hidden', state !== 'revision');
+
+      if (card) {
+        card.classList.toggle('border-amber-300', state === 'revision');
+        card.classList.toggle('shadow-md', state === 'revision');
+      }
+    }
+
+    function refreshAllSections() {
+      form.querySelectorAll('.section-review').forEach(refreshSection);
+      updateSummary();
+      updateRemarksHint();
+    }
+
+    function updateSummary() {
+      const inputs = getStateInputs();
+      let v = 0;
+      let r = 0;
+      let p = 0;
+      inputs.forEach((el) => {
+        if (el.value === 'validated') v += 1;
+        else if (el.value === 'revision') r += 1;
+        else p += 1;
       });
+      const total = inputs.length || 4;
+      if (p > 0) {
+        summaryEl.textContent = `${p} section(s) still pending. Mark each as Verified or Need revision before saving. (${v} verified, ${r} need revision)`;
+        summaryEl.className = 'mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
+      } else if (r > 0) {
+        summaryEl.textContent = `Ready to send for revision: ${r} section(s) need changes. Add section feedback (and optional general remarks), then save. (${v} verified)`;
+        summaryEl.className = 'mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
+      } else {
+        summaryEl.textContent = `All ${total} sections verified. Saving will approve this registration (unless you choose Reject).`;
+        summaryEl.className = 'mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900';
+      }
+    }
+
+    function anyRevisionSection() {
+      return getStateInputs().some((el) => el.value === 'revision');
+    }
+
+    function everyRevisionHasComment() {
+      const roots = form.querySelectorAll('.section-review');
+      let ok = true;
+      roots.forEach((root) => {
+        const stateEl = root.querySelector('.section-review-state');
+        if (stateEl && stateEl.value === 'revision') {
+          const ta = getHiddenRevisionTextarea(root);
+          if (!ta || ta.value.trim().length < 3) ok = false;
+        }
+      });
+      return ok;
+    }
+
+    function revisionRemarksSatisfied() {
+      const g = remarks.value.trim().length >= 3;
+      return g || everyRevisionHasComment();
     }
 
     function updateRemarksHint() {
       const d = selectedDecision();
+      const rev = d === 'APPROVED' && anyRevisionSection();
       reqReject.classList.toggle('hidden', d !== 'REJECTED');
-      reqRevision.classList.toggle('hidden', d !== 'REVISION');
-      optLabel.classList.toggle('hidden', d === 'REJECTED' || d === 'REVISION');
+      reqRevision.classList.toggle('hidden', !rev);
+      optLabel.classList.toggle('hidden', d === 'REJECTED' || rev);
     }
 
-    form.querySelectorAll('input[name="decision"]').forEach((el) => el.addEventListener('change', updateRemarksHint));
-    updateRemarksHint();
+    function openRevModal(root) {
+      activeSectionRoot = root;
+      const title = root.dataset.sectionTitle || 'Section';
+      revTitle.textContent = 'Feedback: ' + title;
+      const ta = getHiddenRevisionTextarea(root);
+      revBody.value = ta ? ta.value : '';
+      revModal.classList.remove('hidden');
+      revModal.classList.add('flex');
+      revBody.focus();
+    }
 
-    const close = () => {
+    function closeRevModal() {
+      activeSectionRoot = null;
+      revModal.classList.add('hidden');
+      revModal.classList.remove('flex');
+      revBody.value = '';
+    }
+
+    form.querySelectorAll('.section-review').forEach((root) => {
+      root.querySelector('.section-review-btn-verified')?.addEventListener('click', () => {
+        const stateEl = root.querySelector('.section-review-state');
+        const ta = getHiddenRevisionTextarea(root);
+        if (stateEl) stateEl.value = 'validated';
+        if (ta) ta.value = '';
+        refreshSection(root);
+        updateSummary();
+        updateRemarksHint();
+      });
+      root.querySelector('.section-review-btn-revision')?.addEventListener('click', () => openRevModal(root));
+      root.querySelector('.section-review-btn-edit')?.addEventListener('click', () => openRevModal(root));
+    });
+
+    revCancel.addEventListener('click', closeRevModal);
+    revModal.addEventListener('click', (e) => { if (e.target === revModal) closeRevModal(); });
+    revSave.addEventListener('click', () => {
+      if (!activeSectionRoot) return;
+      const stateEl = activeSectionRoot.querySelector('.section-review-state');
+      const ta = getHiddenRevisionTextarea(activeSectionRoot);
+      if (stateEl) stateEl.value = 'revision';
+      if (ta) ta.value = revBody.value;
+      refreshSection(activeSectionRoot);
+      updateSummary();
+      updateRemarksHint();
+      closeRevModal();
+    });
+
+    form.querySelectorAll('input[name="decision"]').forEach((el) => el.addEventListener('change', () => {
+      updateRemarksHint();
+    }));
+    refreshAllSections();
+
+    const closeDecision = () => {
       modal.classList.add('hidden');
       modal.classList.remove('flex');
     };
 
-    cancel.addEventListener('click', close);
-    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    cancel.addEventListener('click', closeDecision);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeDecision(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!revModal.classList.contains('hidden')) closeRevModal();
+      else closeDecision();
+    });
 
     form.addEventListener('submit', (e) => {
       if (form.dataset.confirmed === '1') return;
@@ -400,7 +543,7 @@
       e.preventDefault();
       const d = selectedDecision();
       if (!d) {
-        alert('Please select a decision before submitting.');
+        alert('Please choose Submit review or Reject before saving.');
         return;
       }
       const text = remarks.value.trim();
@@ -409,20 +552,36 @@
         remarks.focus();
         return;
       }
-      if (d === 'REVISION' && text.length < 3 && !anySectionCommentOk()) {
-        alert('For revision, add general remarks (at least 3 characters) or at least one section comment (at least 3 characters).');
-        remarks.focus();
-        return;
+      if (d === 'APPROVED') {
+        if (getStateInputs().some((el) => el.value === 'pending')) {
+          alert('Review every section: mark each as Verified or Need revision before submitting.');
+          return;
+        }
+        if (anyRevisionSection() && !everyRevisionHasComment()) {
+          alert('Each section marked Need revision needs feedback (at least 3 characters). Open the modal for that section or use Edit note.');
+          return;
+        }
+        if (anyRevisionSection() && !revisionRemarksSatisfied()) {
+          alert('For revision, add general remarks (at least 3 characters) or ensure every Need revision section has feedback (at least 3 characters).');
+          remarks.focus();
+          return;
+        }
+        if (anyRevisionSection()) {
+          modalText.textContent = 'Send this registration back for revision using your section feedback? Profile editing will be unlocked for the officer.';
+        } else {
+          modalText.textContent = 'Approve this registration? All sections are verified.';
+        }
+      } else {
+        modalText.textContent = 'Reject this registration? This cannot be undone from this screen without a new submission flow.';
       }
 
-      modalText.textContent = `Are you sure you want to ${decisionLabels[d] ?? 'update this registration'}? This will be saved and visible on refresh.`;
       modal.classList.remove('hidden');
       modal.classList.add('flex');
     });
 
     confirmBtn.addEventListener('click', () => {
       form.dataset.confirmed = '1';
-      close();
+      closeDecision();
       form.submit();
     });
   })();

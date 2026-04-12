@@ -12,6 +12,7 @@ use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Support\SubmissionRoutingProgress;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -200,16 +201,20 @@ class OrganizationController extends Controller
         }
 
         $calendarEvents = [];
+        $proposalDashboard = ['empty' => true];
         $user = $request->user();
         if ($user) {
             $organization = $user->currentOrganization();
             if ($organization) {
                 $calendarEvents = $this->buildOrganizationDashboardCalendarEvents($organization);
+                $featuredProposal = $this->resolveDashboardFeaturedProposal($organization);
+                $proposalDashboard = $this->buildProposalDashboardProgress($featuredProposal);
             }
         }
 
         return view('organizations.index', [
             'calendarEvents' => $calendarEvents,
+            'proposalDashboard' => $proposalDashboard,
         ]);
     }
 
@@ -251,6 +256,144 @@ class OrganizationController extends Controller
         }
 
         return $events;
+    }
+
+    /**
+     * Latest proposal the officer should monitor: prefer the most recently updated non-draft, else most recent draft.
+     */
+    private function resolveDashboardFeaturedProposal(Organization $organization): ?ActivityProposal
+    {
+        $base = ActivityProposal::query()->where('organization_id', $organization->id);
+
+        $nonDraft = (clone $base)
+            ->whereNotIn('proposal_status', ['DRAFT'])
+            ->orderByDesc('updated_at')
+            ->first();
+
+        return $nonDraft ?? (clone $base)->orderByDesc('updated_at')->first();
+    }
+
+    /**
+     * @return array{
+     *     empty: bool,
+     *     proposal?: ActivityProposal,
+     *     status_raw?: string|null,
+     *     status_label?: string,
+     *     status_badge_class?: string,
+     *     stages?: list<array{label: string, state: string}>,
+     *     summary?: string,
+     *     detail_href?: string|null,
+     *     primary_action?: array{label: string, href: string}|null,
+     *     secondary_action?: array{label: string, href: string}|null,
+     *     meta?: list<array{label: string, value: string}>,
+     *     subtitle?: string|null
+     * }
+     */
+    private function buildProposalDashboardProgress(?ActivityProposal $proposal): array
+    {
+        if ($proposal === null) {
+            return [
+                'empty' => true,
+                'primary_action' => [
+                    'label' => 'Start activity proposal',
+                    'href' => route('organizations.activity-proposal-submission'),
+                ],
+                'secondary_action' => [
+                    'label' => 'Activity submission hub',
+                    'href' => route('organizations.activity-submission'),
+                ],
+            ];
+        }
+
+        $presentation = $this->activityProposalStatusPresentation($proposal->proposal_status);
+        $summary = SubmissionRoutingProgress::summaryForActivityProposal($proposal->proposal_status);
+
+        $stages = SubmissionRoutingProgress::stagesForActivityProposal($proposal);
+
+        $statusUpper = strtoupper((string) ($proposal->proposal_status ?? ''));
+
+        $primaryAction = null;
+        if (in_array($statusUpper, ['REVISION', 'REVISION_REQUIRED'], true)) {
+            $primaryAction = [
+                'label' => 'Address revision',
+                'href' => route('organizations.activity-proposal-submission'),
+            ];
+        } elseif ($statusUpper === 'DRAFT') {
+            $primaryAction = [
+                'label' => 'Continue proposal',
+                'href' => route('organizations.activity-proposal-submission'),
+            ];
+        }
+
+        $secondaryAction = [
+            'label' => 'View full record',
+            'href' => route('organizations.activity-submission.proposals.show', $proposal),
+        ];
+
+        $meta = array_values(array_filter([
+            $proposal->academic_year ? [
+                'label' => 'Academic year',
+                'value' => 'AY '.$proposal->academic_year,
+            ] : null,
+            $proposal->submission_date ? [
+                'label' => 'Submitted',
+                'value' => $proposal->submission_date->format('M j, Y'),
+            ] : null,
+            [
+                'label' => 'Last updated',
+                'value' => optional($proposal->updated_at)->format('M j, Y \a\t g:i A') ?? '—',
+            ],
+        ]));
+
+        return [
+            'empty' => false,
+            'proposal' => $proposal,
+            'status_raw' => $proposal->proposal_status,
+            'status_label' => $presentation['label'],
+            'status_badge_class' => $presentation['badge_class'],
+            'stages' => $stages,
+            'summary' => $summary,
+            'detail_href' => route('organizations.activity-submission.proposals.show', $proposal),
+            'primary_action' => $primaryAction,
+            'secondary_action' => $secondaryAction,
+            'meta' => $meta,
+            'subtitle' => $this->activityProposalDashboardSubtitle($proposal),
+        ];
+    }
+
+    private function activityProposalDashboardSubtitle(ActivityProposal $proposal): ?string
+    {
+        if (! $proposal->proposed_start_date) {
+            return null;
+        }
+
+        $line = 'Proposed '.$proposal->proposed_start_date->format('M j, Y');
+        if ($proposal->proposed_end_date && $proposal->proposed_end_date->ne($proposal->proposed_start_date)) {
+            $line .= ' – '.$proposal->proposed_end_date->format('M j, Y');
+        }
+        if ($proposal->venue) {
+            $line .= ' · '.$proposal->venue;
+        }
+
+        return $line;
+    }
+
+    /**
+     * @return array{label: string, badge_class: string}
+     */
+    private function activityProposalStatusPresentation(?string $raw): array
+    {
+        $u = strtoupper((string) $raw);
+
+        return match ($u) {
+            'DRAFT' => ['label' => 'Draft', 'badge_class' => 'bg-slate-200 text-slate-800 border border-slate-300'],
+            'PENDING' => ['label' => 'Pending', 'badge_class' => 'bg-amber-100 text-amber-900 border border-amber-200'],
+            'UNDER_REVIEW' => ['label' => 'Under review', 'badge_class' => 'bg-blue-100 text-blue-800 border border-blue-200'],
+            'APPROVED' => ['label' => 'Approved / scheduled', 'badge_class' => 'bg-emerald-100 text-emerald-800 border border-emerald-200'],
+            'REJECTED' => ['label' => 'Rejected', 'badge_class' => 'bg-rose-100 text-rose-800 border border-rose-200'],
+            'REVISION', 'REVISION_REQUIRED' => ['label' => 'Returned for revision', 'badge_class' => 'bg-orange-100 text-orange-900 border border-orange-200'],
+            default => ['label' => $raw ?: 'Unknown', 'badge_class' => 'bg-slate-100 text-slate-700 border border-slate-200'],
+        };
     }
 
     public function manage(Request $request)

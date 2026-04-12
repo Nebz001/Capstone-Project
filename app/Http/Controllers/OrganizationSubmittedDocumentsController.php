@@ -10,6 +10,7 @@ use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\User;
+use App\Support\SubmissionRoutingProgress;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -159,6 +160,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->registrationWorkflowLinks($registration),
             'calendarEntries' => null,
+            'progressDocumentLabel' => 'Organization registration',
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($registration->registration_status),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($registration->registration_status),
         ]);
     }
 
@@ -195,6 +199,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->renewalWorkflowLinks($renewal),
             'calendarEntries' => null,
+            'progressDocumentLabel' => 'Organization renewal',
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($renewal->renewal_status),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($renewal->renewal_status),
         ]);
     }
 
@@ -254,6 +261,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->activityCalendarWorkflowLinks($calendar),
             'calendarEntries' => $calendar->entries,
+            'progressDocumentLabel' => 'Activity calendar',
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($calendar->calendar_status),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($calendar->calendar_status),
         ]);
     }
 
@@ -341,6 +351,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->activityProposalWorkflowLinks($proposal),
             'calendarEntries' => null,
+            'progressDocumentLabel' => 'Activity proposal',
+            'progressStages' => SubmissionRoutingProgress::stagesForActivityProposal($proposal),
+            'progressSummary' => SubmissionRoutingProgress::summaryForActivityProposal($proposal->proposal_status),
         ]);
     }
 
@@ -426,6 +439,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ['label' => 'Submit another report', 'href' => $this->withSuperAdminOrgQuery($request, route('organizations.after-activity-report')), 'variant' => 'secondary'],
             ],
             'calendarEntries' => null,
+            'progressDocumentLabel' => 'After activity report',
+            'progressStages' => SubmissionRoutingProgress::stagesForActivityReport($report->report_status),
+            'progressSummary' => SubmissionRoutingProgress::summaryForActivityReport($report->report_status),
         ]);
     }
 
