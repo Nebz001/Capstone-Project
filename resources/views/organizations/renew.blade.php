@@ -9,6 +9,10 @@
     $renewalBlockedNoOrganization = $renewalBlockedNoOrganization ?? (($organization ?? null) === null);
     $sessionErrorBlocksForm = session()->has('error');
     $renewalFormBlocked = $officerValidationPending || $sessionErrorBlocksForm || $renewalBlockedNoOrganization;
+    $activeAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
+    $renewalAccess = $renewalAccess ?? ['allowed' => true, 'message' => ''];
+    $renewalRestrictedByPolicy = ! $renewalAccess['allowed'];
+    $showRenewalForm = ! $renewalRestrictedByPolicy && ! $renewalBlockedNoOrganization;
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -42,6 +46,12 @@
 
     @if (session('error'))
         <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
+    @elseif (! $renewalAccess['allowed'] && ! empty($renewalAccess['message']))
+        <x-feedback.blocked-message
+            variant="error"
+            class="mb-6"
+            :message="$renewalAccess['message']"
+        />
     @elseif ($renewalBlockedNoOrganization)
         <x-feedback.blocked-message
             variant="error"
@@ -57,22 +67,23 @@
         />
     @endif
 
-    <form
-        method="POST"
-        action="{{ route($renewStoreRoute ?? 'organizations.renew.store') }}"
-        enctype="multipart/form-data"
-        class="space-y-6"
-        data-org-form-blocked="{{ $renewalFormBlocked ? 'true' : 'false' }}"
-    >
-        @csrf
-
-        <fieldset
-            @disabled($renewalFormBlocked)
-            @class([
-                'min-w-0 space-y-6 border-0 p-0 m-0',
-                'pointer-events-none opacity-50' => $renewalFormBlocked,
-            ])
+    @if ($showRenewalForm)
+        <form
+            method="POST"
+            action="{{ route($renewStoreRoute ?? 'organizations.renew.store') }}"
+            enctype="multipart/form-data"
+            class="space-y-6"
+            data-org-form-blocked="{{ $renewalFormBlocked ? 'true' : 'false' }}"
         >
+            @csrf
+
+            <fieldset
+                @disabled($renewalFormBlocked)
+                @class([
+                    'min-w-0 space-y-6 border-0 p-0 m-0',
+                    'pointer-events-none opacity-50' => $renewalFormBlocked,
+                ])
+            >
 
         {{-- Academic Year --}}
         <x-ui.card padding="p-0">
@@ -93,10 +104,11 @@
                             type="text"
                             inputmode="text"
                             placeholder="e.g., 2025-2026"
-                            :value="old('academic_year')"
+                            :value="old('academic_year', $activeAcademicYear)"
+                            readonly
                             required
                         />
-                        <x-forms.helper>Use the format shown in the example.</x-forms.helper>
+                        <x-forms.helper>This is set globally by the Super Admin and applies system-wide.</x-forms.helper>
                         @error('academic_year') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
                 </div>
@@ -402,8 +414,9 @@
             </div>
         </x-ui.card>
 
-        </fieldset>
-    </form>
+            </fieldset>
+        </form>
+    @endif
 
 </div>
 

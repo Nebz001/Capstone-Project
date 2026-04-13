@@ -1,13 +1,13 @@
 @extends('layouts.guest')
 
-@section('title', 'NU Lipa SDAO Document Management System')
+@section('title', 'NU Lipa Student Development and Activities Office Document Management System')
 
 @section('content')
 @php
 $portalModules = [
 [
 'title' => 'Organization Registration',
-'description' => 'Submit new organization registration requirements for SDAO review and validation.',
+'description' => 'Submit new organization registration requirements for Student Development and Activities Office review and validation.',
 'action' => 'Start registration',
 'href' => route('organizations.register'),
 'icon' => 'OR',
@@ -52,12 +52,12 @@ $portalModules = [
       </p>
 
       <h1 class="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-[2.75rem] lg:leading-[1.18]">
-        NU Lipa SDAO Document<br class="hidden sm:block"> Management System
+        NU Lipa Student Development and Activities Office Document<br class="hidden sm:block"> Management System
       </h1>
 
       <p class="mt-5 max-w-xl text-base leading-7 text-blue-100/85 sm:text-lg">
         A centralized portal for submission, review, approval tracking, and
-        organization document management for SDAO staff and recognized student organizations.
+        organization document management for Student Development and Activities Office staff and recognized student organizations.
       </p>
 
       <div class="mt-8 flex flex-wrap gap-3">
@@ -90,7 +90,7 @@ $portalModules = [
       </div>
       <h2 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Recognized student organizations</h2>
       <p class="mt-1.5 max-w-2xl text-sm text-slate-600">
-        Student organizations officially recognized by SDAO and active in the current system. This list is updated as organizations complete accreditation.
+        Student organizations officially recognized by the Student Development and Activities Office and active in the current system. This list is updated as organizations complete accreditation.
       </p>
     </div>
 
@@ -156,7 +156,7 @@ $portalModules = [
           </svg>
         </div>
         <h3 class="mt-4 text-base font-semibold text-slate-900">Organization Registration</h3>
-        <p class="mt-2 flex-1 text-sm leading-6 text-slate-600">Submit new organization registration requirements for SDAO review and validation.</p>
+        <p class="mt-2 flex-1 text-sm leading-6 text-slate-600">Submit new organization registration requirements for Student Development and Activities Office review and validation.</p>
         <a
           href="{{ route('organizations.register') }}"
           class="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-[#003E9F] transition-all hover:gap-2.5 hover:text-[#00327F]">
@@ -231,9 +231,9 @@ $portalModules = [
           <h2 class="mt-4 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">About the System</h2>
 
           <p class="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-            The NU Lipa SDAO Document Management System centralizes document submission and approval
+            The NU Lipa Student Development and Activities Office Document Management System centralizes document submission and approval
             workflows for recognized student organizations, supporting efficient processing, consistent
-            compliance checks, and reliable records across SDAO operations.
+            compliance checks, and reliable records across Student Development and Activities Office operations.
           </p>
         </div>
 
@@ -284,7 +284,7 @@ $portalModules = [
             </div>
             <div>
               <p class="text-sm font-semibold text-slate-900">Institutional Visibility</p>
-              <p class="mt-0.5 text-xs leading-5 text-slate-500">SDAO oversight across all registered organizations.</p>
+              <p class="mt-0.5 text-xs leading-5 text-slate-500">Student Development and Activities Office oversight across all registered organizations.</p>
             </div>
           </div>
 

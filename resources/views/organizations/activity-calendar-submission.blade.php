@@ -10,6 +10,9 @@
   $activityCalendarFormBlocked = $officerValidationPending || $calendarSubmittedLocked;
   $calLock = $calendarSubmittedLocked && ($latestCalendar ?? null);
   $academicYearVal = old('academic_year', $calLock ? ($latestCalendar->academic_year ?? '') : '');
+  if (! $calLock && $academicYearVal === '') {
+    $academicYearVal = \App\Models\SystemSetting::activeAcademicYear();
+  }
   $termVal = old('term', $calLock ? ($latestCalendar->semester ?? '') : \App\Models\SystemSetting::activeSemester());
   $orgNameVal = old(
       'organization_name',
@@ -90,7 +93,7 @@
     <script id="activity-calendar-submitted-flash" type="application/json">
       @json([
         'activitySubmissionUrl' => $isAdminSubmission ? route('admin.dashboard') : route('organizations.activity-submission'),
-        'proposalSubmissionUrl' => $isAdminSubmission ? route('admin.submissions.activity-proposal') : route('organizations.activity-proposal-submission'),
+        'proposalSubmissionUrl' => $isAdminSubmission ? route('admin.submissions.activity-proposal') : route('organizations.activity-proposal-request'),
       ])
     </script>
   @endif
@@ -140,6 +143,7 @@
               type="text"
               placeholder="2025-2026"
               :value="$academicYearVal"
+              readonly
               required />
           </div>
 

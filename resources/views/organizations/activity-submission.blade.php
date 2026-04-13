@@ -1,6 +1,6 @@
 @extends('layouts.organization-portal')
 
-@section('title', 'Activity Submission — NU Lipa SDAO')
+@section('title', 'Activity Submission — NU Lipa Student Development and Activities Office')
 
 @section('content')
 
@@ -45,7 +45,7 @@
                 Activity Calendar
             </h3>
             <p class="mt-1.5 flex-1 text-xs leading-relaxed text-slate-500">
-                Submit your organization&rsquo;s term activity calendar for SDAO review.
+                Submit your organization&rsquo;s term activity calendar for Student Development and Activities Office review.
             </p>
             <span class="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] transition-all duration-150 group-hover:gap-2">
                 Open
@@ -56,7 +56,7 @@
         </a>
 
         <a
-            href="{{ route('organizations.activity-proposal-submission') }}{{ $saQ }}"
+            href="{{ route('organizations.activity-proposal-request') }}{{ $saQ }}"
             class="group flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
         >
             <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">
@@ -68,7 +68,7 @@
                 Submit Proposal
             </h3>
             <p class="mt-1.5 flex-1 text-xs leading-relaxed text-slate-500">
-                Submit a detailed activity proposal with objectives, program flow, and budget for SDAO review.
+                Submit a detailed activity proposal with objectives, program flow, and budget for Student Development and Activities Office review.
             </p>
             <span class="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] transition-all duration-150 group-hover:gap-2">
                 Open

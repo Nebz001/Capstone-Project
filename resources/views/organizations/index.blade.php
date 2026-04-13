@@ -1,6 +1,6 @@
 @extends('layouts.organization-portal')
 
-@section('title', 'Organization Dashboard — NU Lipa SDAO')
+@section('title', 'Organization Dashboard — NU Lipa Student Development and Activities Office')
 
 @section('content')
 
@@ -16,7 +16,7 @@
         <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">
-                    NU Lipa · SDAO Portal
+                    NU Lipa · Student Development and Activities Office Portal
                 </p>
                 <h1 class="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
                     Organization Dashboard
@@ -44,7 +44,7 @@
         $pd = $proposalDashboard ?? ['empty' => true];
         $pdEmpty = ! empty($pd['empty']);
         $pdProposal = $pd['proposal'] ?? null;
-        $proposalTertiary = [['href' => route('organizations.activity-proposal-submission').$saQ, 'label' => 'New proposal']];
+        $proposalTertiary = [['href' => route('organizations.activity-proposal-request').$saQ, 'label' => 'New proposal']];
     @endphp
 
     <section class="mb-6" @if (! $pdEmpty) aria-labelledby="dashboard-proposal-heading" @endif>
@@ -53,7 +53,7 @@
                 mode="empty"
                 document-label="Activity proposal"
                 title="No proposal on file yet"
-                subtitle="Start an activity proposal to see the full eight-step campus routing and SDAO review progress here."
+                subtitle="Start an activity proposal to see the full eight-step campus routing and Student Development and Activities Office review progress here."
                 :primary-action="$pd['primary_action'] ?? null"
                 :secondary-action="$pd['secondary_action'] ?? null"
                 heading-id="dashboard-proposal-heading"

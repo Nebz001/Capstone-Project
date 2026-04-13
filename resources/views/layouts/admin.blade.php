@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>@yield('title', 'SDAO Admin')</title>
+  <title>@yield('title', 'Student Development and Activities Office Admin')</title>
   <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
 
   <link rel="preconnect" href="https://fonts.bunny.net">
@@ -22,7 +22,7 @@
           <img src="{{ asset('images/logos/nu-logo-onlyy.png') }}" alt="NU Lipa" class="h-10 w-auto" />
           <div class="min-w-0">
             <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-[#F5C400]">NU Lipa</p>
-            <p class="truncate text-sm font-semibold">{{ auth()->user()?->isSuperAdmin() ? 'Super Admin' : 'SDAO Admin' }}</p>
+            <p class="truncate text-sm font-semibold">{{ auth()->user()?->isSuperAdmin() ? 'Super Admin' : 'Student Development and Activities Office Admin' }}</p>
           </div>
         </a>
       </div>
@@ -40,7 +40,7 @@
 
         @if (auth()->user()?->isSuperAdmin())
           <div class="space-y-1">
-            <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Submissions (SDAO)</p>
+            <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Submissions (Student Development and Activities Office)</p>
             <a
               href="{{ route('admin.submissions.register') }}"
               class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.register') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
@@ -132,16 +132,18 @@
       <header class="border-b border-slate-200 bg-white">
         <div class="mx-auto flex w-full max-w-screen-2xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <div>
-            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">{{ auth()->user()?->isSuperAdmin() ? 'SDAO Super Admin Portal' : 'SDAO Admin Portal' }}</p>
+            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">{{ auth()->user()?->isSuperAdmin() ? 'Student Development and Activities Office Super Admin Portal' : 'Student Development and Activities Office Admin Portal' }}</p>
             <p class="text-xs text-slate-500">{{ now()->format('l, F j, Y') }}</p>
             @if (! auth()->user()?->isSuperAdmin())
               <x-active-term-status variant="admin" />
+              <x-academic-year-status variant="admin" />
             @endif
           </div>
           <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             @if (auth()->user()?->isSuperAdmin())
               @php
                 $headerActiveSemester = \App\Models\SystemSetting::activeSemester();
+                $headerActiveAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
               @endphp
               <form
                 method="POST"
@@ -163,6 +165,26 @@
                   <option value="term_2" @selected($headerActiveSemester === 'term_2')>2nd Term</option>
                   <option value="term_3" @selected($headerActiveSemester === 'term_3')>3rd Term</option>
                 </select>
+              </form>
+              <form
+                method="POST"
+                action="{{ route('admin.settings.academic-year') }}"
+                class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm"
+                id="admin-academic-year-form"
+              >
+                @csrf
+                @method('PATCH')
+                <label for="admin-academic-year" class="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Academic year</label>
+                <input
+                  id="admin-academic-year"
+                  name="active_academic_year"
+                  type="text"
+                  pattern="^\d{4}-\d{4}$"
+                  class="min-w-[8.5rem] rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
+                  value="{{ $headerActiveAcademicYear }}"
+                  title="Official academic year in YYYY-YYYY format (e.g., 2025-2026)"
+                  onchange="this.form.submit()"
+                />
               </form>
             @endif
             <span class="hidden text-sm font-medium text-slate-700 sm:block">{{ auth()->user()?->full_name }}</span>
@@ -195,7 +217,7 @@
   <div id="admin-logout-modal" class="fixed inset-0 z-[80] hidden items-center justify-center bg-slate-950/50 px-4">
     <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
       <h3 class="text-lg font-bold text-slate-900">Confirm logout</h3>
-      <p class="mt-1 text-sm text-slate-600">Are you sure you want to log out of the SDAO Admin portal?</p>
+      <p class="mt-1 text-sm text-slate-600">Are you sure you want to log out of the Student Development and Activities Office Admin portal?</p>
       <div class="mt-5 flex items-center justify-end gap-2">
         <button
           type="button"

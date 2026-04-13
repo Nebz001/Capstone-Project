@@ -13,6 +13,8 @@ class SystemSetting extends Model
 
     /** @var string|null Cached for the remainder of the request after first read. */
     private static ?string $activeSemesterCache = null;
+    /** @var string|null Cached for the remainder of the request after first read. */
+    private static ?string $activeAcademicYearCache = null;
 
     public static function getValue(string $key, ?string $default = null): ?string
     {
@@ -30,6 +32,9 @@ class SystemSetting extends Model
 
         if ($key === 'active_semester') {
             self::$activeSemesterCache = null;
+        }
+        if ($key === 'active_academic_year') {
+            self::$activeAcademicYearCache = null;
         }
     }
 
@@ -55,5 +60,33 @@ class SystemSetting extends Model
             'term_3' => '3rd Term',
             default => '1st Term',
         };
+    }
+
+    /**
+     * Official active academic year (YYYY-YYYY), e.g. 2025-2026.
+     */
+    public static function activeAcademicYear(): string
+    {
+        if (self::$activeAcademicYearCache !== null) {
+            return self::$activeAcademicYearCache;
+        }
+
+        $value = (string) static::getValue('active_academic_year', '');
+        if (preg_match('/^\d{4}-\d{4}$/', $value) !== 1) {
+            return self::$activeAcademicYearCache = static::defaultAcademicYear();
+        }
+
+        [$start, $end] = array_map('intval', explode('-', $value, 2));
+
+        return self::$activeAcademicYearCache = ($end === ($start + 1))
+            ? $value
+            : static::defaultAcademicYear();
+    }
+
+    public static function defaultAcademicYear(): string
+    {
+        $startYear = (int) now()->format('Y');
+
+        return $startYear.'-'.($startYear + 1);
     }
 }

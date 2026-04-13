@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'SDAO Admin Dashboard — NU Lipa SDAO')
+@section('title', 'Student Development and Activities Office Admin Dashboard — NU Lipa')
 
 @section('content')
 @php
@@ -14,7 +14,7 @@
 @endphp
 
 <header class="mb-8">
-  <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">SDAO Admin Dashboard</h1>
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Student Development and Activities Office Admin Dashboard</h1>
   <p class="mt-1 text-sm text-slate-500">Review and monitor all major student organization submissions.</p>
 </header>
 
@@ -83,9 +83,9 @@
 
 @if (auth()->user()?->isSuperAdmin())
   <section class="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-    <h2 class="text-sm font-bold text-slate-900">SDAO submissions</h2>
+    <h2 class="text-sm font-bold text-slate-900">Student Development and Activities Office submissions</h2>
     <p class="mt-1 text-xs text-slate-500">
-      File registrations, renewals, activity calendars, and proposals from the admin portal. Submissions are recorded under your SDAO admin account. For renewals, calendars, and proposals, enter each organization&rsquo;s registered name exactly as stored in the directory.
+      File registrations, renewals, activity calendars, and proposals from the admin portal. Submissions are recorded under your Student Development and Activities Office admin account. For renewals, calendars, and proposals, enter each organization&rsquo;s registered name exactly as stored in the directory.
     </p>
     <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
       <a href="{{ route('admin.submissions.register') }}" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-[#003E9F] transition hover:bg-slate-100">Register organization</a>

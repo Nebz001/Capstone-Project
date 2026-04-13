@@ -17,10 +17,18 @@ return new class extends Migration
         });
 
         DB::table('system_settings')->insert([
-            'key' => 'active_semester',
-            'value' => 'term_1',
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'key' => 'active_semester',
+                'value' => 'term_1',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'key' => 'active_academic_year',
+                'value' => now()->format('Y').'-'.(now()->year + 1),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

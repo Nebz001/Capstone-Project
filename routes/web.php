@@ -74,6 +74,10 @@ Route::prefix('organizations')->name('organizations.')->middleware('auth')->grou
 
         Route::get('/activity-proposal-submission', 'showActivityProposalSubmission')
             ->name('activity-proposal-submission');
+        Route::get('/activity-proposal-request', 'showActivityProposalRequest')
+            ->name('activity-proposal-request');
+        Route::post('/activity-proposal-request', 'storeActivityProposalRequest')
+            ->name('activity-proposal-request.store');
         Route::post('/activity-proposal-submission', 'storeActivityProposalSubmission')
             ->name('activity-proposal-submission.store');
 
@@ -130,6 +134,7 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminSubm
 Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminController::class)->group(function () {
     Route::get('/dashboard', 'dashboard')->name('dashboard');
     Route::patch('/settings/active-term', 'updateActiveTerm')->name('settings.active-term');
+    Route::patch('/settings/academic-year', 'updateAcademicYear')->name('settings.academic-year');
     Route::get('/calendar', 'centralizedCalendar')->name('calendar');
     Route::get('/accounts', 'userAccounts')->name('accounts.index');
     Route::get('/accounts/{user}', 'showUserAccount')->name('accounts.show');

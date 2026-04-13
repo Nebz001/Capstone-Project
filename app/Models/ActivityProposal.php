@@ -35,6 +35,7 @@ class ActivityProposal extends Model
         'budget_materials_supplies',
         'budget_food_beverage',
         'budget_other_expenses',
+        'budget_breakdown_items',
         'resume_resource_persons_path',
         'submission_date',
         'proposal_status',
@@ -50,6 +51,7 @@ class ActivityProposal extends Model
             'budget_materials_supplies' => 'decimal:2',
             'budget_food_beverage' => 'decimal:2',
             'budget_other_expenses' => 'decimal:2',
+            'budget_breakdown_items' => 'array',
         ];
     }
 

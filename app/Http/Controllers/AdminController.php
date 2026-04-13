@@ -112,6 +112,30 @@ class AdminController extends Controller
             ->with('success', 'The active academic term has been updated for the entire system.');
     }
 
+    public function updateAcademicYear(Request $request): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+
+        abort_unless($request->user()?->isSuperAdmin(), 403);
+
+        $validated = $request->validate([
+            'active_academic_year' => ['required', 'string', 'regex:/^\d{4}-\d{4}$/'],
+        ]);
+
+        [$start, $end] = array_map('intval', explode('-', $validated['active_academic_year'], 2));
+        if ($end !== ($start + 1)) {
+            return redirect()
+                ->back()
+                ->withErrors(['active_academic_year' => 'Academic year must follow YYYY-YYYY and advance by one year (e.g., 2025-2026).']);
+        }
+
+        SystemSetting::put('active_academic_year', $validated['active_academic_year']);
+
+        return redirect()
+            ->back()
+            ->with('success', 'The active academic year has been updated for the entire system.');
+    }
+
     public function registrations(Request $request): View
     {
         $this->authorizeAdmin($request);

@@ -15,7 +15,7 @@
       <div class="min-w-0 border-l border-slate-200 pl-3">
         <p class="text-[10px] font-bold uppercase leading-none tracking-[0.2em] text-[#003E9F]">NU Lipa</p>
         <p class="mt-0.5 truncate text-sm font-semibold leading-snug text-slate-900">
-          SDAO Document Management System
+          Student Development and Activities Office Document Management System
         </p>
       </div>
     </a>

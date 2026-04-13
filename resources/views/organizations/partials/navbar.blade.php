@@ -22,6 +22,10 @@
 
       <div class="mx-0.5 hidden h-6 w-px shrink-0 bg-white/20 sm:mx-1 sm:block" aria-hidden="true"></div>
 
+      <x-academic-year-status variant="navbar" />
+
+      <div class="mx-0.5 hidden h-6 w-px shrink-0 bg-white/20 sm:mx-1 sm:block" aria-hidden="true"></div>
+
       {{-- Notifications: announcement-style popover --}}
       <details class="relative z-[60]" data-org-navbar-panel data-org-announcements>
         <summary

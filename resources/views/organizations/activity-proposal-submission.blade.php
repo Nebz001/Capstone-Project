@@ -11,10 +11,14 @@
   $proposalCalendar = $proposalCalendar ?? null;
   $proposalCalendarEntries = $proposalCalendar?->entries ?? collect();
   $prefill = is_array($prefill ?? null) ? $prefill : [];
+  $prefillBudgetItems = old('budget_items_payload');
+  if ($prefillBudgetItems === null || $prefillBudgetItems === '') {
+    $prefillBudgetItems = json_encode($prefill['budget_items'] ?? []);
+  }
   $hasExistingLogo = (bool) ($linkedProposal?->organization_logo_path);
   $sourceOfFundingValue = old('source_of_funding', $prefill['source_of_funding'] ?? '');
-  if ($sourceOfFundingValue === '' || $sourceOfFundingValue === null || ! in_array((string) $sourceOfFundingValue, ['Internal', 'External'], true)) {
-    $sourceOfFundingValue = 'Internal';
+  if ($sourceOfFundingValue === '' || $sourceOfFundingValue === null || ! in_array((string) $sourceOfFundingValue, ['RSO Fund', 'RSO Savings', 'External'], true)) {
+    $sourceOfFundingValue = 'RSO Fund';
   }
   $hasExternalFundingFile = (bool) ($linkedProposal?->external_funding_support_path ?? false);
   // inline-block + w-auto: keeps the native file control only as wide as the visible picker so
@@ -22,6 +26,12 @@
   $fileClass = 'inline-block w-auto max-w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
   $isAdminSubmission = ($submissionContext ?? '') === 'admin';
   $proposalGetRoute = $activityProposalGetRoute ?? 'organizations.activity-proposal-submission';
+  $activeAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
+  $requestForm = $requestForm ?? null;
+  $proposalSource = $proposalSource ?? request('proposal_source', 'calendar');
+  if (! in_array($proposalSource, ['calendar', 'unlisted'], true)) {
+    $proposalSource = 'calendar';
+  }
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -50,6 +60,36 @@
       @endif
     </p>
   </header>
+
+  @unless ($isAdminSubmission)
+    <x-ui.card padding="p-0" class="mb-6">
+      <div class="px-6 py-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <a
+            href="{{ route('organizations.activity-proposal-request', ['request_id' => (int) request('request_id'), 'proposal_source' => $proposalSource]) }}"
+            class="flex-1 rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 transition hover:bg-emerald-100"
+          >
+            <div class="flex items-center gap-2">
+              <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white">
+                <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                </svg>
+              </span>
+              <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700">Completed</p>
+            </div>
+            <p class="mt-1.5 text-sm font-bold text-emerald-900">Step 1: Activity Request Form</p>
+          </a>
+          <div class="flex-1 rounded-2xl border-2 border-[#003E9F] bg-[#003E9F] px-4 py-3 text-white shadow-sm ring-2 ring-[#003E9F]/20">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-extrabold text-[#003E9F]">2</span>
+              <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-white/90">Current Step</p>
+            </div>
+            <p class="mt-1.5 text-sm font-bold">Step 2: Proposal Submission</p>
+          </div>
+        </div>
+      </div>
+    </x-ui.card>
+  @endunless
 
   @if ($isAdminSubmission && ! $organization)
     <x-ui.card padding="p-0" class="mb-6">
@@ -80,7 +120,7 @@
     </x-ui.card>
   @endif
 
-  @if ($organization && $proposalCalendar && $proposalCalendarEntries->isNotEmpty())
+  @if ($organization && $proposalSource === 'calendar' && $proposalCalendar && $proposalCalendarEntries->isNotEmpty())
     <x-ui.card padding="p-0" class="mb-6">
       <x-ui.card-section-header
         title="Select activity from submitted calendar"
@@ -89,6 +129,9 @@
       />
       <div class="border-t border-slate-100 px-6 py-5">
         <form method="GET" action="{{ route($proposalGetRoute) }}" class="max-w-4xl">
+          @if (! $isAdminSubmission)
+            <input type="hidden" name="request_id" value="{{ (int) request('request_id') }}" />
+          @endif
           @if ($isAdminSubmission && $organization)
             <input type="hidden" name="lookup_organization_name" value="{{ request('lookup_organization_name', $organization->organization_name) }}" />
           @endif
@@ -153,6 +196,14 @@
     </x-ui.card>
   @endif
 
+  @if ($organization && $proposalSource === 'calendar' && (! $proposalCalendar || $proposalCalendarEntries->isEmpty()))
+    <x-feedback.blocked-message
+      variant="info"
+      class="mb-6"
+      message="No submitted activity calendar entries are available to select. You may switch to 'Activity not in submitted calendar' to continue with a new/unlisted proposal."
+    />
+  @endif
+
   @if (session('success'))
     <div class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm" role="alert">
       {{ session('success') }}
@@ -191,7 +242,11 @@
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
   >
     @csrf
-    @if ($calendarEntry)
+    @if (! $isAdminSubmission)
+      <input type="hidden" name="request_id" value="{{ (int) request('request_id') }}" />
+    @endif
+    <input type="hidden" name="proposal_source" value="{{ $proposalSource }}" />
+    @if ($proposalSource === 'calendar' && $calendarEntry)
       <input type="hidden" name="activity_calendar_entry_id" value="{{ $calendarEntry->id }}" />
     @endif
 
@@ -250,7 +305,8 @@
                 name="academic_year"
                 type="text"
                 placeholder="e.g., 2025-2026"
-                :value="old('academic_year', $prefill['academic_year'] ?? '')"
+                :value="old('academic_year', $prefill['academic_year'] ?? $activeAcademicYear)"
+                readonly
                 required
               />
             </div>
@@ -404,7 +460,7 @@
             </div>
           @enderror
           <div id="budget-breakdown-client-error" class="mb-4 hidden rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 shadow-sm" role="alert" aria-live="polite"></div>
-          <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div class="grid grid-cols-1 gap-6">
             <div>
               <x-forms.label for="proposed_budget" required>Proposed Budget (total)</x-forms.label>
               <x-forms.input
@@ -418,7 +474,7 @@
                 required
               />
             </div>
-            <div class="md:col-span-2">
+            <div>
               <span class="block text-sm font-semibold leading-snug text-slate-800">
                 Source of Funding
                 <span class="text-rose-600">*</span>
@@ -428,11 +484,21 @@
                   <input
                     type="radio"
                     name="source_of_funding"
-                    value="Internal"
+                    value="RSO Fund"
                     class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
-                    @checked($sourceOfFundingValue === 'Internal')
+                    @checked($sourceOfFundingValue === 'RSO Fund')
                   />
-                  Internal
+                  RSO Fund
+                </label>
+                <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                  <input
+                    type="radio"
+                    name="source_of_funding"
+                    value="RSO Savings"
+                    class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
+                    @checked($sourceOfFundingValue === 'RSO Savings')
+                  />
+                  RSO Savings
                 </label>
                 <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
                   <input
@@ -446,9 +512,44 @@
                 </label>
               </div>
             </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div class="mb-3 flex items-center justify-between">
+                <p class="text-sm font-semibold text-slate-900">Detailed Budget Table</p>
+                <button
+                  type="button"
+                  id="add-budget-row"
+                  class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Add row
+                </button>
+              </div>
+              <input type="hidden" id="budget_items_payload" name="budget_items_payload" value="{{ $prefillBudgetItems }}" />
+              <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                <table class="w-full min-w-[640px] table-fixed text-sm">
+                  <thead class="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Material</th>
+                      <th class="w-28 px-3 py-2 text-left">Quantity</th>
+                      <th class="w-36 px-3 py-2 text-left">Unit Price</th>
+                      <th class="w-36 px-3 py-2 text-left">Price</th>
+                      <th class="w-20 px-3 py-2 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="budget-items-body" class="divide-y divide-slate-100"></tbody>
+                  <tfoot class="bg-slate-50">
+                    <tr>
+                      <td colspan="3" class="px-3 py-2 text-right text-sm font-bold text-slate-700">TOTAL</td>
+                      <td class="px-3 py-2 text-sm font-bold text-slate-900" id="budget-items-total">0.00</td>
+                      <td class="px-3 py-2"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p class="mt-2 text-xs text-slate-500">Step 2 detailed breakdown of the budget declared in Step 1.</p>
+            </div>
             <div
               id="external-funding-attachment"
-              class="md:col-span-2 {{ $sourceOfFundingValue === 'External' ? '' : 'hidden' }}"
+              class="{{ $sourceOfFundingValue === 'External' ? '' : 'hidden' }}"
             >
               <x-forms.label for="external_funding_support" :required="! $hasExternalFundingFile">External funding support</x-forms.label>
               <div class="mt-2 w-fit max-w-full">
@@ -468,45 +569,6 @@
                   Required when you submit for review with External funding (optional while saving a draft).
                 @endif
               </x-forms.helper>
-            </div>
-            <div>
-              <x-forms.label for="materials_supplies" required>Materials and Supplies</x-forms.label>
-              <x-forms.input
-                id="materials_supplies"
-                name="materials_supplies"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                :value="old('materials_supplies', $prefill['materials_supplies'] ?? '')"
-                required
-              />
-            </div>
-            <div>
-              <x-forms.label for="food_beverage" required>Food and Beverage</x-forms.label>
-              <x-forms.input
-                id="food_beverage"
-                name="food_beverage"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                :value="old('food_beverage', $prefill['food_beverage'] ?? '')"
-                required
-              />
-            </div>
-            <div class="md:col-span-2">
-              <x-forms.label for="other_expenses" required>Other Expenses</x-forms.label>
-              <x-forms.input
-                id="other_expenses"
-                name="other_expenses"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                :value="old('other_expenses', $prefill['other_expenses'] ?? '')"
-                required
-              />
             </div>
           </div>
         </div>
@@ -622,51 +684,93 @@
     (function () {
       var form = document.getElementById('activity-proposal-form');
       var clientErr = document.getElementById('budget-breakdown-client-error');
-      if (!form || !clientErr) return;
+      var body = document.getElementById('budget-items-body');
+      var totalEl = document.getElementById('budget-items-total');
+      var addRowBtn = document.getElementById('add-budget-row');
+      var payloadInput = document.getElementById('budget_items_payload');
+      var proposedBudgetEl = document.getElementById('proposed_budget');
+      if (!form || !clientErr || !body || !totalEl || !addRowBtn || !payloadInput || !proposedBudgetEl) return;
 
-      var budgetFieldIds = ['proposed_budget', 'materials_supplies', 'food_beverage', 'other_expenses'];
-
-      function parseAmount(id) {
-        var el = document.getElementById(id);
-        if (!el) return 0;
-        var raw = String(el.value || '').trim().replace(',', '.');
-        if (raw === '') return 0;
-        var n = parseFloat(raw);
+      function money(v) {
+        var n = parseFloat(String(v || '').replace(',', '.'));
         return isNaN(n) ? 0 : n;
       }
 
-      function syncBudgetValidation() {
-        var total = Math.round(parseAmount('proposed_budget') * 100) / 100;
-        var sum =
-          Math.round(
-            (parseAmount('materials_supplies') + parseAmount('food_beverage') + parseAmount('other_expenses')) * 100
-          ) / 100;
-        if (Math.abs(total - sum) > 0.01) {
-          clientErr.textContent =
-            'Proposed Budget (total) must equal Materials and Supplies + Food and Beverage + Other Expenses. Your total is ' +
-            total.toFixed(2) +
-            ' but the expense lines sum to ' +
-            sum.toFixed(2) +
-            '.';
-          clientErr.classList.remove('hidden');
-        } else {
-          clientErr.textContent = '';
-          clientErr.classList.add('hidden');
-        }
+      function buildRow(item) {
+        var tr = document.createElement('tr');
+        tr.className = 'align-top';
+        tr.innerHTML =
+          '<td class="px-3 py-2"><input type="text" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="material" value="' + (item.material || '') + '" /></td>' +
+          '<td class="px-3 py-2"><input type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="quantity" value="' + (item.quantity || '') + '" /></td>' +
+          '<td class="px-3 py-2"><input type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="unit_price" value="' + (item.unit_price || '') + '" /></td>' +
+          '<td class="px-3 py-2"><input type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="price" value="' + (item.price || '') + '" /></td>' +
+          '<td class="px-3 py-2 text-center"><button type="button" class="rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50" data-remove-row>Remove</button></td>';
+        return tr;
       }
 
-      budgetFieldIds.forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el) {
-          el.addEventListener('input', syncBudgetValidation);
-          el.addEventListener('change', syncBudgetValidation);
-        }
-      });
+      function readRows() {
+        var rows = Array.from(body.querySelectorAll('tr'));
+        return rows.map(function (row) {
+          return {
+            material: row.querySelector('[data-col="material"]').value.trim(),
+            quantity: money(row.querySelector('[data-col="quantity"]').value),
+            unit_price: money(row.querySelector('[data-col="unit_price"]').value),
+            price: money(row.querySelector('[data-col="price"]').value),
+          };
+        }).filter(function (r) {
+          return r.material !== '' || r.quantity > 0 || r.unit_price > 0 || r.price > 0;
+        });
+      }
 
-      syncBudgetValidation();
+      function syncBudget() {
+        var rows = readRows();
+        var sum = rows.reduce(function (acc, row) { return acc + money(row.price); }, 0);
+        totalEl.textContent = sum.toFixed(2);
+        payloadInput.value = JSON.stringify(rows);
+
+        var proposed = money(proposedBudgetEl.value);
+        if (rows.length === 0) {
+          clientErr.textContent = 'Add at least one budget row.';
+          clientErr.classList.remove('hidden');
+          return;
+        }
+        if (Math.abs(proposed - sum) > 0.01) {
+          clientErr.textContent = 'Proposed Budget (total) must equal the detailed table total. Your total is ' + proposed.toFixed(2) + ' but rows sum to ' + sum.toFixed(2) + '.';
+          clientErr.classList.remove('hidden');
+          return;
+        }
+        clientErr.textContent = '';
+        clientErr.classList.add('hidden');
+      }
+
+      function addRow(item) {
+        var row = buildRow(item || {});
+        body.appendChild(row);
+        row.querySelectorAll('input').forEach(function (input) {
+          input.addEventListener('input', syncBudget);
+          input.addEventListener('change', syncBudget);
+        });
+        row.querySelector('[data-remove-row]').addEventListener('click', function () {
+          row.remove();
+          syncBudget();
+        });
+        syncBudget();
+      }
+
+      var seed = [];
+      try {
+        var parsed = JSON.parse(payloadInput.value || '[]');
+        if (Array.isArray(parsed)) seed = parsed;
+      } catch (e) {}
+      if (seed.length === 0) seed = [{}];
+      seed.forEach(function (item) { addRow(item); });
+
+      addRowBtn.addEventListener('click', function () { addRow({}); });
+      proposedBudgetEl.addEventListener('input', syncBudget);
+      proposedBudgetEl.addEventListener('change', syncBudget);
 
       form.addEventListener('submit', function (e) {
-        syncBudgetValidation();
+        syncBudget();
         if (!clientErr.classList.contains('hidden')) {
           e.preventDefault();
           clientErr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

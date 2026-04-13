@@ -7,8 +7,10 @@
 @php
   $officerValidationPending = $officerValidationPending ?? false;
   $alreadyLinkedToOrganization = $alreadyLinkedToOrganization ?? false;
-  $sessionErrorBlocksForm = session()->has('error');
-  $registrationFormBlocked = $officerValidationPending || $sessionErrorBlocksForm || $alreadyLinkedToOrganization;
+  $registrationBlockedByPolicy = $officerValidationPending || $alreadyLinkedToOrganization;
+  $registrationFormBlocked = $registrationBlockedByPolicy;
+  $activeAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
+  $showRegistrationForm = ! $registrationBlockedByPolicy;
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -56,22 +58,23 @@
     />
   @endif
 
-  <form
-    method="POST"
-    action="{{ route($registerStoreRoute ?? 'organizations.register.store') }}"
-    enctype="multipart/form-data"
-    class="space-y-6"
-    data-org-form-blocked="{{ $registrationFormBlocked ? 'true' : 'false' }}"
-  >
-    @csrf
-
-    <fieldset
-      @disabled($registrationFormBlocked)
-      @class([
-        'min-w-0 space-y-6 border-0 p-0 m-0',
-        'pointer-events-none opacity-50' => $registrationFormBlocked,
-      ])
+  @if ($showRegistrationForm)
+    <form
+      method="POST"
+      action="{{ route($registerStoreRoute ?? 'organizations.register.store') }}"
+      enctype="multipart/form-data"
+      class="space-y-6"
+      data-org-form-blocked="{{ $registrationFormBlocked ? 'true' : 'false' }}"
     >
+      @csrf
+
+      <fieldset
+        @disabled($registrationFormBlocked)
+        @class([
+          'min-w-0 space-y-6 border-0 p-0 m-0',
+          'pointer-events-none opacity-50' => $registrationFormBlocked,
+        ])
+      >
 
     {{-- Academic Year --}}
     <x-ui.card padding="p-0">
@@ -91,9 +94,10 @@
               type="text"
               inputmode="text"
               placeholder="e.g., 2025-2026"
-              :value="old('academic_year')"
+              :value="old('academic_year', $activeAcademicYear)"
+              readonly
               required />
-            <x-forms.helper>Use the format shown in the example.</x-forms.helper>
+            <x-forms.helper>This is set globally by the Super Admin and applies system-wide.</x-forms.helper>
             @error('academic_year') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </div>
         </div>
@@ -374,8 +378,9 @@
       </div>
     </x-ui.card>
 
-    </fieldset>
-  </form>
+      </fieldset>
+    </form>
+  @endif
 
 </div>
 
