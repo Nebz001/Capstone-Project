@@ -14,6 +14,7 @@ use App\Models\OrganizationRenewal;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Support\SubmissionRoutingProgress;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -443,7 +444,12 @@ class OrganizationController extends Controller
             return redirect()->route('admin.reports.index');
         }
 
-        return view('organizations.submit-report');
+        $organization = $this->resolveOrganizationForWorkflows($request);
+        $reportStatusData = $organization ? $this->buildAfterActivityReportStatusData($organization) : null;
+
+        return view('organizations.submit-report', [
+            'reportStatusData' => $reportStatusData,
+        ]);
     }
 
     public function showActivitySubmissionHub(Request $request)
@@ -1881,10 +1887,12 @@ class OrganizationController extends Controller
             return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.manage');
         }
 
+        $reportStatusData = $this->buildAfterActivityReportStatusData($organization);
+
         return view('organizations.after-activity-report', [
             'organization' => $organization,
             'schoolOptions' => self::SCHOOL_CODE_LABELS,
-            'optionalProposals' => $organization->activityProposals()->latest('id')->limit(100)->get(),
+            'reportStatusData' => $reportStatusData,
             'prefillPreparedBy' => $user->full_name,
             'officerValidationPending' => ! $user->isOfficerValidated(),
         ]);
@@ -1913,11 +1921,23 @@ class OrganizationController extends Controller
                 ->with('error', 'Your student officer account is pending SDAO validation.');
         }
 
+        $reportStatusData = $this->buildAfterActivityReportStatusData($organization);
+        $eligibleProposalIds = collect($reportStatusData['eligibleProposals'])
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if ($eligibleProposalIds === []) {
+            return redirect()
+                ->route('organizations.after-activity-report')
+                ->with('error', 'No completed and approved activity is currently eligible for an after activity report.');
+        }
+
         $validated = $request->validate([
             'proposal_id' => [
-                'nullable',
+                'required',
                 'integer',
-                Rule::exists('activity_proposals', 'id')->where('organization_id', $organization->id),
+                Rule::in($eligibleProposalIds),
             ],
             'activity_event_title' => ['required', 'string', 'max:255'],
             'school' => ['required', 'string', Rule::in(array_keys(self::SCHOOL_CODE_LABELS))],
@@ -1961,7 +1981,7 @@ class OrganizationController extends Controller
         $attendancePath = $request->file('attendance_sheet')->store($base, 'public');
 
         ActivityReport::create([
-            'proposal_id' => $validated['proposal_id'] ?? null,
+            'proposal_id' => $validated['proposal_id'],
             'organization_id' => $organization->id,
             'user_id' => $user->id,
             'report_submission_date' => now()->toDateString(),
@@ -1989,6 +2009,124 @@ class OrganizationController extends Controller
             ->route('organizations.after-activity-report')
             ->with('success', 'After activity report submitted successfully.')
             ->with('after_activity_report_redirect_to', route('organizations.index'));
+    }
+
+    /**
+     * @return array{
+     *     activities: list<array<string, mixed>>,
+     *     eligibleProposals: list<array<string, mixed>>,
+     *     dueReminders: list<array<string, mixed>>,
+     *     hasAnyTrackedActivity: bool,
+     *     hasEligibleProposal: bool,
+     *     blockedMessage: string
+     * }
+     */
+    private function buildAfterActivityReportStatusData(Organization $organization): array
+    {
+        $today = CarbonImmutable::now()->startOfDay();
+
+        $proposals = $organization->activityProposals()
+            ->whereNotIn('proposal_status', ['DRAFT'])
+            ->with('activityReport')
+            ->orderByDesc('proposed_start_date')
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
+
+        $activities = [];
+        $eligible = [];
+        $dueReminders = [];
+
+        foreach ($proposals as $proposal) {
+            $proposalStatus = strtoupper((string) ($proposal->proposal_status ?? 'PENDING'));
+
+            $startDate = $proposal->proposed_start_date?->copy()->startOfDay();
+            $endDate = ($proposal->proposed_end_date ?? $proposal->proposed_start_date)?->copy()->startOfDay();
+            $reportDeadline = $endDate?->copy()->addWeek();
+
+            $lifecycleStatus = 'pending';
+            $lifecycleLabel = 'Pending';
+
+            if ($proposalStatus === 'APPROVED' && $startDate && $endDate) {
+                if ($today->lt($startDate)) {
+                    $lifecycleStatus = 'pending';
+                    $lifecycleLabel = 'Pending';
+                } elseif ($today->gt($endDate)) {
+                    $lifecycleStatus = 'completed';
+                    $lifecycleLabel = 'Completed / Done';
+                } else {
+                    $lifecycleStatus = 'in_progress';
+                    $lifecycleLabel = 'In Progress';
+                }
+            }
+
+            $hasReport = $proposal->activityReport !== null;
+            $canSubmit = $proposalStatus === 'APPROVED'
+                && $lifecycleStatus === 'completed'
+                && ! $hasReport;
+
+            $deadlineMeta = null;
+            if ($canSubmit && $reportDeadline) {
+                $daysRemaining = (int) $today->diffInDays($reportDeadline, false);
+                $deadlineMeta = [
+                    'date' => $reportDeadline,
+                    'days_remaining' => $daysRemaining,
+                    'is_overdue' => $daysRemaining < 0,
+                    'is_due_soon' => $daysRemaining >= 0 && $daysRemaining <= 2,
+                ];
+
+                $dueReminders[] = [
+                    'proposal_id' => $proposal->id,
+                    'activity_title' => (string) $proposal->activity_title,
+                    'deadline' => $reportDeadline,
+                    'days_remaining' => $daysRemaining,
+                ];
+            }
+
+            $readinessReason = match (true) {
+                $proposalStatus !== 'APPROVED' => 'Proposal must be approved before reporting is allowed.',
+                ! $startDate || ! $endDate => 'Activity dates are incomplete. Please update proposal schedule first.',
+                $lifecycleStatus === 'pending' => 'Activity has not started yet. Report opens after completion.',
+                $lifecycleStatus === 'in_progress' => 'Activity is still in progress. Submit report once completed.',
+                $hasReport => 'Report already submitted for this activity.',
+                default => 'Ready for report submission.',
+            };
+
+            $row = [
+                'id' => $proposal->id,
+                'activity_title' => (string) $proposal->activity_title,
+                'proposal_status' => $proposalStatus,
+                'proposal_status_label' => $this->activityProposalStatusPresentation($proposal->proposal_status)['label'],
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'lifecycle_status' => $lifecycleStatus,
+                'lifecycle_label' => $lifecycleLabel,
+                'has_report' => $hasReport,
+                'can_submit' => $canSubmit,
+                'readiness_reason' => $readinessReason,
+                'deadline' => $deadlineMeta,
+            ];
+
+            $activities[] = $row;
+            if ($canSubmit) {
+                $eligible[] = $row;
+            }
+        }
+
+        $hasAnyTrackedActivity = count($activities) > 0;
+        $hasEligibleProposal = count($eligible) > 0;
+        $blockedMessage = $hasAnyTrackedActivity
+            ? 'No completed approved activities are currently eligible for after activity reporting.'
+            : 'No submitted activity proposals are available yet for after activity reporting.';
+
+        return [
+            'activities' => $activities,
+            'eligibleProposals' => $eligible,
+            'dueReminders' => $dueReminders,
+            'hasAnyTrackedActivity' => $hasAnyTrackedActivity,
+            'hasEligibleProposal' => $hasEligibleProposal,
+            'blockedMessage' => $blockedMessage,
+        ];
     }
 
     private function redirectWhenNoOrganizationForWorkflow(Request $request, string $studentFallbackRoute): RedirectResponse

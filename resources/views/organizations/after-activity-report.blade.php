@@ -6,6 +6,13 @@
 
 @php
     $officerValidationPending = $officerValidationPending ?? false;
+    $reportStatusData = $reportStatusData ?? [];
+    $activities = collect($reportStatusData['activities'] ?? []);
+    $eligibleProposals = collect($reportStatusData['eligibleProposals'] ?? []);
+    $dueReminders = collect($reportStatusData['dueReminders'] ?? []);
+    $hasEligibleProposal = (bool) ($reportStatusData['hasEligibleProposal'] ?? false);
+    $blockedMessage = (string) ($reportStatusData['blockedMessage'] ?? 'No eligible activity found for reporting yet.');
+    $showForm = $hasEligibleProposal && ! $officerValidationPending;
     $fileClass = 'block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
     $saOrg = auth()->user()->isSuperAdmin()
         ? (optional($organization ?? null)->id ?: ($superAdminOrganizationId ?? null))
@@ -49,12 +56,89 @@
         <x-feedback.blocked-message message="Your student officer account is pending SDAO validation. You cannot submit reports until validation is complete." class="mb-6" />
     @endif
 
-    @if ($organization)
+    <x-ui.card class="mb-6" padding="p-0">
+        <x-ui.card-section-header
+            title="Activity Reporting Status"
+            subtitle="After activity reports are only available for completed approved activities."
+            content-padding="px-6"
+        />
+        <div class="px-6 pb-6">
+            @if ($activities->isEmpty())
+                <x-feedback.blocked-message
+                    message="No submitted or approved activity proposal is available yet. Submit and secure approval for an activity first."
+                />
+            @else
+                @if ($dueReminders->isNotEmpty())
+                    <div class="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                        <p class="font-semibold">Reporting reminders</p>
+                        <ul class="mt-2 space-y-1">
+                            @foreach ($dueReminders as $reminder)
+                                <li>
+                                    <span class="font-medium">{{ $reminder['activity_title'] }}</span>
+                                    @if ($reminder['days_remaining'] < 0)
+                                        — Overdue by {{ abs((int) $reminder['days_remaining']) }} day(s), deadline was {{ $reminder['deadline']->format('M j, Y') }}.
+                                    @else
+                                        — Due {{ $reminder['deadline']->format('M j, Y') }} ({{ (int) $reminder['days_remaining'] }} day(s) left).
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
+
+                <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Activity</th>
+                                <th class="px-4 py-3 text-left">Proposal Status</th>
+                                <th class="px-4 py-3 text-left">Activity Status</th>
+                                <th class="px-4 py-3 text-left">Report Eligibility</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            @foreach ($activities as $activity)
+                                <tr>
+                                    <td class="px-4 py-3 text-slate-800">
+                                        <p class="font-semibold">{{ $activity['activity_title'] }}</p>
+                                        <p class="text-xs text-slate-500">
+                                            {{ optional($activity['start_date'])->format('M j, Y') ?? 'Date N/A' }}
+                                            @if ($activity['end_date'] && optional($activity['end_date'])->ne($activity['start_date']))
+                                                - {{ optional($activity['end_date'])->format('M j, Y') }}
+                                            @endif
+                                        </p>
+                                    </td>
+                                    <td class="px-4 py-3 text-slate-700">{{ $activity['proposal_status_label'] }}</td>
+                                    <td class="px-4 py-3 text-slate-700">{{ $activity['lifecycle_label'] }}</td>
+                                    <td class="px-4 py-3 text-slate-700">
+                                        @if ($activity['can_submit'])
+                                            <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">Allowed</span>
+                                        @elseif ($activity['has_report'])
+                                            <span class="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">Already submitted</span>
+                                        @else
+                                            <span class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Not yet allowed</span>
+                                        @endif
+                                        <p class="mt-1 text-xs text-slate-500">{{ $activity['readiness_reason'] }}</p>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+
+            @if (! $hasEligibleProposal)
+                <x-feedback.blocked-message class="mt-4" :message="$blockedMessage" />
+            @endif
+        </div>
+    </x-ui.card>
+
+    @if ($organization && $showForm)
     <form
         method="POST"
         action="{{ route('organizations.after-activity-report.store') }}"
         enctype="multipart/form-data"
-        class="space-y-6 @if($officerValidationPending) pointer-events-none opacity-50 @endif"
+        class="space-y-6"
     >
         @csrf
         @if (auth()->user()->isSuperAdmin())
@@ -133,17 +217,18 @@
             />
             <div class="px-6 py-6">
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-                    @if ($optionalProposals->isNotEmpty())
+                    @if ($eligibleProposals->isNotEmpty())
                         <div class="md:col-span-2">
-                            <x-forms.label for="proposal_id">Linked activity proposal (optional)</x-forms.label>
-                            <x-forms.select id="proposal_id" name="proposal_id">
-                                <option value="">— None —</option>
-                                @foreach ($optionalProposals as $prop)
-                                    <option value="{{ $prop->id }}" @selected((string) old('proposal_id') === (string) $prop->id)>
-                                        {{ $prop->activity_title }} — {{ $prop->submission_date?->format('M j, Y') ?? 'N/A' }}
+                            <x-forms.label for="proposal_id" required>Linked completed activity proposal</x-forms.label>
+                            <x-forms.select id="proposal_id" name="proposal_id" required>
+                                <option value="" disabled @selected(! old('proposal_id'))>Select completed approved activity</option>
+                                @foreach ($eligibleProposals as $prop)
+                                    <option value="{{ $prop['id'] }}" @selected((string) old('proposal_id') === (string) $prop['id'])>
+                                        {{ $prop['activity_title'] }} — Deadline {{ optional($prop['deadline']['date'] ?? null)->format('M j, Y') ?? 'N/A' }}
                                     </option>
                                 @endforeach
                             </x-forms.select>
+                            <x-forms.helper>Only completed and approved activities are available for report submission.</x-forms.helper>
                             @error('proposal_id') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                         </div>
                     @endif
