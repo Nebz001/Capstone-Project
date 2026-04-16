@@ -7,6 +7,7 @@
 @php
   $officerValidationPending = $officerValidationPending ?? false;
   $alreadyLinkedToOrganization = $alreadyLinkedToOrganization ?? false;
+  $showPageIntro = $showPageIntro ?? (($layout ?? 'layouts.organization-portal') !== 'layouts.admin');
   $registrationBlockedByPolicy = $officerValidationPending || $alreadyLinkedToOrganization;
   $registrationFormBlocked = $registrationBlockedByPolicy;
   $activeAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
@@ -15,21 +16,23 @@
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
-  {{-- ── Page Header ──────────────────────────────────────────────── --}}
-  <header class="mb-8">
-    <a href="{{ $backRoute ?? route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
-      <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-      </svg>
-      {{ $backLabel ?? 'Back to Manage Organization' }}
-    </a>
-    <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-      {{ $pageHeading ?? 'New Organization Registration' }}
-    </h1>
-    <p class="mt-1 text-sm text-slate-500">
-      {{ $pageSubheading ?? 'Complete all required fields to register your student organization with SDAO.' }}
-    </p>
-  </header>
+  @if ($showPageIntro)
+    {{-- ── Page Header ──────────────────────────────────────────────── --}}
+    <header class="mb-8">
+      <a href="{{ $backRoute ?? route('organizations.manage') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+        {{ $backLabel ?? 'Back to Manage Organization' }}
+      </a>
+      <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        {{ $pageHeading ?? 'New Organization Registration' }}
+      </h1>
+      <p class="mt-1 text-sm text-slate-500">
+        {{ $pageSubheading ?? 'Complete all required fields to register your student organization with SDAO.' }}
+      </p>
+    </header>
+  @endif
 
   @if (session('success'))
   <div
@@ -53,6 +56,7 @@
 
   @if ($officerValidationPending)
     <x-feedback.blocked-message
+      variant="error"
       class="mb-6"
       message="Your student officer account is pending SDAO validation. You cannot submit or edit organization forms until validation is complete."
     />

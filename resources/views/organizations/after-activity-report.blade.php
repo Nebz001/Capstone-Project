@@ -13,6 +13,7 @@
     $hasEligibleProposal = (bool) ($reportStatusData['hasEligibleProposal'] ?? false);
     $blockedMessage = (string) ($reportStatusData['blockedMessage'] ?? 'No eligible activity found for reporting yet.');
     $showForm = $hasEligibleProposal && ! $officerValidationPending;
+    $reportAccessBlocked = ! $showForm;
     $fileClass = 'block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
     $saOrg = auth()->user()->isSuperAdmin()
         ? (optional($organization ?? null)->id ?: ($superAdminOrganizationId ?? null))
@@ -53,21 +54,33 @@
     @endif
 
     @if ($officerValidationPending)
-        <x-feedback.blocked-message message="Your student officer account is pending SDAO validation. You cannot submit reports until validation is complete." class="mb-6" />
+        <x-feedback.blocked-message
+            variant="error"
+            message="Your student officer account is pending SDAO validation. You cannot submit reports until validation is complete."
+            class="mb-6"
+        />
     @endif
 
-    <x-ui.card class="mb-6" padding="p-0">
-        <x-ui.card-section-header
-            title="Activity Reporting Status"
-            subtitle="After activity reports are only available for completed approved activities."
-            content-padding="px-6"
-        />
-        <div class="px-6 pb-6">
-            @if ($activities->isEmpty())
-                <x-feedback.blocked-message
-                    message="No submitted or approved activity proposal is available yet. Submit and secure approval for an activity first."
-                />
-            @else
+    @if ($reportAccessBlocked)
+        @if (! $officerValidationPending && $activities->isEmpty())
+            <x-feedback.blocked-message
+                variant="error"
+                class="mb-6"
+                message="No submitted or approved activity proposal is available yet. Submit and secure approval for an activity first."
+            />
+        @endif
+
+        @if (! $officerValidationPending && ! $hasEligibleProposal)
+            <x-feedback.blocked-message variant="error" class="mb-6" :message="$blockedMessage" />
+        @endif
+    @else
+        <x-ui.card class="mb-6" padding="p-0">
+            <x-ui.card-section-header
+                title="Activity Reporting Status"
+                subtitle="After activity reports are only available for completed approved activities."
+                content-padding="px-6"
+            />
+            <div class="px-6 pb-6">
                 @if ($dueReminders->isNotEmpty())
                     <div class="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                         <p class="font-semibold">Reporting reminders</p>
@@ -125,13 +138,9 @@
                         </tbody>
                     </table>
                 </div>
-            @endif
-
-            @if (! $hasEligibleProposal)
-                <x-feedback.blocked-message class="mt-4" :message="$blockedMessage" />
-            @endif
-        </div>
-    </x-ui.card>
+            </div>
+        </x-ui.card>
+    @endif
 
     @if ($organization && $showForm)
     <form

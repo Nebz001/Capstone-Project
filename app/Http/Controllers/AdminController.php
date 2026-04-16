@@ -297,10 +297,13 @@ class AdminController extends Controller
         ]);
 
         $latestOfficerRecord = $user->organizationOfficers->first();
+        $reviewableFields = $this->accountReviewableFields($user, $latestOfficerRecord);
 
         return view('admin.user-accounts.show', [
             'account' => $user,
             'latestOfficerRecord' => $latestOfficerRecord,
+            'reviewableFields' => $reviewableFields,
+            'fieldReviews' => $this->normalizedAccountFieldReviews($user, array_keys($reviewableFields)),
         ]);
     }
 
@@ -326,6 +329,120 @@ class AdminController extends Controller
         return redirect()
             ->route('admin.accounts.show', $user)
             ->with('success', 'Officer validation has been updated.');
+    }
+
+    public function updateUserAccountFieldReview(Request $request, User $user): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+
+        abort_if($user->isSdaoAdmin(), 404);
+
+        $latestOfficerRecord = $user->organizationOfficers()->latest('id')->with('organization')->first();
+        $allowedKeys = array_keys($this->accountReviewableFields($user, $latestOfficerRecord));
+
+        $validated = $request->validate([
+            'field_key' => ['required', Rule::in($allowedKeys)],
+            'action_type' => ['required', Rule::in(['approve', 'revision'])],
+            'revision_message' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        if ($validated['action_type'] === 'revision' && trim((string) ($validated['revision_message'] ?? '')) === '') {
+            return redirect()
+                ->route('admin.accounts.show', $user)
+                ->withErrors(['revision_message' => 'Revision message is required when requesting revision.'])
+                ->withInput();
+        }
+
+        $fieldKey = (string) $validated['field_key'];
+        $actionType = (string) $validated['action_type'];
+        $reviews = is_array($user->account_field_reviews) ? $user->account_field_reviews : [];
+
+        $reviews[$fieldKey] = [
+            'status' => $actionType === 'approve' ? 'approved' : 'revision',
+            'message' => $actionType === 'revision' ? trim((string) $validated['revision_message']) : null,
+            'reviewed_by' => $request->user()?->id,
+            'reviewed_at' => now()->toIso8601String(),
+        ];
+
+        $user->update([
+            'account_field_reviews' => $reviews,
+        ]);
+
+        return redirect()
+            ->route('admin.accounts.show', $user)
+            ->with('success', $actionType === 'approve' ? 'Field marked as reviewed.' : 'Field revision feedback saved.');
+    }
+
+    /**
+     * @return array<string, array{label: string, value: string}>
+     */
+    private function accountReviewableFields(User $account, mixed $latestOfficerRecord): array
+    {
+        $fields = [
+            'full_name' => ['label' => 'Full name', 'value' => $account->full_name],
+            'school_id' => ['label' => 'School ID', 'value' => (string) $account->school_id],
+            'email' => ['label' => 'Email', 'value' => (string) $account->email],
+            'account_status' => ['label' => 'Account status', 'value' => (string) $account->account_status],
+            'date_registered' => [
+                'label' => 'Date registered',
+                'value' => optional($account->created_at)->format('M d, Y h:i A') ?? 'N/A',
+            ],
+        ];
+
+        if ($account->role_type === 'ORG_OFFICER') {
+            $fields['linked_organization'] = [
+                'label' => 'Linked organization',
+                'value' => $latestOfficerRecord?->organization?->organization_name ?? 'Not linked',
+            ];
+            $fields['position_title'] = [
+                'label' => 'Position / officer role',
+                'value' => $latestOfficerRecord?->position_title ?? 'N/A',
+            ];
+            $fields['officer_validation_status'] = [
+                'label' => 'Officer validation status',
+                'value' => str_replace('_', ' ', (string) $account->officer_validation_status),
+            ];
+            $fields['officer_validation_notes'] = [
+                'label' => 'Validation notes',
+                'value' => $account->officer_validation_notes ?: 'No notes provided yet.',
+            ];
+            $lastReviewed = $account->validatedBy?->full_name ?? 'Not reviewed yet';
+            if ($account->officer_validated_at) {
+                $lastReviewed .= ' · '.$account->officer_validated_at->format('M d, Y h:i A');
+            }
+            $fields['last_reviewed_by'] = [
+                'label' => 'Last reviewed by',
+                'value' => $lastReviewed,
+            ];
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param  list<string>  $allowedKeys
+     * @return array<string, array{status: string, message: ?string, reviewed_by: ?int, reviewed_at: ?string}>
+     */
+    private function normalizedAccountFieldReviews(User $account, array $allowedKeys): array
+    {
+        $stored = is_array($account->account_field_reviews) ? $account->account_field_reviews : [];
+        $normalized = [];
+
+        foreach ($allowedKeys as $key) {
+            $raw = is_array($stored[$key] ?? null) ? $stored[$key] : [];
+            $status = (string) ($raw['status'] ?? '');
+            if (! in_array($status, ['approved', 'revision'], true)) {
+                $status = 'pending';
+            }
+            $normalized[$key] = [
+                'status' => $status,
+                'message' => isset($raw['message']) && is_string($raw['message']) && trim($raw['message']) !== '' ? trim($raw['message']) : null,
+                'reviewed_by' => isset($raw['reviewed_by']) ? (int) $raw['reviewed_by'] : null,
+                'reviewed_at' => isset($raw['reviewed_at']) && is_string($raw['reviewed_at']) ? $raw['reviewed_at'] : null,
+            ];
+        }
+
+        return $normalized;
     }
 
     public function centralizedCalendar(Request $request): View

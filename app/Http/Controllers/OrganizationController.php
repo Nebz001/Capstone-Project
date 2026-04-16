@@ -987,7 +987,14 @@ class OrganizationController extends Controller
         $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
+            return view('organizations.activity-calendar-submission', [
+                'organization' => null,
+                'latestCalendar' => null,
+                'calendarSubmittedLocked' => false,
+                // Reuse the existing blocked-message UI on the feature page.
+                'officerValidationPending' => true,
+                'blockedMessage' => 'Your account is not yet linked to an active organization. You cannot submit an activity calendar until your officer record is activated.',
+            ]);
         }
 
         $latestCalendar = $organization->activityCalendars()
@@ -1143,7 +1150,17 @@ class OrganizationController extends Controller
 
         $organization = $this->resolveOrganizationForWorkflows($request);
         if (! $organization) {
-            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
+            return view('organizations.activity-proposal-request', [
+                'organization' => null,
+                'officerValidationPending' => true,
+                // Reuse the existing blocked-message UI on the feature page.
+                'blockedMessage' => 'Your account is not yet linked to an active organization. You cannot submit proposals until your officer record is activated.',
+                'natureOptions' => self::ACTIVITY_REQUEST_NATURE_OPTIONS,
+                'typeOptions' => self::ACTIVITY_REQUEST_TYPE_OPTIONS,
+                'requestForm' => null,
+                'hasCalendarActivities' => false,
+                'calendarEntries' => collect(),
+            ]);
         }
 
         $requestForm = $this->resolveEditableActivityRequestForm($request, $organization);
@@ -1343,7 +1360,17 @@ class OrganizationController extends Controller
         $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
+            return view('organizations.activity-proposal-submission', [
+                'organization' => null,
+                'officerValidationPending' => true,
+                // Reuse the existing blocked-message UI on the feature page.
+                'blockedMessage' => 'Your account is not yet linked to an active organization. You cannot submit proposals until your officer record is activated.',
+                'proposalSource' => 'unlisted',
+                'calendarEntry' => null,
+                'linkedProposal' => null,
+                'proposalCalendar' => null,
+                'requestForm' => null,
+            ]);
         }
 
         $requestForm = null;
@@ -1884,7 +1911,20 @@ class OrganizationController extends Controller
         $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.manage');
+            return view('organizations.after-activity-report', [
+                'organization' => null,
+                'schoolOptions' => self::SCHOOL_CODE_LABELS,
+                'reportStatusData' => [
+                    'activities' => [],
+                    'eligibleProposals' => [],
+                    'dueReminders' => [],
+                    'hasAnyTrackedActivity' => false,
+                    'hasEligibleProposal' => false,
+                    'blockedMessage' => 'Your account is not yet linked to an active organization. You cannot submit activity reports until your officer record is activated.',
+                ],
+                'prefillPreparedBy' => $user->full_name,
+                'officerValidationPending' => false,
+            ]);
         }
 
         $reportStatusData = $this->buildAfterActivityReportStatusData($organization);
@@ -1912,7 +1952,9 @@ class OrganizationController extends Controller
         $organization = $this->resolveOrganizationForWorkflows($request);
 
         if (! $organization) {
-            return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.manage');
+            return redirect()
+                ->route('organizations.after-activity-report')
+                ->with('error', 'Your account is not linked to an active organization.');
         }
 
         if (! $user->isOfficerValidated()) {

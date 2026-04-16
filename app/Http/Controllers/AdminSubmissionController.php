@@ -15,6 +15,7 @@ class AdminSubmissionController extends Controller
 
         return view('organizations.register', [
             'layout' => 'layouts.admin',
+            'showPageIntro' => false,
             'registerStoreRoute' => 'admin.submissions.register.store',
             'backRoute' => route('admin.dashboard'),
             'backLabel' => 'Back to Admin Dashboard',
@@ -39,6 +40,7 @@ class AdminSubmissionController extends Controller
 
         return view('organizations.renew', [
             'layout' => 'layouts.admin',
+            'showPageIntro' => false,
             'renewStoreRoute' => 'admin.submissions.renew.store',
             'backRoute' => route('admin.dashboard'),
             'submissionContext' => 'admin',
@@ -91,6 +93,7 @@ class AdminSubmissionController extends Controller
 
         return view('organizations.activity-calendar-submission', [
             'layout' => 'layouts.admin',
+            'showPageIntro' => false,
             'submissionContext' => 'admin',
             'calendarStoreRoute' => 'admin.submissions.activity-calendar.store',
             'backRoute' => route('admin.dashboard'),
@@ -130,6 +133,7 @@ class AdminSubmissionController extends Controller
 
         $adminExtras = [
             'layout' => 'layouts.admin',
+            'showPageIntro' => false,
             'submissionContext' => 'admin',
             'proposalStoreRoute' => 'admin.submissions.activity-proposal.store',
             'activityProposalGetRoute' => 'admin.submissions.activity-proposal',

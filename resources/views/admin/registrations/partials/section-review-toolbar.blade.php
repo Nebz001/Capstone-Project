@@ -15,26 +15,26 @@
 >
   <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
     <div class="min-w-0 flex-1">
-      <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Section review</p>
+      <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Section review</p>
       <p class="section-review-status mt-1 text-sm font-medium text-slate-800"></p>
       <p class="section-review-hint mt-0.5 text-xs text-slate-500"></p>
     </div>
-    <div class="flex flex-shrink-0 flex-wrap items-center gap-2">
+    <div class="flex shrink-0 flex-wrap items-center gap-2">
       <button
         type="button"
-        class="section-review-btn-verified inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-900"
+        class="section-review-btn-verified inline-flex items-center rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
       >
         Verified
       </button>
       <button
         type="button"
-        class="section-review-btn-revision inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-900"
+        class="section-review-btn-revision inline-flex items-center rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
       >
         Need revision
       </button>
       <button
         type="button"
-        class="section-review-btn-edit hidden rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-[#003E9F] hover:text-[#003E9F]"
+        class="section-review-btn-edit hidden rounded-xl border border-dashed border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-600 transition hover:border-[#003E9F] hover:text-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
       >
         Edit note
       </button>
@@ -49,6 +49,6 @@
     autocomplete="off"
   >{{ $revBody }}</textarea>
   @error($revisionFieldName)
-    <p class="mt-2 text-sm text-rose-600">{{ $message }}</p>
+    <x-forms.error>{{ $message }}</x-forms.error>
   @enderror
 </div>

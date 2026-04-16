@@ -5,6 +5,11 @@
 @section('content')
 @php
   $officerValidationPending = $officerValidationPending ?? false;
+  $blockedMessage = $blockedMessage ?? null;
+  $proposalAccessBlocked = $officerValidationPending || (is_string($blockedMessage) && trim($blockedMessage) !== '');
+  if (! $blockedMessage && $officerValidationPending) {
+    $blockedMessage = 'Your student officer account is pending SDAO validation. You cannot submit proposals until validation is complete.';
+  }
   $natureOptions = $natureOptions ?? [];
   $typeOptions = $typeOptions ?? [];
   $requestForm = $requestForm ?? null;
@@ -33,6 +38,14 @@
     <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Submit Proposal</h1>
     <p class="mt-1 text-sm text-slate-500">Complete Step 1 first before continuing to the full proposal submission form.</p>
   </header>
+
+  @if ($proposalAccessBlocked)
+    <x-feedback.blocked-message
+      variant="error"
+      class="mb-6"
+      :message="$blockedMessage"
+    />
+  @else
 
   <x-ui.card padding="p-0" class="mb-6">
     <div class="px-6 py-5">
@@ -74,13 +87,6 @@
 
   @if (session('error'))
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
-  @endif
-
-  @if ($officerValidationPending)
-    <x-feedback.blocked-message
-      class="mb-6"
-      message="Your student officer account is pending SDAO validation. You cannot submit proposals until validation is complete."
-    />
   @endif
 
   <form
@@ -145,7 +151,7 @@
           <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
               <x-forms.label for="rso_name" required>Name of RSO</x-forms.label>
-              <x-forms.input id="rso_name" name="rso_name" type="text" :value="old('rso_name', $requestForm?->rso_name ?? ($organization->organization_name ?? ''))" required />
+              <x-forms.input id="rso_name" name="rso_name" type="text" :value="old('rso_name', $requestForm?->rso_name ?? ($organization?->organization_name ?? ''))" required />
             </div>
             <div>
               <x-forms.label for="activity_title" required>Title of Activity</x-forms.label>
@@ -307,6 +313,7 @@
       </x-ui.card>
     </fieldset>
   </form>
+  @endif
 </div>
 <script>
   (() => {

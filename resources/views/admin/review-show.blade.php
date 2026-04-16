@@ -14,52 +14,42 @@
   };
 @endphp
 
-<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-  <div>
-    <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{{ $pageTitle }}</h1>
-    <p class="mt-1 text-sm text-slate-500">Inspect key submission details for review readiness.</p>
-  </div>
-  <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $statusClass }}">
-    {{ str_replace('_', ' ', $status) }}
-  </span>
-</div>
-
-<section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+<x-ui.card padding="p-6">
   <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
     @foreach ($details as $label => $value)
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $label }}</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $value }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">{{ $label }}</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $value }}</dd>
       </div>
     @endforeach
   </dl>
 
   @isset($calendarEntries)
     @if ($calendarEntries->isNotEmpty())
-      <div class="mt-8 border-t border-slate-200 pt-8">
-        <h2 class="text-base font-semibold text-slate-900">Submitted activities</h2>
-        <p class="mt-1 text-sm text-slate-600">Each row is a saved record linked to this activity calendar.</p>
-        <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+      <div class="mt-8 border-t border-slate-100 pt-8">
+        <h2 class="text-base font-bold text-slate-900">Submitted activities</h2>
+        <p class="mt-1 text-sm text-slate-500">Each row is a saved record linked to this activity calendar.</p>
+        <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
           <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <thead class="bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
-                <th class="whitespace-nowrap px-4 py-3">Date</th>
-                <th class="min-w-[10rem] px-4 py-3">Activity</th>
-                <th class="whitespace-nowrap px-4 py-3">SDG</th>
-                <th class="min-w-[8rem] px-4 py-3">Venue</th>
-                <th class="min-w-[12rem] px-4 py-3">Participants / program</th>
-                <th class="whitespace-nowrap px-4 py-3">Budget</th>
+                <th class="whitespace-nowrap px-5 py-3">Date</th>
+                <th class="min-w-[10rem] px-5 py-3">Activity</th>
+                <th class="whitespace-nowrap px-5 py-3">SDG</th>
+                <th class="min-w-[8rem] px-5 py-3">Venue</th>
+                <th class="min-w-[12rem] px-5 py-3">Participants / program</th>
+                <th class="whitespace-nowrap px-5 py-3">Budget</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
               @foreach ($calendarEntries as $row)
-                <tr class="align-top">
-                  <td class="whitespace-nowrap px-4 py-3 text-slate-800">{{ optional($row->activity_date)->format('M d, Y') ?? '—' }}</td>
-                  <td class="px-4 py-3 text-slate-800">{{ $row->activity_name }}</td>
-                  <td class="whitespace-nowrap px-4 py-3 text-slate-800">{{ $row->sdg }}</td>
-                  <td class="px-4 py-3 text-slate-800">{{ $row->venue }}</td>
-                  <td class="px-4 py-3 text-slate-700">{{ $row->participant_program }}</td>
-                  <td class="whitespace-nowrap px-4 py-3 text-slate-800">{{ $row->budget }}</td>
+                <tr class="align-top hover:bg-slate-50/80">
+                  <td class="whitespace-nowrap px-5 py-3 text-slate-800">{{ optional($row->activity_date)->format('M d, Y') ?? '—' }}</td>
+                  <td class="px-5 py-3 text-slate-800">{{ $row->activity_name }}</td>
+                  <td class="whitespace-nowrap px-5 py-3 text-slate-800">{{ $row->sdg }}</td>
+                  <td class="px-5 py-3 text-slate-800">{{ $row->venue }}</td>
+                  <td class="px-5 py-3 text-slate-700">{{ $row->participant_program }}</td>
+                  <td class="whitespace-nowrap px-5 py-3 text-slate-800">{{ $row->budget }}</td>
                 </tr>
               @endforeach
             </tbody>
@@ -69,17 +59,11 @@
     @endif
   @endisset
 
-  <div class="mt-6 flex flex-wrap gap-3">
-    <a href="{{ $backRoute }}" class="inline-flex rounded-lg border border-[#003E9F] px-4 py-2 text-sm font-semibold text-[#003E9F] transition hover:bg-[#003E9F] hover:text-white">
-      Back to Review List
-    </a>
-  </div>
-
   @isset($organization)
     @if ($organization)
-      <div class="mt-10 border-t border-slate-200 pt-8">
-        <h2 class="text-base font-semibold text-slate-900">Organization profile (SDAO)</h2>
-        <p class="mt-1 text-sm text-slate-600">
+      <div class="mt-8 border-t border-slate-100 pt-8">
+        <h2 class="text-base font-bold text-slate-900">Organization profile (SDAO)</h2>
+        <p class="mt-1 text-sm text-slate-500">
           Request a profile revision when the organization must update registered organization details or adviser information. Officers can edit only while this is active and the organization is not pending review.
         </p>
         @if ($organization->profile_information_revision_requested)
@@ -87,24 +71,23 @@
             A profile revision is currently <span class="font-semibold">open</span> for this organization.
           </x-feedback.blocked-message>
         @endif
-        <form method="POST" action="{{ route('admin.organizations.request-profile-revision', $organization) }}" class="mt-4 space-y-3">
+        <form method="POST" action="{{ route('admin.organizations.request-profile-revision', $organization) }}" class="mt-4 space-y-4">
           @csrf
           <div>
-            <label for="profile_revision_notes" class="mb-1 block text-xs font-medium text-slate-600">Optional notes to the organization (shown on their profile)</label>
-            <textarea
+            <x-forms.label for="profile_revision_notes">Optional notes to the organization (shown on their profile)</x-forms.label>
+            <x-forms.textarea
               id="profile_revision_notes"
               name="profile_revision_notes"
-              rows="3"
-              class="mt-1 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+              :rows="3"
               placeholder="e.g., Please update your college department and adviser name to match current records."
-            >{{ old('profile_revision_notes', $organization->profile_revision_notes) }}</textarea>
+            >{{ old('profile_revision_notes', $organization->profile_revision_notes) }}</x-forms.textarea>
           </div>
-          <button type="submit" class="inline-flex rounded-lg bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00327F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/40">
+          <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40">
             Request organization profile revision
           </button>
         </form>
       </div>
     @endif
   @endisset
-</section>
+</x-ui.card>
 @endsection

@@ -51,16 +51,6 @@
   };
 @endphp
 
-<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-  <div>
-    <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Registration Submission Details</h1>
-    <p class="mt-1 text-sm text-slate-500">Verify each section or request targeted revisions. The form approves only when every section is marked Verified.</p>
-  </div>
-  <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $statusClass }}">
-    {{ str_replace('_', ' ', $status) }}
-  </span>
-</div>
-
 <form
   id="registration-review-form"
   method="POST"
@@ -72,41 +62,41 @@
   @method('PATCH')
 
   @error('decision')
-    <p class="text-sm text-rose-600">{{ $message }}</p>
+    <x-forms.error>{{ $message }}</x-forms.error>
   @enderror
   @error('section_review')
-    <p class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ $message }}</p>
+    <x-feedback.blocked-message variant="error" :message="$message" />
   @enderror
 
   {{-- Application Information --}}
-  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <x-ui.card padding="p-6">
     <h2 class="text-base font-bold text-slate-900">Application Information</h2>
-    <p class="mt-1 text-sm text-slate-600">Academic year and submission context for this registration.</p>
+    <p class="mt-1 text-sm text-slate-500">Academic year and submission context for this registration.</p>
     <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Academic Year</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $registration->academic_year ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Academic Year</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->academic_year ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Submission Date</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission Date</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Submitted By</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submitted By</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Organization</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $org?->organization_name ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
       </div>
       @if ($registration->approved_by_sdao || $registration->approval_date)
-        <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-          <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Last reviewed by (SDAO)</dt>
-          <dd class="mt-1 text-sm text-slate-800">{{ $registration->approved_by_sdao ?? 'N/A' }}</dd>
+        <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+          <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last reviewed by (SDAO)</dt>
+          <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->approved_by_sdao ?? 'N/A' }}</dd>
         </div>
-        <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-          <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Decision date</dt>
-          <dd class="mt-1 text-sm text-slate-800">{{ optional($registration->approval_date)->format('M d, Y') ?? 'N/A' }}</dd>
+        <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+          <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Decision date</dt>
+          <dd class="mt-2 text-sm font-medium text-slate-900">{{ optional($registration->approval_date)->format('M d, Y') ?? 'N/A' }}</dd>
         </div>
       @endif
     </dl>
@@ -118,28 +108,28 @@
       'registration' => $registration,
       'initialSectionReviewState' => $initialSectionReviewState,
     ])
-  </section>
+  </x-ui.card>
 
   {{-- Contact Information --}}
-  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <x-ui.card padding="p-6">
     <h2 class="text-base font-bold text-slate-900">Contact Information</h2>
-    <p class="mt-1 text-sm text-slate-600">Primary contact details as submitted on the registration form.</p>
+    <p class="mt-1 text-sm text-slate-500">Primary contact details as submitted on the registration form.</p>
     <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 md:col-span-2">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Organization Name</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $org?->organization_name ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Name</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Contact Person</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $registration->contact_person ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact Person</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->contact_person ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Contact No.</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $registration->contact_no ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact No.</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->contact_no ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 md:col-span-2">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Email Address</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $registration->contact_email ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Email Address</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->contact_email ?? 'N/A' }}</dd>
       </div>
     </dl>
     @include('admin.registrations.partials.section-review-toolbar', [
@@ -150,28 +140,28 @@
       'registration' => $registration,
       'initialSectionReviewState' => $initialSectionReviewState,
     ])
-  </section>
+  </x-ui.card>
 
   {{-- Organizational Details --}}
-  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <x-ui.card padding="p-6">
     <h2 class="text-base font-bold text-slate-900">Organizational Details</h2>
-    <p class="mt-1 text-sm text-slate-600">Organization profile data at the time of submission (from the linked organization record).</p>
+    <p class="mt-1 text-sm text-slate-500">Organization profile data at the time of submission (from the linked organization record).</p>
     <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Date Organized</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Date Organized</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Type of Organization</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $orgTypeLabel }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Type of Organization</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $orgTypeLabel }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 md:col-span-2">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">School</dt>
-        <dd class="mt-1 text-sm text-slate-800">{{ $org?->college_department ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">School</dt>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->college_department ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 md:col-span-2">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Purpose of Organization</dt>
-        <dd class="mt-1 whitespace-pre-wrap text-sm text-slate-800">{{ $org?->purpose ?? 'N/A' }}</dd>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Purpose of Organization</dt>
+        <dd class="mt-2 whitespace-pre-wrap text-sm font-medium text-slate-900">{{ $org?->purpose ?? 'N/A' }}</dd>
       </div>
     </dl>
     @include('admin.registrations.partials.section-review-toolbar', [
@@ -182,23 +172,23 @@
       'registration' => $registration,
       'initialSectionReviewState' => $initialSectionReviewState,
     ])
-  </section>
+  </x-ui.card>
 
   {{-- Requirements Attached --}}
-  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <x-ui.card padding="p-6">
     <h2 class="text-base font-bold text-slate-900">Requirements Attached</h2>
-    <p class="mt-1 text-sm text-slate-600">Checklist and uploaded files as declared on the application.</p>
-    <ul class="mt-4 space-y-2">
+    <p class="mt-1 text-sm text-slate-500">Checklist and uploaded files as declared on the application.</p>
+    <ul class="mt-4 space-y-3">
       @foreach ($reqColumns as $key => $col)
         @php
           $checked = (bool) $registration->{$col};
           $filePath = $requirementFiles[$key] ?? null;
           $hasFile = $filePath && \Illuminate\Support\Facades\Storage::disk('public')->exists($filePath);
         @endphp
-        <li class="flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <li class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
-            <p class="text-sm font-medium text-slate-900">{{ $reqLabels[$key] ?? $key }}</p>
-            <p class="text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
+            <p class="text-sm font-semibold text-slate-900">{{ $reqLabels[$key] ?? $key }}</p>
+            <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
             @if ($key === 'others' && $registration->req_others_specify)
               <p class="mt-1 text-xs text-slate-600">Specified: {{ $registration->req_others_specify }}</p>
             @endif
@@ -209,13 +199,13 @@
                 href="{{ route('admin.registrations.requirement-file', ['registration' => $registration, 'key' => $key]) }}"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="inline-flex rounded-lg border border-[#003E9F] bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:bg-slate-50"
+                class="inline-flex rounded-xl border border-[#003E9F] bg-white px-3.5 py-2 text-xs font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
               >
                 View file
               </a>
               <span class="ml-2 text-xs text-slate-500" title="{{ $filePath }}">{{ $reqLabels[$key] ?? $key }} — {{ basename($filePath) }}</span>
             @elseif ($checked)
-              <span class="text-xs text-amber-700">Marked yes — no file on record</span>
+              <span class="text-xs font-medium text-amber-700">Marked yes — no file on record</span>
             @endif
           </div>
         </li>
@@ -229,22 +219,22 @@
       'registration' => $registration,
       'initialSectionReviewState' => $initialSectionReviewState,
     ])
-  </section>
+  </x-ui.card>
 
   {{-- Review decision --}}
-  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <x-ui.card padding="p-6">
     <h2 class="text-base font-bold text-slate-900">Finalize review</h2>
-    <p class="mt-1 text-sm text-slate-600">
+    <p class="mt-1 text-sm text-slate-500">
       With <span class="font-semibold text-slate-800">Submit review</span>, the system <span class="font-semibold text-emerald-700">approves</span> only when every section is Verified. If any section is Need revision (with feedback), the registration returns for updates and profile editing is unlocked for the officer.
     </p>
     <p id="section-review-summary" class="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" role="status"></p>
 
     <fieldset class="mt-6">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-slate-500">Outcome</legend>
+      <legend class="text-xs font-semibold uppercase tracking-wide text-slate-700">Outcome</legend>
       <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-[#003E9F] has-[:checked]:bg-blue-50">
+        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-[#003E9F] has-[:checked]:bg-blue-50">
           <input type="radio" name="decision" value="APPROVED" class="sr-only" {{ $defaultDecision === 'APPROVED' ? 'checked' : '' }} />
-          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-blue-100 text-[#003E9F]">
+          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-blue-100 text-[#003E9F]">
             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15l3-3m6 3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
           </span>
           <span>
@@ -252,9 +242,9 @@
             <span class="block text-xs text-slate-500">Auto-approve if all verified, or request revision</span>
           </span>
         </label>
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50">
+        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50">
           <input type="radio" name="decision" value="REJECTED" class="sr-only" {{ $defaultDecision === 'REJECTED' ? 'checked' : '' }} />
-          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-rose-100 text-rose-700">
+          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-rose-100 text-rose-700">
             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
           </span>
           <span>
@@ -266,51 +256,51 @@
     </fieldset>
 
     <div class="mt-6">
-      <label for="registration-remarks" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <x-forms.label for="registration-remarks">
         General remarks / instructions
         <span id="registration-remarks-required" class="hidden font-normal normal-case text-rose-600">(required for rejection)</span>
         <span id="registration-revision-hint" class="hidden font-normal normal-case text-amber-700">(optional if every Need revision section has feedback — otherwise at least 3 characters)</span>
         <span id="registration-remarks-optional" class="font-normal normal-case text-slate-400">(optional when all sections are verified)</span>
-      </label>
-      <textarea
+      </x-forms.label>
+      <x-forms.textarea
         id="registration-remarks"
         name="remarks"
-        rows="4"
-        class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
+        :rows="4"
         placeholder="Optional overall context. Section-specific feedback is added via Need revision on each section."
-      >{{ old('remarks', $registration->additional_remarks) }}</textarea>
+      >{{ old('remarks', $registration->additional_remarks) }}</x-forms.textarea>
       @error('remarks')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
+        <x-forms.error>{{ $message }}</x-forms.error>
       @enderror
     </div>
 
-    <div class="mt-6 flex flex-wrap gap-3">
-      <button type="submit" class="inline-flex rounded-lg bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00327F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/40">
+    <div class="mt-6 flex flex-wrap gap-3 border-t border-slate-100 pt-5">
+      <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40">
         Save outcome
       </button>
-      <a href="{{ route('admin.registrations.index') }}" class="inline-flex rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+      <a href="{{ route('admin.registrations.index') }}" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20">
         Back to list
       </a>
     </div>
-  </section>
+  </x-ui.card>
 </form>
 
 <div id="section-revision-modal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-950/50 px-4">
-  <div class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+  <div class="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40">
     <h3 id="section-revision-modal-title" class="text-lg font-bold text-slate-900">Section feedback</h3>
-    <p class="mt-1 text-sm text-slate-600">Describe what must be corrected for this section only. The submitter will see it labeled by section.</p>
-    <label for="section-revision-modal-body" class="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">Revision details</label>
-    <textarea
-      id="section-revision-modal-body"
-      rows="5"
-      class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-      placeholder="Be specific (e.g. upload a clearer scan, fix the contact number format, expand the purpose statement)."
-    ></textarea>
-    <div class="mt-5 flex flex-wrap items-center justify-end gap-2">
-      <button type="button" id="section-revision-modal-cancel" class="rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+    <p class="mt-1 text-sm text-slate-500">Describe what must be corrected for this section only. The submitter will see it labeled by section.</p>
+    <div class="mt-4">
+      <x-forms.label for="section-revision-modal-body" :required="true">Revision details</x-forms.label>
+      <x-forms.textarea
+        id="section-revision-modal-body"
+        :rows="5"
+        placeholder="Be specific (e.g. upload a clearer scan, fix the contact number format, expand the purpose statement)."
+      />
+    </div>
+    <div class="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+      <button type="button" id="section-revision-modal-cancel" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20">
         Cancel
       </button>
-      <button type="button" id="section-revision-modal-save" class="rounded-lg border border-[#003E9F] bg-[#003E9F] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#00327F]">
+      <button type="button" id="section-revision-modal-save" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40">
         Save for this section
       </button>
     </div>
@@ -318,14 +308,14 @@
 </div>
 
 <div id="registration-decision-modal" class="fixed inset-0 z-[80] hidden items-center justify-center bg-slate-950/50 px-4">
-  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+  <div class="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40">
     <h3 class="text-lg font-bold text-slate-900">Confirm</h3>
     <p id="registration-decision-modal-text" class="mt-1 text-sm text-slate-600"></p>
-    <div class="mt-5 flex items-center justify-end gap-2">
-      <button type="button" id="registration-decision-cancel" class="rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+    <div class="mt-5 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+      <button type="button" id="registration-decision-cancel" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20">
         Cancel
       </button>
-      <button type="button" id="registration-decision-confirm" class="rounded-lg border border-[#003E9F] bg-[#003E9F] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#00327F]">
+      <button type="button" id="registration-decision-confirm" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40">
         Confirm &amp; save
       </button>
     </div>
@@ -375,7 +365,7 @@
       const btnV = root.querySelector('.section-review-btn-verified');
       const btnR = root.querySelector('.section-review-btn-revision');
       const btnE = root.querySelector('.section-review-btn-edit');
-      const card = root.closest('section');
+      const card = root.closest('section, .rounded-3xl');
       const state = stateEl ? stateEl.value : 'pending';
       const ta = getHiddenRevisionTextarea(root);
       const text = ta ? ta.value.trim() : '';
@@ -391,7 +381,7 @@
         if (state === 'validated') hintEl.textContent = 'You can change your choice anytime before saving.';
         else if (state === 'revision') {
           hintEl.textContent = text.length >= 3
-            ? 'Submitter will see this note under “' + title + '”.'
+            ? 'Submitter will see this note under "' + title + '".'
             : 'Add at least 3 characters of feedback (use Need revision or Edit note).';
         } else hintEl.textContent = 'Both options are required for every section before you can submit review.';
       }

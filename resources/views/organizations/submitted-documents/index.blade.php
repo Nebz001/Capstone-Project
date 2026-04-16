@@ -39,7 +39,9 @@
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
   @endif
 
-  @if (! $organization && auth()->user()->isSuperAdmin())
+  @if (isset($blockedMessage) && $blockedMessage)
+    <x-feedback.blocked-message variant="error" class="mb-8" :message="$blockedMessage" />
+  @elseif (! $organization && auth()->user()->isSuperAdmin())
     <x-ui.card padding="p-0" class="mb-8">
       <div class="px-6 py-12 text-center text-sm text-slate-600">
         Choose an organization above to load this RSO&rsquo;s submitted documents.

@@ -24,6 +24,7 @@ class User extends Authenticatable
         'account_status',
         'officer_validation_status',
         'officer_validation_notes',
+        'account_field_reviews',
         'officer_validated_at',
         'officer_validated_by',
     ];
@@ -38,6 +39,7 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
             'officer_validated_at' => 'datetime',
+            'account_field_reviews' => 'array',
         ];
     }
 

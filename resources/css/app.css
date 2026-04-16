@@ -4,6 +4,7 @@
 @source '../../storage/framework/views/*.php';
 @source '../**/*.blade.php';
 @source '../**/*.js';
+@source inline("bg-orange-500 hover:bg-orange-600 active:bg-orange-700 focus:ring-orange-500/25 border-orange-500 text-orange-600 bg-orange-50");
 
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',

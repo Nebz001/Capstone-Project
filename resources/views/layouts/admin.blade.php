@@ -195,9 +195,9 @@
         </div>
       </header>
 
-      <main class="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+      <main class="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-8 sm:px-6 lg:px-10">
         @if (session('success'))
-          <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm" role="status">
+          <div class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm" role="status">
             {{ session('success') }}
           </div>
         @endif
@@ -215,21 +215,21 @@
   @endisset
 
   <div id="admin-logout-modal" class="fixed inset-0 z-[80] hidden items-center justify-center bg-slate-950/50 px-4">
-    <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div class="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40">
       <h3 class="text-lg font-bold text-slate-900">Confirm logout</h3>
       <p class="mt-1 text-sm text-slate-600">Are you sure you want to log out of the Student Development and Activities Office Admin portal?</p>
       <div class="mt-5 flex items-center justify-end gap-2">
         <button
           type="button"
           id="admin-logout-cancel"
-          class="rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"
         >
           Cancel
         </button>
         <button
           type="button"
           id="admin-logout-confirm"
-          class="rounded-lg border border-red-600 bg-red-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+          class="inline-flex items-center justify-center rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-500/25"
         >
           Log out
         </button>

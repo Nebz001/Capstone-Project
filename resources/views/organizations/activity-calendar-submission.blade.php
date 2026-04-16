@@ -27,28 +27,31 @@
           : ''
   );
   $isAdminSubmission = ($submissionContext ?? '') === 'admin';
+  $showPageIntro = $showPageIntro ?? (! $isAdminSubmission && (($layout ?? 'layouts.organization-portal') !== 'layouts.admin'));
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
-  <header class="mb-8">
-    <a href="{{ $backRoute ?? route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
-      <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-      </svg>
-      @if ($isAdminSubmission)
-        Back to Admin Dashboard
-      @else
-        Back to Activity Submission
-      @endif
-    </a>
-    <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-      {{ $pageHeading ?? 'Activity Calendar Submission' }}
-    </h1>
-    <p class="mt-1 text-sm text-slate-500">
-      {{ $pageSubheading ?? 'Submit your organization\'s term activity calendar for review.' }}
-    </p>
-  </header>
+  @if ($showPageIntro)
+    <header class="mb-8">
+      <a href="{{ $backRoute ?? route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+        @if ($isAdminSubmission)
+          Back to Admin Dashboard
+        @else
+          Back to Activity Submission
+        @endif
+      </a>
+      <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        {{ $pageHeading ?? 'Activity Calendar Submission' }}
+      </h1>
+      <p class="mt-1 text-sm text-slate-500">
+        {{ $pageSubheading ?? 'Submit your organization\'s term activity calendar for review.' }}
+      </p>
+    </header>
+  @endif
 
   @if ($isAdminSubmission)
     <x-ui.card padding="p-0" class="mb-6">
@@ -100,8 +103,9 @@
 
   @if ($officerValidationPending)
     <x-feedback.blocked-message
+      variant="error"
       class="mb-6"
-      message="Your student officer account is pending SDAO validation. You cannot submit activity calendars until validation is complete."
+      :message="($blockedMessage ?? 'Your student officer account is pending SDAO validation. You cannot submit activity calendars until validation is complete.')"
     />
   @endif
 
@@ -271,30 +275,19 @@
             <input type="hidden" name="activities_json" id="activities_json" value="[]" />
             <div id="activities-hidden-inputs"></div>
 
-            <div class="overflow-x-auto rounded-2xl border border-slate-200">
-              <table class="w-full min-w-[1280px] table-fixed border-collapse text-left text-sm">
-                <colgroup>
-                  <col class="w-36" />
-                  <col class="w-[22rem]" />
-                  <col class="w-32" />
-                  <col class="w-[18rem]" />
-                  <col class="w-[22rem]" />
-                  <col class="w-[14rem]" />
-                  <col class="w-40" />
-                  <col class="w-44" />
-                  <col class="w-36" />
-                </colgroup>
+            <div class="overflow-x-hidden rounded-2xl border border-slate-200">
+              <table class="w-full table-auto border-collapse text-left text-sm">
                 <thead class="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
                   <tr>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Date</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Activity Name</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">SDG</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Venue</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Participant / Program Assigned</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Budget</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Status</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Date Received</th>
-                    <th scope="col" class="whitespace-nowrap px-5 py-3.5">Actions</th>
+                    <th scope="col" class="px-5 py-3.5">Date</th>
+                    <th scope="col" class="px-5 py-3.5">Activity Name</th>
+                    <th scope="col" class="px-5 py-3.5">SDG</th>
+                    <th scope="col" class="px-5 py-3.5">Venue</th>
+                    <th scope="col" class="px-5 py-3.5">Participant / Program Assigned</th>
+                    <th scope="col" class="px-5 py-3.5">Budget</th>
+                    <th scope="col" class="px-5 py-3.5">Status</th>
+                    <th scope="col" class="px-5 py-3.5">Date Received</th>
+                    <th scope="col" class="px-5 py-3.5">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="activities-preview-body" class="divide-y divide-slate-200 bg-white">

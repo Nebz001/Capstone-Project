@@ -6,6 +6,11 @@
 
 @php
   $officerValidationPending = $officerValidationPending ?? false;
+  $blockedMessage = $blockedMessage ?? null;
+  $proposalAccessBlocked = $officerValidationPending || (is_string($blockedMessage) && trim($blockedMessage) !== '');
+  if (! $blockedMessage && $officerValidationPending) {
+    $blockedMessage = 'Your student officer account is pending SDAO validation. You cannot submit proposals until validation is complete.';
+  }
   $calendarEntry = $calendarEntry ?? null;
   $linkedProposal = $linkedProposal ?? null;
   $proposalCalendar = $proposalCalendar ?? null;
@@ -32,34 +37,45 @@
   if (! in_array($proposalSource, ['calendar', 'unlisted'], true)) {
     $proposalSource = 'calendar';
   }
+  $showPageIntro = $showPageIntro ?? (! $isAdminSubmission && (($layout ?? 'layouts.organization-portal') !== 'layouts.admin'));
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
-  <header class="mb-8">
-    <a href="{{ $backRoute ?? route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
-      <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-      </svg>
-      @if ($isAdminSubmission)
-        Back to Admin Dashboard
-      @else
-        Back to Activity Submission
-      @endif
-    </a>
-    <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-      {{ $pageHeading ?? 'Submit Proposal' }}
-    </h1>
-    <p class="mt-1 text-sm text-slate-500">
-      @if ($pageSubheading ?? null)
-        {{ $pageSubheading }}
-      @elseif ($calendarEntry)
-        You are completing the detailed proposal for one calendar activity. Other activities keep their own proposal records.
-      @else
-        Submit a detailed activity proposal for SDAO review.
-      @endif
-    </p>
-  </header>
+  @if ($showPageIntro)
+    <header class="mb-8">
+      <a href="{{ $backRoute ?? route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+        @if ($isAdminSubmission)
+          Back to Admin Dashboard
+        @else
+          Back to Activity Submission
+        @endif
+      </a>
+      <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        {{ $pageHeading ?? 'Submit Proposal' }}
+      </h1>
+      <p class="mt-1 text-sm text-slate-500">
+        @if ($pageSubheading ?? null)
+          {{ $pageSubheading }}
+        @elseif ($calendarEntry)
+          You are completing the detailed proposal for one calendar activity. Other activities keep their own proposal records.
+        @else
+          Submit a detailed activity proposal for SDAO review.
+        @endif
+      </p>
+    </header>
+  @endif
+
+  @if ($proposalAccessBlocked)
+    <x-feedback.blocked-message
+      variant="error"
+      class="mb-6"
+      :message="$blockedMessage"
+    />
+  @else
 
   @unless ($isAdminSubmission)
     <x-ui.card padding="p-0" class="mb-6">
@@ -212,13 +228,6 @@
 
   @if (session('error'))
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
-  @endif
-
-  @if ($officerValidationPending)
-    <x-feedback.blocked-message
-      class="mb-6"
-      message="Your student officer account is pending SDAO validation. You cannot submit proposals until validation is complete."
-    />
   @endif
 
   @if ($errors->any())
@@ -640,6 +649,7 @@
 
     </fieldset>
   </form>
+  @endif
   @endif
 
 </div>

@@ -7,182 +7,161 @@
   $isEdit = $mode === 'edit';
 @endphp
 
-<header class="mb-6">
-  <a href="{{ route('admin.announcements.index') }}" class="text-xs font-semibold text-[#003E9F] hover:text-[#00327F]">← Back to announcements</a>
-  <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-    {{ $isEdit ? 'Edit announcement' : 'New announcement' }}
-  </h1>
-  <p class="mt-1 text-sm text-slate-500">Set schedule, visibility, and optional poster image.</p>
-</header>
-
 <form
   method="POST"
   action="{{ $isEdit ? route('admin.announcements.update', $announcement) : route('admin.announcements.store') }}"
   enctype="multipart/form-data"
-  class="max-w-2xl space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+  class="max-w-2xl"
 >
   @csrf
   @if ($isEdit)
     @method('PUT')
   @endif
 
-  <div>
-    <label for="title" class="block text-sm font-semibold text-slate-700">Title</label>
-    <input
-      type="text"
-      name="title"
-      id="title"
-      value="{{ old('title', $announcement->title) }}"
-      required
-      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-    />
-    @error('title')
-      <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-    @enderror
-  </div>
-
-  <div>
-    <label for="body" class="block text-sm font-semibold text-slate-700">Message (optional)</label>
-    <textarea
-      name="body"
-      id="body"
-      rows="5"
-      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-    >{{ old('body', $announcement->body) }}</textarea>
-    @error('body')
-      <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-    @enderror
-  </div>
-
-  <div>
-    <label for="image" class="block text-sm font-semibold text-slate-700">Poster image (optional)</label>
-    <p class="mt-0.5 text-xs text-slate-500">JPEG, PNG, WebP, or GIF. Max 4&nbsp;MB.</p>
-    @if ($isEdit && $announcement->image_path)
-      <div class="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-        <img
-          src="{{ $announcement->imagePublicUrl() }}"
-          alt=""
-          class="max-h-80 w-full object-contain"
+  <x-ui.card padding="p-0">
+    <div class="space-y-6 p-5 sm:p-7 lg:p-8">
+      <div>
+        <x-forms.label for="title" :required="true">Title</x-forms.label>
+        <x-forms.input
+          id="title"
+          name="title"
+          :value="old('title', $announcement->title)"
+          required
         />
+        @error('title')
+          <x-forms.error>{{ $message }}</x-forms.error>
+        @enderror
       </div>
-    @endif
-    <input
-      type="file"
-      name="image"
-      id="image"
-      accept="image/jpeg,image/png,image/webp,image/gif"
-      class="mt-2 block w-full text-sm text-slate-600 file:mr-0 file:rounded-lg file:border-0 file:bg-[#003E9F] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#00327F]"
-    />
-    @error('image')
-      <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-    @enderror
-  </div>
 
-  <div class="grid gap-4 sm:grid-cols-2">
-    <div>
-      <label for="link_url" class="block text-sm font-semibold text-slate-700">Link URL (optional)</label>
-      <input
-        type="url"
-        name="link_url"
-        id="link_url"
-        value="{{ old('link_url', $announcement->link_url) }}"
-        placeholder="https://"
-        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-      />
-      @error('link_url')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
-    <div>
-      <label for="link_label" class="block text-sm font-semibold text-slate-700">Link label (optional)</label>
-      <input
-        type="text"
-        name="link_label"
-        id="link_label"
-        value="{{ old('link_label', $announcement->link_label) }}"
-        placeholder="Learn more"
-        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-      />
-      @error('link_label')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
-  </div>
+      <div>
+        <x-forms.label for="body">Message (optional)</x-forms.label>
+        <x-forms.textarea id="body" name="body" :rows="5">{{ old('body', $announcement->body) }}</x-forms.textarea>
+        @error('body')
+          <x-forms.error>{{ $message }}</x-forms.error>
+        @enderror
+      </div>
 
-  <div class="grid gap-4 sm:grid-cols-2">
-    <div>
-      <label for="status" class="block text-sm font-semibold text-slate-700">Status</label>
-      <select
-        name="status"
-        id="status"
-        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
+      <div>
+        <x-forms.label for="image">Poster image (optional)</x-forms.label>
+        <x-forms.helper>JPEG, PNG, WebP, or GIF. Max 4&nbsp;MB.</x-forms.helper>
+        @if ($isEdit && $announcement->image_path)
+          <div class="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+            <img
+              src="{{ $announcement->imagePublicUrl() }}"
+              alt=""
+              class="max-h-80 w-full object-contain"
+            />
+          </div>
+        @endif
+        <input
+          type="file"
+          name="image"
+          id="image"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          class="mt-2 block w-full text-sm text-slate-600 file:mr-0 file:rounded-xl file:border-0 file:bg-[#003E9F] file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-white hover:file:bg-[#00327F]"
+        />
+        @error('image')
+          <x-forms.error>{{ $message }}</x-forms.error>
+        @enderror
+      </div>
+
+      <div class="grid gap-6 sm:grid-cols-2">
+        <div>
+          <x-forms.label for="link_url">Link URL (optional)</x-forms.label>
+          <x-forms.input
+            id="link_url"
+            name="link_url"
+            type="url"
+            :value="old('link_url', $announcement->link_url)"
+            placeholder="https://"
+          />
+          @error('link_url')
+            <x-forms.error>{{ $message }}</x-forms.error>
+          @enderror
+        </div>
+        <div>
+          <x-forms.label for="link_label">Link label (optional)</x-forms.label>
+          <x-forms.input
+            id="link_label"
+            name="link_label"
+            :value="old('link_label', $announcement->link_label)"
+            placeholder="Learn more"
+          />
+          @error('link_label')
+            <x-forms.error>{{ $message }}</x-forms.error>
+          @enderror
+        </div>
+      </div>
+
+      <div class="grid gap-6 sm:grid-cols-2">
+        <div>
+          <x-forms.label for="status" :required="true">Status</x-forms.label>
+          <x-forms.select id="status" name="status">
+            <option value="ACTIVE" @selected(old('status', $announcement->status) === 'ACTIVE')>ACTIVE</option>
+            <option value="INACTIVE" @selected(old('status', $announcement->status) === 'INACTIVE')>INACTIVE</option>
+          </x-forms.select>
+          @error('status')
+            <x-forms.error>{{ $message }}</x-forms.error>
+          @enderror
+        </div>
+        <div>
+          <x-forms.label for="sort_order">Display order</x-forms.label>
+          <x-forms.input
+            id="sort_order"
+            name="sort_order"
+            type="number"
+            min="0"
+            :value="old('sort_order', $announcement->sort_order ?? 0)"
+          />
+          <x-forms.helper>Lower numbers appear first.</x-forms.helper>
+          @error('sort_order')
+            <x-forms.error>{{ $message }}</x-forms.error>
+          @enderror
+        </div>
+      </div>
+
+      <div class="grid gap-6 sm:grid-cols-2">
+        <div>
+          <x-forms.label for="starts_at">Starts at (optional)</x-forms.label>
+          <x-forms.input
+            id="starts_at"
+            name="starts_at"
+            type="datetime-local"
+            :value="old('starts_at', $announcement->starts_at?->format('Y-m-d\TH:i'))"
+          />
+          @error('starts_at')
+            <x-forms.error>{{ $message }}</x-forms.error>
+          @enderror
+        </div>
+        <div>
+          <x-forms.label for="ends_at">Ends at (optional)</x-forms.label>
+          <x-forms.input
+            id="ends_at"
+            name="ends_at"
+            type="datetime-local"
+            :value="old('ends_at', $announcement->ends_at?->format('Y-m-d\TH:i'))"
+          />
+          @error('ends_at')
+            <x-forms.error>{{ $message }}</x-forms.error>
+          @enderror
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4 sm:px-7 lg:px-8">
+      <a
+        href="{{ route('admin.announcements.index') }}"
+        class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"
       >
-        <option value="ACTIVE" @selected(old('status', $announcement->status) === 'ACTIVE')>ACTIVE</option>
-        <option value="INACTIVE" @selected(old('status', $announcement->status) === 'INACTIVE')>INACTIVE</option>
-      </select>
-      @error('status')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
+        Cancel
+      </a>
+      <button
+        type="submit"
+        class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40"
+      >
+        {{ $isEdit ? 'Save changes' : 'Create announcement' }}
+      </button>
     </div>
-    <div>
-      <label for="sort_order" class="block text-sm font-semibold text-slate-700">Display order</label>
-      <input
-        type="number"
-        name="sort_order"
-        id="sort_order"
-        min="0"
-        value="{{ old('sort_order', $announcement->sort_order ?? 0) }}"
-        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-      />
-      <p class="mt-1 text-xs text-slate-500">Lower numbers appear first.</p>
-      @error('sort_order')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
-  </div>
-
-  <div class="grid gap-4 sm:grid-cols-2">
-    <div>
-      <label for="starts_at" class="block text-sm font-semibold text-slate-700">Starts at (optional)</label>
-      <input
-        type="datetime-local"
-        name="starts_at"
-        id="starts_at"
-        value="{{ old('starts_at', $announcement->starts_at?->format('Y-m-d\TH:i')) }}"
-        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-      />
-      @error('starts_at')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
-    <div>
-      <label for="ends_at" class="block text-sm font-semibold text-slate-700">Ends at (optional)</label>
-      <input
-        type="datetime-local"
-        name="ends_at"
-        id="ends_at"
-        value="{{ old('ends_at', $announcement->ends_at?->format('Y-m-d\TH:i')) }}"
-        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-      />
-      @error('ends_at')
-        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-      @enderror
-    </div>
-  </div>
-
-  <div class="flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
-    <a
-      href="{{ route('admin.announcements.index') }}"
-      class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-    >
-      Cancel
-    </a>
-    <button
-      type="submit"
-      class="rounded-lg bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#00327F]"
-    >
-      {{ $isEdit ? 'Save changes' : 'Create announcement' }}
-    </button>
-  </div>
+  </x-ui.card>
 </form>
 @endsection

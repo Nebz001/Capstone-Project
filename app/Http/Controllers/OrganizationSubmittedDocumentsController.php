@@ -81,16 +81,61 @@ class OrganizationSubmittedDocumentsController extends Controller
             return redirect()->route('admin.dashboard');
         }
 
-        $organization = $this->organizationForActiveOfficer($request);
-
-        $allRows = $this->buildSubmittedDocumentRows($organization, $request);
-
-        $academicYearOptions = $allRows->pluck('academic_year')->filter()->unique()->sort()->values();
-
         $filterType = (string) $request->query('type', 'all');
         $filterStatus = (string) $request->query('status', 'all');
         $filterYear = (string) $request->query('academic_year', '');
         $sort = (string) $request->query('sort', 'latest');
+
+        // If the account doesn't yet have an active linked organization/officer record,
+        // we still show the normal submitted-documents page layout, but block the content.
+        $filters = [
+            'type' => $filterType,
+            'status' => $filterStatus,
+            'academic_year' => $filterYear,
+            'sort' => $sort,
+        ];
+
+        $activeOfficer = null;
+        $hasAnyOfficerRecord = false;
+        if ($user && ($user->role_type ?? null) === 'ORG_OFFICER') {
+            $hasAnyOfficerRecord = $user->organizationOfficers()->exists();
+            $activeOfficer = $user->organizationOfficers()
+                ->where('officer_status', 'ACTIVE')
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        if (! $activeOfficer) {
+            // For new accounts without an active officer/org, avoid aborting with a raw 403.
+            // Instead, render the page shell and show the blocked message component.
+            $blockedMessage = $hasAnyOfficerRecord
+                ? 'Account is pending SDAO validation. No Submitted Documents are available until your officer record is activated.'
+                : 'Account is not yet linked to an active organization. No Submitted Documents are available yet because your account is not eligible.';
+
+            return view('organizations.submitted-documents.index', [
+                'organization' => null,
+                'groupedRecords' => [],
+                'hasAnyRecords' => false,
+                'academicYearOptions' => collect(),
+                'filters' => $filters,
+                'blockedMessage' => $blockedMessage,
+            ]);
+        }
+
+        $organization = Organization::query()->find($activeOfficer->organization_id);
+        if (! $organization) {
+            return view('organizations.submitted-documents.index', [
+                'organization' => null,
+                'groupedRecords' => [],
+                'hasAnyRecords' => false,
+                'academicYearOptions' => collect(),
+                'filters' => $filters,
+                'blockedMessage' => 'Account is not yet linked to an active organization. No Submitted Documents are available yet because your account is not eligible.',
+            ]);
+        }
+
+        $allRows = $this->buildSubmittedDocumentRows($organization, $request);
+        $academicYearOptions = $allRows->pluck('academic_year')->filter()->unique()->sort()->values();
 
         $rows = $allRows;
         if ($filterType !== 'all') {
@@ -133,12 +178,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'groupedRecords' => $grouped,
             'hasAnyRecords' => $allRows->isNotEmpty(),
             'academicYearOptions' => $academicYearOptions,
-            'filters' => [
-                'type' => $filterType,
-                'status' => $filterStatus,
-                'academic_year' => $filterYear,
-                'sort' => $sort,
-            ],
+            'filters' => $filters,
         ]);
     }
 
@@ -801,16 +841,11 @@ class OrganizationSubmittedDocumentsController extends Controller
     {
         $suffix = $this->superAdminOrganizationQuerySuffix($request);
 
-        if ($request->routeIs('organizations.activity-submission.calendars.show', 'organizations.activity-submission.proposals.show')) {
-            return [
-                'route' => route('organizations.activity-submission').$suffix,
-                'label' => 'Back to Activity Submission',
-            ];
-        }
-
+        // These detail pages (Activity Calendar / Submit Proposal) belong to the
+        // Activity Submission module. Always keep Back navigation inside it.
         return [
-            'route' => route('organizations.submitted-documents').$suffix,
-            'label' => 'Back to Submitted Documents',
+            'route' => route('organizations.activity-submission').$suffix,
+            'label' => 'Back to Activity Submission',
         ];
     }
 
@@ -912,7 +947,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             $term = $this->activityCalendarTermLabel($cal->semester);
             $title = trim(($cal->academic_year ?? 'AY —').' · '.$term.' Activity Calendar');
             $hasFile = is_string($cal->calendar_file) && $cal->calendar_file !== '';
-            $detail = $q(route('organizations.activity-submission.calendars.show', $cal));
+            // Keep this record under "Manage Organization -> Submitted Documents"
+            // (do not jump back into the Activity Submission workflow module).
+            $detail = $q(route('organizations.submitted-documents.calendars.show', $cal));
             $rows->push([
                 'type_key' => 'activity_calendar',
                 'type_label' => 'Activity Calendar',
@@ -943,7 +980,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             $nAttach = ($proposal->organization_logo_path ? 1 : 0)
                 + ($proposal->resume_resource_persons_path ? 1 : 0)
                 + ($proposal->external_funding_support_path ? 1 : 0);
-            $detail = $q(route('organizations.activity-submission.proposals.show', $proposal));
+            // Keep this record under "Manage Organization -> Submitted Documents"
+            // so Back navigation remains in the Submitted Documents flow.
+            $detail = $q(route('organizations.submitted-documents.proposals.show', $proposal));
             $rows->push([
                 'type_key' => 'activity_proposal',
                 'type_label' => 'Activity Proposal',
