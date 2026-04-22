@@ -4,14 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class ActivityRequestForm extends Model
 {
     protected $fillable = [
         'organization_id',
-        'user_id',
+        'submitted_by',
         'activity_calendar_entry_id',
-        'rso_name',
+        'promoted_to_proposal_id',
+        'promoted_at',
         'activity_title',
         'partner_entities',
         'nature_of_activity',
@@ -23,13 +25,6 @@ class ActivityRequestForm extends Model
         'budget_source',
         'activity_date',
         'venue',
-        'request_letter_has_rationale',
-        'request_letter_has_objectives',
-        'request_letter_has_program',
-        'request_letter_path',
-        'speaker_resume_path',
-        'post_survey_form_path',
-        'used_for_proposal_at',
     ];
 
     protected function casts(): array
@@ -39,10 +34,7 @@ class ActivityRequestForm extends Model
             'activity_types' => 'array',
             'activity_date' => 'date',
             'proposed_budget' => 'decimal:2',
-            'request_letter_has_rationale' => 'boolean',
-            'request_letter_has_objectives' => 'boolean',
-            'request_letter_has_program' => 'boolean',
-            'used_for_proposal_at' => 'datetime',
+            'promoted_at' => 'datetime',
         ];
     }
 
@@ -53,11 +45,26 @@ class ActivityRequestForm extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->submittedBy();
+    }
+
+    public function submittedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_by');
     }
 
     public function activityCalendarEntry(): BelongsTo
     {
         return $this->belongsTo(ActivityCalendarEntry::class, 'activity_calendar_entry_id');
+    }
+
+    public function promotedToProposal(): BelongsTo
+    {
+        return $this->belongsTo(ActivityProposal::class, 'promoted_to_proposal_id');
+    }
+
+    public function attachments(): MorphMany
+    {
+        return $this->morphMany(Attachment::class, 'attachable');
     }
 }

@@ -7,7 +7,17 @@
 @php
   $officerValidationPending = $officerValidationPending ?? false;
   $calendarSubmittedLocked = $calendarSubmittedLocked ?? false;
-  $activityCalendarFormBlocked = $officerValidationPending || $calendarSubmittedLocked;
+  $blockedMessage = $blockedMessage ?? null;
+  $isBlocked = $isBlocked ?? ($officerValidationPending || $calendarSubmittedLocked || (is_string($blockedMessage) && trim($blockedMessage) !== ''));
+  $blockedReason = $blockedReason ?? null;
+  if (! $blockedReason) {
+    $blockedReason = $officerValidationPending
+      ? 'Your student officer account is pending SDAO validation. You cannot submit activity calendars until validation is complete.'
+      : ($calendarSubmittedLocked
+        ? 'This activity calendar has already been submitted and can no longer be edited.'
+        : (is_string($blockedMessage) ? $blockedMessage : null));
+  }
+  $activityCalendarFormBlocked = $isBlocked;
   $calLock = $calendarSubmittedLocked && ($latestCalendar ?? null);
   $academicYearVal = old('academic_year', $calLock ? ($latestCalendar->academic_year ?? '') : '');
   if (! $calLock && $academicYearVal === '') {
@@ -85,7 +95,7 @@
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
   @endif
 
-  @if ($calendarSubmittedLocked)
+  @if ($calendarSubmittedLocked && ! $isBlocked)
     <x-feedback.blocked-message
       class="mb-6"
       message="This activity calendar has already been submitted and can no longer be edited."
@@ -101,15 +111,15 @@
     </script>
   @endif
 
-  @if ($officerValidationPending)
+  @if ($isBlocked && $blockedReason)
     <x-feedback.blocked-message
       variant="error"
       class="mb-6"
-      :message="($blockedMessage ?? 'Your student officer account is pending SDAO validation. You cannot submit activity calendars until validation is complete.')"
+      :message="$blockedReason"
     />
   @endif
 
-  @if ($organization !== null || $isAdminSubmission)
+  @if (($organization !== null || $isAdminSubmission) && ! $isBlocked)
   <form
     id="activity-calendar-form"
     method="POST"
@@ -121,13 +131,7 @@
   >
     @csrf
 
-    <fieldset
-      @disabled($activityCalendarFormBlocked)
-      @class([
-        'min-w-0 space-y-6 border-0 p-0 m-0',
-        'pointer-events-none opacity-50' => $activityCalendarFormBlocked,
-      ])
-    >
+    <fieldset class="min-w-0 space-y-6 border-0 p-0 m-0">
 
     <x-ui.card padding="p-0">
       <x-ui.card-section-header
@@ -362,7 +366,6 @@
             id="submit-activity-calendar"
             type="submit"
             class="w-full sm:w-auto"
-            :disabled="$activityCalendarFormBlocked"
           >
             Submit Activity Calendar
           </x-ui.button>

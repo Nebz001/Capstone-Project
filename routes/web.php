@@ -3,39 +3,46 @@
 use App\Http\Controllers\AdminAnnouncementController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdminSubmissionController;
+use App\Http\Controllers\ApproverDashboardController;
 use App\Http\Controllers\AnnouncementDismissController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationSubmittedDocumentsController;
 use App\Models\Organization;
+use App\Models\OrganizationSubmission;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     $approvedOrganizations = Organization::query()
-        ->where('organization_status', 'ACTIVE')
+        ->where('status', 'active')
         ->orderBy('organization_name')
         ->get(['organization_name', 'college_department', 'organization_type']);
 
     return view('welcome', compact('approvedOrganizations'));
 });
 
-Route::get('dashboard', function () {
-    if (auth()->user()?->isSuperAdmin()) {
+Route::get('dashboard', function (Request $request) {
+    if ($request->user()?->isAdminRole()) {
         return redirect()->route('admin.dashboard');
+    }
+
+    if ($request->user()?->isRoleBasedApprover()) {
+        return redirect()->route('approver.dashboard');
     }
 
     return redirect()->route('organizations.index');
 })->middleware('auth')->name('dashboard');
 
-Route::prefix('organizations')->name('organizations.')->middleware('auth')->group(function () {
+Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'officer.portal'])->group(function () {
     Route::controller(OrganizationSubmittedDocumentsController::class)->group(function () {
         Route::get('/submitted-documents', 'index')->name('submitted-documents');
-        Route::get('/submitted-documents/registrations/{registration}', 'showSubmittedRegistration')->name('submitted-documents.registrations.show');
-        Route::get('/submitted-documents/registrations/{registration}/files/{key}', 'streamSubmittedRegistrationRequirementFile')
+        Route::get('/submitted-documents/registrations/{submission}', 'showSubmittedRegistration')->name('submitted-documents.registrations.show');
+        Route::get('/submitted-documents/registrations/{submission}/files/{key}', 'streamSubmittedRegistrationRequirementFile')
             ->name('submitted-documents.registrations.file')
             ->where('key', '[a-z0-9_]+');
-        Route::get('/submitted-documents/renewals/{renewal}', 'showSubmittedRenewal')->name('submitted-documents.renewals.show');
-        Route::get('/submitted-documents/renewals/{renewal}/files/{key}', 'streamSubmittedRenewalRequirementFile')
+        Route::get('/submitted-documents/renewals/{submission}', 'showSubmittedRenewal')->name('submitted-documents.renewals.show');
+        Route::get('/submitted-documents/renewals/{submission}/files/{key}', 'streamSubmittedRenewalRequirementFile')
             ->name('submitted-documents.renewals.file')
             ->where('key', '[a-z0-9_]+');
         Route::get('/submitted-documents/activity-calendars/{calendar}', 'showSubmittedActivityCalendar')->name('submitted-documents.calendars.show');
@@ -109,6 +116,12 @@ Route::prefix('officer')->name('officer.')->group(function () {
     })->middleware('auth')->name('dashboard');
 });
 
+Route::prefix('approver')->name('approver.')->middleware('auth')->controller(ApproverDashboardController::class)->group(function () {
+    Route::get('/dashboard', 'dashboard')->name('dashboard');
+    Route::get('/assignments/{step}', 'showAssignment')->name('assignments.show');
+    Route::patch('/assignments/{step}', 'decide')->name('assignments.decide');
+});
+
 Route::prefix('admin')->name('admin.')->middleware('auth')->group(function () {
     Route::controller(AdminAnnouncementController::class)->group(function () {
         Route::get('/announcements', 'index')->name('announcements.index');
@@ -142,24 +155,29 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::patch('/accounts/{user}/field-review', 'updateUserAccountFieldReview')->name('accounts.field-review');
 
     Route::get('/registrations', 'registrations')->name('registrations.index');
-    Route::get('/registrations/{registration}/requirements/{key}', 'showRegistrationRequirementFile')
+    Route::get('/registrations/{submission}/requirements/{key}', 'showRegistrationRequirementFile')
         ->name('registrations.requirement-file')
         ->where('key', '[a-z0-9_]+');
-    Route::get('/registrations/{registration}', 'showRegistration')->name('registrations.show');
-    Route::patch('/registrations/{registration}/status', 'updateRegistrationStatus')->name('registrations.update-status');
+    Route::get('/registrations/{submission}', 'showRegistration')->name('registrations.show');
+    Route::patch('/registrations/{submission}/status', 'updateRegistrationStatus')->name('registrations.update-status');
 
     Route::get('/renewals', 'renewals')->name('renewals.index');
-    Route::get('/renewals/{renewal}', 'showRenewal')->name('renewals.show');
+    Route::get('/renewals/{submission}', 'showRenewal')->name('renewals.show');
 
     Route::get('/activity-calendars', 'calendars')->name('calendars.index');
     Route::get('/activity-calendars/{calendar}', 'showCalendar')->name('calendars.show');
 
     Route::get('/activity-proposals', 'proposals')->name('proposals.index');
     Route::get('/activity-proposals/{proposal}', 'showProposal')->name('proposals.show');
+    Route::patch('/activity-proposals/{proposal}/workflow', 'updateProposalWorkflow')->name('proposals.workflow');
 
     Route::get('/after-activity-reports', 'reports')->name('reports.index');
     Route::get('/after-activity-reports/{report}', 'showReport')->name('reports.show');
 
     Route::post('/organizations/{organization}/request-profile-revision', 'requestOrganizationProfileRevision')
         ->name('organizations.request-profile-revision');
+});
+
+Route::bind('submission', function (string $value): OrganizationSubmission {
+    return OrganizationSubmission::query()->findOrFail((int) $value);
 });

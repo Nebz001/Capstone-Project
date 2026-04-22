@@ -12,16 +12,18 @@ class ActivityCalendarEntry extends Model
         'activity_calendar_id',
         'activity_date',
         'activity_name',
-        'sdg',
+        'target_sdg',
         'venue',
-        'participant_program',
-        'budget',
+        'target_participants',
+        'target_program',
+        'estimated_budget',
     ];
 
     protected function casts(): array
     {
         return [
             'activity_date' => 'date',
+            'estimated_budget' => 'decimal:2',
         ];
     }
 

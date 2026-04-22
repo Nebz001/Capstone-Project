@@ -6,39 +6,33 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class ActivityProposal extends Model
 {
     protected $fillable = [
         'organization_id',
-        'calendar_id',
+        'activity_calendar_id',
         'activity_calendar_entry_id',
-        'user_id',
-        'form_organization_name',
-        'organization_logo_path',
-        'school_code',
-        'department_program',
-        'academic_year',
+        'submitted_by',
+        'academic_term_id',
         'activity_title',
         'activity_description',
         'proposed_start_date',
         'proposed_end_date',
-        'proposed_time',
+        'proposed_start_time',
+        'proposed_end_time',
         'venue',
         'overall_goal',
         'specific_objectives',
         'criteria_mechanics',
         'program_flow',
+        'target_sdg',
         'estimated_budget',
         'source_of_funding',
-        'external_funding_support_path',
-        'budget_materials_supplies',
-        'budget_food_beverage',
-        'budget_other_expenses',
-        'budget_breakdown_items',
-        'resume_resource_persons_path',
         'submission_date',
-        'proposal_status',
+        'status',
+        'current_approval_step',
     ];
 
     protected function casts(): array
@@ -47,11 +41,12 @@ class ActivityProposal extends Model
             'proposed_start_date' => 'date',
             'proposed_end_date' => 'date',
             'submission_date' => 'date',
+            'academic_term_id' => 'integer',
+            'activity_calendar_id' => 'integer',
+            'activity_calendar_entry_id' => 'integer',
+            'submitted_by' => 'integer',
+            'current_approval_step' => 'integer',
             'estimated_budget' => 'decimal:2',
-            'budget_materials_supplies' => 'decimal:2',
-            'budget_food_beverage' => 'decimal:2',
-            'budget_other_expenses' => 'decimal:2',
-            'budget_breakdown_items' => 'array',
         ];
     }
 
@@ -62,7 +57,12 @@ class ActivityProposal extends Model
 
     public function calendar(): BelongsTo
     {
-        return $this->belongsTo(ActivityCalendar::class, 'calendar_id');
+        return $this->activityCalendar();
+    }
+
+    public function activityCalendar(): BelongsTo
+    {
+        return $this->belongsTo(ActivityCalendar::class, 'activity_calendar_id');
     }
 
     public function calendarEntry(): BelongsTo
@@ -72,21 +72,57 @@ class ActivityProposal extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->submittedBy();
     }
 
-    public function approvalWorkflows(): HasMany
+    public function submittedBy(): BelongsTo
     {
-        return $this->hasMany(ApprovalWorkflow::class, 'proposal_id');
+        return $this->belongsTo(User::class, 'submitted_by');
+    }
+
+    public function academicTerm(): BelongsTo
+    {
+        return $this->belongsTo(AcademicTerm::class);
     }
 
     public function activityReport(): HasOne
     {
-        return $this->hasOne(ActivityReport::class, 'proposal_id');
+        return $this->hasOne(ActivityReport::class, 'activity_proposal_id');
+    }
+
+    public function redesignedActivityReports(): HasMany
+    {
+        return $this->hasMany(ActivityReport::class, 'activity_proposal_id');
     }
 
     public function communicationThreads(): HasMany
     {
-        return $this->hasMany(CommunicationThread::class, 'proposal_id');
+        return $this->hasMany(CommunicationThread::class, 'subject_id')
+            ->where('subject_type', self::class);
+    }
+
+    public function promotedFromRequestForms(): HasMany
+    {
+        return $this->hasMany(ActivityRequestForm::class, 'promoted_to_proposal_id');
+    }
+
+    public function budgetItems(): HasMany
+    {
+        return $this->hasMany(ProposalBudgetItem::class, 'activity_proposal_id');
+    }
+
+    public function attachments(): MorphMany
+    {
+        return $this->morphMany(Attachment::class, 'attachable');
+    }
+
+    public function workflowSteps(): MorphMany
+    {
+        return $this->morphMany(ApprovalWorkflowStep::class, 'approvable')->orderBy('step_order');
+    }
+
+    public function approvalLogs(): MorphMany
+    {
+        return $this->morphMany(ApprovalLog::class, 'approvable');
     }
 }

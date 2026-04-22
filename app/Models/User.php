@@ -20,11 +20,10 @@ class User extends Authenticatable
         'school_id',
         'email',
         'password',
-        'role_type',
+        'role_id',
         'account_status',
         'officer_validation_status',
         'officer_validation_notes',
-        'account_field_reviews',
         'officer_validated_at',
         'officer_validated_by',
     ];
@@ -38,8 +37,8 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'role_id' => 'integer',
             'officer_validated_at' => 'datetime',
-            'account_field_reviews' => 'array',
         ];
     }
 
@@ -48,16 +47,13 @@ class User extends Authenticatable
         return trim($this->first_name.' '.$this->last_name);
     }
 
-    /**
-     * Human-readable account role for admin listings (maps users.role_type).
-     */
     public function roleDisplayLabel(): string
     {
-        return match ($this->role_type) {
+        return match ($this->effectiveRoleType()) {
             'ORG_OFFICER' => 'Student officer',
             'APPROVER' => 'Signatory',
             'ADMIN' => 'Administrator',
-            default => $this->role_type ?? 'Unknown',
+            default => $this->role?->display_name ?? 'Unknown',
         };
     }
 
@@ -77,7 +73,8 @@ class User extends Authenticatable
         }
 
         $query->whereNot(function (Builder $q) use ($emails): void {
-            $q->where('role_type', 'ADMIN')->whereIn('email', $emails);
+            $q->whereHas('role', fn (Builder $r) => $r->where('name', 'admin'))
+                ->whereIn('email', $emails);
         });
     }
 
@@ -96,7 +93,7 @@ class User extends Authenticatable
     public function currentOrganization(): ?Organization
     {
         $officer = $this->organizationOfficers()
-            ->where('officer_status', 'ACTIVE')
+            ->where('status', 'active')
             ->orderByDesc('id')
             ->first();
 
@@ -107,34 +104,74 @@ class User extends Authenticatable
         return Organization::query()->find($officer->organization_id);
     }
 
-    public function organizationRegistrations(): HasMany
-    {
-        return $this->hasMany(OrganizationRegistration::class);
-    }
-
-    public function organizationRenewals(): HasMany
-    {
-        return $this->hasMany(OrganizationRenewal::class);
-    }
-
     public function activityProposals(): HasMany
     {
-        return $this->hasMany(ActivityProposal::class);
+        return $this->hasMany(ActivityProposal::class, 'submitted_by');
+    }
+
+    public function submittedActivityProposals(): HasMany
+    {
+        return $this->hasMany(ActivityProposal::class, 'submitted_by');
     }
 
     public function activityReports(): HasMany
     {
-        return $this->hasMany(ActivityReport::class);
+        return $this->hasMany(ActivityReport::class, 'submitted_by');
     }
 
-    public function approvalWorkflows(): HasMany
+    public function submittedActivityReports(): HasMany
     {
-        return $this->hasMany(ApprovalWorkflow::class);
+        return $this->hasMany(ActivityReport::class, 'submitted_by');
     }
 
     public function communicationMessages(): HasMany
     {
-        return $this->hasMany(CommunicationMessage::class);
+        return $this->hasMany(CommunicationMessage::class, 'sent_by');
+    }
+
+    public function organizationAdviserAssignments(): HasMany
+    {
+        return $this->hasMany(OrganizationAdviser::class);
+    }
+
+    public function requestedOrganizationProfileRevisions(): HasMany
+    {
+        return $this->hasMany(OrganizationProfileRevision::class, 'requested_by');
+    }
+
+    public function organizationSubmissions(): HasMany
+    {
+        return $this->hasMany(OrganizationSubmission::class, 'submitted_by');
+    }
+
+    public function activityRequestForms(): HasMany
+    {
+        return $this->hasMany(ActivityRequestForm::class);
+    }
+
+    public function submittedActivityRequestForms(): HasMany
+    {
+        return $this->hasMany(ActivityRequestForm::class, 'submitted_by');
+    }
+
+    public function uploadedAttachments(): HasMany
+    {
+        return $this->hasMany(Attachment::class, 'uploaded_by');
+    }
+
+    public function assignedApprovalWorkflowSteps(): HasMany
+    {
+        return $this->hasMany(ApprovalWorkflowStep::class, 'assigned_to');
+    }
+
+    public function approvalLogs(): HasMany
+    {
+        return $this->hasMany(ApprovalLog::class, 'actor_id');
+    }
+
+    public function appNotifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
     }
 
     /** Announcements this user has dismissed after viewing (login modal). */
@@ -148,30 +185,56 @@ class User extends Authenticatable
         return $this->belongsTo(User::class, 'officer_validated_by');
     }
 
-    /**
-     * Whether this user is an SDAO web admin (dashboard / signatory flows).
-     * Requires ADMIN role and an email listed in config/sdao.php.
-     */
-    public function isSdaoAdmin(): bool
+    public function role(): BelongsTo
     {
-        if ($this->role_type !== 'ADMIN') {
-            return false;
-        }
+        return $this->belongsTo(Role::class);
+    }
 
-        $emails = collect(config('sdao.admin_accounts', []))
-            ->pluck('email')
-            ->all();
-
-        return in_array($this->email, $emails, true);
+    public function effectiveRoleType(): ?string
+    {
+        return match ($this->role?->name) {
+            'rso_president' => 'ORG_OFFICER',
+            'adviser',
+            'program_chair',
+            'dean',
+            'academic_director',
+            'executive_director',
+            'sdao_staff' => 'APPROVER',
+            'admin' => 'ADMIN',
+            default => null,
+        };
     }
 
     /**
-     * SDAO Super Admin: full admin access plus admin-side RSO submission routes (see admin.submissions.*).
-     * Same identity as {@see isSdaoAdmin()} (ADMIN + config/sdao.php admin_accounts).
+     * Canonical redesigned-schema admin-role check (roles.name = admin).
+     */
+    public function isAdminRole(): bool
+    {
+        return (string) $this->role?->name === 'admin';
+    }
+
+    /**
+     * SDAO web admin identity (legacy method name kept for compatibility).
+     */
+    public function isSdaoAdmin(): bool
+    {
+        return $this->isAdminRole();
+    }
+
+    /**
+     * Super admin identity for admin-side modules.
      */
     public function isSuperAdmin(): bool
     {
-        return $this->isSdaoAdmin();
+        return $this->isAdminRole();
+    }
+
+    /**
+     * Role-scoped approver accounts that review routed documents (non-SDAO admin).
+     */
+    public function isRoleBasedApprover(): bool
+    {
+        return in_array((string) $this->role?->name, ['adviser', 'program_chair', 'dean'], true);
     }
 
     /**
@@ -184,7 +247,7 @@ class User extends Authenticatable
             return true;
         }
 
-        if ($this->role_type !== 'ORG_OFFICER') {
+        if ($this->effectiveRoleType() !== 'ORG_OFFICER') {
             return false;
         }
 

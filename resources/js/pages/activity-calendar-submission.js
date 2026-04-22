@@ -1,4 +1,4 @@
-import { ALERT_BUTTON_CLASSES, showAlert, showConfirmAlert, showWarningAlert } from '../components/alerts';
+import { ALERT_BUTTON_CLASSES, showAlert, showConfirmAlert } from '../components/alerts';
 import { initToast, showToast } from '../components/toast';
 
 const escapeHtml = (value) => {
@@ -238,15 +238,6 @@ export const initActivityCalendarSubmissionPage = () => {
 	const handleSubmitCalendar = (event) => {
 		const submitter = event.submitter;
 		if (submitter && submitter !== submitButton) return;
-
-		if (activities.length < 5) {
-			event.preventDefault();
-			showWarningAlert(
-				'Incomplete Activity Calendar',
-				'Please add at least 5 activities before submitting the activity calendar.',
-			);
-			return;
-		}
 
 		const academicYear = document.getElementById('academic_year');
 		const term = document.getElementById('term');

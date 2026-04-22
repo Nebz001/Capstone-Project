@@ -118,15 +118,15 @@ final class SubmissionRoutingProgress
     public static function stagesForActivityProposal(ActivityProposal $proposal): array
     {
         $proposal->loadMissing([
-            'approvalWorkflows' => fn ($q) => $q->orderBy('approval_level'),
-            'approvalWorkflows.office',
+            'workflowSteps' => fn ($q) => $q->orderBy('step_order'),
+            'workflowSteps.role',
         ]);
 
-        if ($proposal->approvalWorkflows->isNotEmpty()) {
-            return self::proposalStagesFromWorkflows($proposal);
+        if ($proposal->workflowSteps->isNotEmpty()) {
+            return self::proposalStagesFromWorkflowSteps($proposal);
         }
 
-        return self::proposalStagesFromStatus($proposal->proposal_status);
+        return self::proposalStagesFromStatus($proposal->status);
     }
 
     public static function summaryForSimpleSdao(?string $rawStatus): string
@@ -249,13 +249,13 @@ final class SubmissionRoutingProgress
     /**
      * @return list<array{label: string, state: string}>
      */
-    private static function proposalStagesFromWorkflows(ActivityProposal $proposal): array
+    private static function proposalStagesFromWorkflowSteps(ActivityProposal $proposal): array
     {
         $labels = self::ACTIVITY_PROPOSAL_LABELS;
         $n = count($labels);
         $states = array_fill(0, $n, 'pending');
 
-        $draft = strtoupper((string) ($proposal->proposal_status ?? '')) === 'DRAFT';
+        $draft = strtoupper((string) ($proposal->status ?? '')) === 'DRAFT';
         if ($draft) {
             $states[0] = 'current';
 
@@ -264,26 +264,17 @@ final class SubmissionRoutingProgress
 
         $states[0] = 'completed';
 
-        $mappedAny = false;
-        foreach ($proposal->approvalWorkflows as $w) {
-            $idx = self::matchOfficeToProposalRouteIndex($w->office?->office_name);
-            if ($idx === null) {
-                continue;
-            }
-            $mappedAny = true;
+        foreach ($proposal->workflowSteps as $step) {
+            $idx = (int) $step->step_order;
             $idx = max(1, min($n - 1, $idx));
-            $ds = strtoupper((string) $w->decision_status);
+            $ds = strtoupper((string) $step->status);
             $states[$idx] = match (true) {
                 $ds === 'APPROVED' => 'completed',
                 $ds === 'REJECTED' => 'danger',
                 $ds === 'REVISION_REQUIRED' => 'warning',
-                $w->current_step => 'current',
+                $step->is_current_step => 'current',
                 default => 'pending',
             };
-        }
-
-        if (! $mappedAny) {
-            return self::proposalStagesFromStatus($proposal->proposal_status);
         }
 
         self::finalizeProposalWorkflowStates($states, $n);
@@ -344,23 +335,4 @@ final class SubmissionRoutingProgress
         }
     }
 
-    private static function matchOfficeToProposalRouteIndex(?string $officeName): ?int
-    {
-        if ($officeName === null || trim($officeName) === '') {
-            return null;
-        }
-
-        $t = mb_strtolower($officeName);
-
-        return match (true) {
-            str_contains($t, 'executive director') => 7,
-            str_contains($t, 'academic director') => 6,
-            str_contains($t, 'assistant director') => 5,
-            str_contains($t, 'program chair') || str_contains($t, 'programme chair') => 2,
-            str_contains($t, 'sdao') || str_contains($t, 'student development') || str_contains($t, 'student affairs') => 4,
-            str_contains($t, 'dean') && ! str_contains($t, 'director') => 3,
-            str_contains($t, 'adviser') || str_contains($t, 'advisor') => 1,
-            default => null,
-        };
-    }
 }

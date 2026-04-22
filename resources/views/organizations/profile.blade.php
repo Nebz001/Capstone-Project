@@ -38,9 +38,11 @@
         ? ucwords(strtolower(str_replace('_', ' ', $applicationWorkflowStatus)))
         : null;
     $applicationNotes = $activeApplication
-        ? ($activeApplication instanceof \App\Models\OrganizationRenewal
-            ? $activeApplication->renewal_notes
-            : $activeApplication->registration_notes)
+        ? ($activeApplication instanceof \App\Models\OrganizationSubmission
+            ? $activeApplication->notes
+            : ($activeApplication instanceof \App\Models\OrganizationRenewal
+                ? $activeApplication->renewal_notes
+                : $activeApplication->registration_notes))
         : null;
     $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
     $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';

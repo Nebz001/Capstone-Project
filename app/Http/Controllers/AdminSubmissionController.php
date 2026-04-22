@@ -88,7 +88,7 @@ class AdminSubmissionController extends Controller
                 ->first();
 
             $calendarSubmittedLocked = $latestCalendar !== null
-                && strtoupper((string) $latestCalendar->calendar_status) !== 'REVISION';
+                && strtoupper((string) $latestCalendar->status) !== 'REVISION';
         }
 
         return view('organizations.activity-calendar-submission', [

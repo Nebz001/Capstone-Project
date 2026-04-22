@@ -15,14 +15,28 @@
   @endif
 </head>
 <body class="min-h-screen bg-slate-100 antialiased">
+  @php
+    $authUser = auth()->user();
+    $isSuperAdmin = $authUser?->isSuperAdmin();
+    $isRoleApprover = $authUser?->isRoleBasedApprover();
+    $dashboardRoute = $isRoleApprover ? route('approver.dashboard') : route('admin.dashboard');
+  @endphp
   <div class="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
     <aside class="border-b border-slate-200 bg-[#003E9F] text-white lg:min-h-screen lg:border-b-0 lg:border-r lg:border-white/10">
       <div class="px-5 py-5">
-        <a href="{{ route('admin.dashboard') }}" class="flex items-center gap-3">
+        <a href="{{ $dashboardRoute }}" class="flex items-center gap-3">
           <img src="{{ asset('images/logos/nu-logo-onlyy.png') }}" alt="NU Lipa" class="h-10 w-auto" />
           <div class="min-w-0">
             <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-[#F5C400]">NU Lipa</p>
-            <p class="truncate text-sm font-semibold">{{ auth()->user()?->isSuperAdmin() ? 'Super Admin' : 'Student Development and Activities Office Admin' }}</p>
+            <p class="truncate text-sm font-semibold">
+              @if ($isSuperAdmin)
+                Super Admin
+              @elseif ($isRoleApprover)
+                {{ $authUser?->role?->display_name ?? 'Approver' }}
+              @else
+                Student Development and Activities Office Admin
+              @endif
+            </p>
           </div>
         </a>
       </div>
@@ -31,8 +45,8 @@
         <div class="space-y-1">
           <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Overview</p>
           <a
-            href="{{ route('admin.dashboard') }}"
-            class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.dashboard') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
+            href="{{ $dashboardRoute }}"
+            class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.dashboard') || request()->routeIs('approver.dashboard') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
           >
             Dashboard
           </a>
@@ -68,6 +82,7 @@
           </div>
         @endif
 
+        @if (! $isRoleApprover)
         <div class="space-y-1">
           <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Review Modules</p>
           <a
@@ -101,7 +116,19 @@
             After Activity Reports
           </a>
         </div>
+        @else
+        <div class="space-y-1">
+          <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Approvals</p>
+          <a
+            href="{{ route('approver.dashboard') }}"
+            class="block rounded-xl px-3 py-2 text-sm font-medium transition {{ request()->routeIs('approver.*') ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}"
+          >
+            My approval queue
+          </a>
+        </div>
+        @endif
 
+        @if (! $isRoleApprover)
         <div class="space-y-1">
           <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200/80">Account Management</p>
           <a
@@ -111,6 +138,7 @@
             User accounts
           </a>
         </div>
+        @endif
 
         <div class="space-y-1 border-t border-white/10 pt-3">
           <p class="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-red-200/90">Session</p>
@@ -132,15 +160,23 @@
       <header class="border-b border-slate-200 bg-white">
         <div class="mx-auto flex w-full max-w-screen-2xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <div>
-            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">{{ auth()->user()?->isSuperAdmin() ? 'Student Development and Activities Office Super Admin Portal' : 'Student Development and Activities Office Admin Portal' }}</p>
+            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">
+              @if ($isSuperAdmin)
+                Student Development and Activities Office Super Admin Portal
+              @elseif ($isRoleApprover)
+                Student Development and Activities Office Approver Portal
+              @else
+                Student Development and Activities Office Admin Portal
+              @endif
+            </p>
             <p class="text-xs text-slate-500">{{ now()->format('l, F j, Y') }}</p>
-            @if (! auth()->user()?->isSuperAdmin())
+            @if (! $isSuperAdmin && ! $isRoleApprover)
               <x-active-term-status variant="admin" />
               <x-academic-year-status variant="admin" />
             @endif
           </div>
           <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-            @if (auth()->user()?->isSuperAdmin())
+            @if ($isSuperAdmin)
               @php
                 $headerActiveSemester = \App\Models\SystemSetting::activeSemester();
                 $headerActiveAcademicYear = \App\Models\SystemSetting::activeAcademicYear();

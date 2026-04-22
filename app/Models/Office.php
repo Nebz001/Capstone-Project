@@ -3,19 +3,19 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Office extends Model
 {
     protected $fillable = [
         'office_name',
-        'office_head',
+        'head_user_id',
         'office_email',
-        'office_status',
+        'status',
     ];
 
-    public function approvalWorkflows(): HasMany
+    public function headUser(): BelongsTo
     {
-        return $this->hasMany(ApprovalWorkflow::class);
+        return $this->belongsTo(User::class, 'head_user_id');
     }
 }

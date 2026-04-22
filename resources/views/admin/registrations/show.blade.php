@@ -4,6 +4,8 @@
 
 @section('content')
 @php
+  $registration = $submission ?? $registration ?? null;
+  $registrationMissing = $registration === null;
   $initialSectionReviewState = $initialSectionReviewState ?? [
     'application' => 'pending',
     'contact' => 'pending',
@@ -12,9 +14,9 @@
   ];
   $defaultDecision = old(
     'decision',
-    $registration->registration_status === 'REJECTED' ? 'REJECTED' : 'APPROVED',
+    strtolower((string) ($registration?->status ?? '')) === 'rejected' ? 'REJECTED' : 'APPROVED',
   );
-  $status = $registration->registration_status ?? 'PENDING';
+  $status = strtoupper((string) ($registration?->status ?? 'PENDING'));
   $statusClass = match ($status) {
     'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
     'UNDER_REVIEW', 'REVIEWED' => 'bg-blue-100 text-blue-700 border border-blue-200',
@@ -23,7 +25,7 @@
     'REVISION', 'REVISION_REQUIRED' => 'bg-orange-100 text-orange-700 border border-orange-200',
     default => 'bg-slate-100 text-slate-700 border border-slate-200',
   };
-  $org = $registration->organization;
+  $org = $registration?->organization;
   $reqLabels = [
     'letter_of_intent' => 'Letter of Intent',
     'application_form' => 'Application Form',
@@ -33,16 +35,14 @@
     'proposed_projects_budget' => 'List of Proposed Projects with Proposed Budget for the AY',
     'others' => 'Others',
   ];
-  $reqColumns = [
-    'letter_of_intent' => 'req_letter_of_intent',
-    'application_form' => 'req_application_form',
-    'by_laws' => 'req_by_laws',
-    'updated_list_of_officers_founders' => 'req_officers_list',
-    'dean_endorsement_faculty_adviser' => 'req_dean_endorsement',
-    'proposed_projects_budget' => 'req_proposed_projects',
-    'others' => 'req_others',
-  ];
-  $requirementFiles = is_array($registration->requirement_files) ? $registration->requirement_files : [];
+  $requirementRows = $registration?->requirements?->keyBy('requirement_key') ?? collect();
+  $requirementKeys = \App\Models\SubmissionRequirement::requirementKeysForType(\App\Models\OrganizationSubmission::TYPE_REGISTRATION);
+  $requirementAttachmentKeys = ($registration?->attachments ?? collect())
+    ->pluck('file_type')
+    ->filter(fn ($type) => is_string($type) && str_starts_with($type, \App\Models\Attachment::TYPE_REGISTRATION_REQUIREMENT.':'))
+    ->map(fn (string $type): string => (string) \Illuminate\Support\Str::after($type, \App\Models\Attachment::TYPE_REGISTRATION_REQUIREMENT.':'))
+    ->values()
+    ->all();
   $orgTypeRaw = strtolower((string) ($org?->organization_type ?? ''));
   $orgTypeLabel = match ($orgTypeRaw) {
     'co_curricular' => 'Co-Curricular Organization',
@@ -51,10 +51,22 @@
   };
 @endphp
 
+@if ($registrationMissing)
+  <x-feedback.blocked-message
+    variant="error"
+    class="mb-6"
+    message="Registration submission data is unavailable for this record."
+  />
+  <x-ui.card padding="p-6">
+    <a href="{{ route('admin.registrations.index') }}" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20">
+      Back to list
+    </a>
+  </x-ui.card>
+@else
 <form
   id="registration-review-form"
   method="POST"
-  action="{{ route('admin.registrations.update-status', $registration) }}"
+  action="{{ route('admin.registrations.update-status', $submission ?? $registration) }}"
   class="space-y-6"
   data-confirmed="0"
 >
@@ -75,7 +87,7 @@
     <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
       <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Academic Year</dt>
-        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->academic_year ?? 'N/A' }}</dd>
+        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->academicTerm?->academic_year ?? 'N/A' }}</dd>
       </div>
       <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission Date</dt>
@@ -89,16 +101,6 @@
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
       </div>
-      @if ($registration->approved_by_sdao || $registration->approval_date)
-        <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
-          <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last reviewed by (SDAO)</dt>
-          <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->approved_by_sdao ?? 'N/A' }}</dd>
-        </div>
-        <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
-          <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Decision date</dt>
-          <dd class="mt-2 text-sm font-medium text-slate-900">{{ optional($registration->approval_date)->format('M d, Y') ?? 'N/A' }}</dd>
-        </div>
-      @endif
     </dl>
     @include('admin.registrations.partials.section-review-toolbar', [
       'sectionKey' => 'application',
@@ -179,31 +181,27 @@
     <h2 class="text-base font-bold text-slate-900">Requirements Attached</h2>
     <p class="mt-1 text-sm text-slate-500">Checklist and uploaded files as declared on the application.</p>
     <ul class="mt-4 space-y-3">
-      @foreach ($reqColumns as $key => $col)
+      @foreach ($requirementKeys as $key)
         @php
-          $checked = (bool) $registration->{$col};
-          $filePath = $requirementFiles[$key] ?? null;
-          $hasFile = $filePath && \Illuminate\Support\Facades\Storage::disk('public')->exists($filePath);
+          $requirement = $requirementRows->get($key);
+          $checked = (bool) ($requirement?->is_submitted ?? false);
+          $hasFile = $checked && in_array($key, $requirementAttachmentKeys, true);
         @endphp
         <li class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
-            <p class="text-sm font-semibold text-slate-900">{{ $reqLabels[$key] ?? $key }}</p>
+            <p class="text-sm font-semibold text-slate-900">{{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}</p>
             <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
-            @if ($key === 'others' && $registration->req_others_specify)
-              <p class="mt-1 text-xs text-slate-600">Specified: {{ $registration->req_others_specify }}</p>
-            @endif
           </div>
           <div class="shrink-0">
             @if ($hasFile)
               <a
-                href="{{ route('admin.registrations.requirement-file', ['registration' => $registration, 'key' => $key]) }}"
+                href="{{ route('admin.registrations.requirement-file', ['submission' => ($submission ?? $registration), 'key' => $key]) }}"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="inline-flex rounded-xl border border-[#003E9F] bg-white px-3.5 py-2 text-xs font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
               >
                 View file
               </a>
-              <span class="ml-2 text-xs text-slate-500" title="{{ $filePath }}">{{ $reqLabels[$key] ?? $key }} — {{ basename($filePath) }}</span>
             @elseif ($checked)
               <span class="text-xs font-medium text-amber-700">Marked yes — no file on record</span>
             @endif
@@ -267,7 +265,7 @@
         name="remarks"
         :rows="4"
         placeholder="Optional overall context. Section-specific feedback is added via Need revision on each section."
-      >{{ old('remarks', $registration->additional_remarks) }}</x-forms.textarea>
+      >{{ old('remarks', $registration->additional_remarks ?? $registration->notes) }}</x-forms.textarea>
       @error('remarks')
         <x-forms.error>{{ $message }}</x-forms.error>
       @enderror
@@ -576,4 +574,5 @@
     });
   })();
 </script>
+@endif
 @endsection

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class OrganizationRenewal extends Model
 {
@@ -74,5 +75,15 @@ class OrganizationRenewal extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function workflowSteps(): MorphMany
+    {
+        return $this->morphMany(ApprovalWorkflowStep::class, 'approvable')->orderBy('step_order');
+    }
+
+    public function approvalLogs(): MorphMany
+    {
+        return $this->morphMany(ApprovalLog::class, 'approvable');
     }
 }

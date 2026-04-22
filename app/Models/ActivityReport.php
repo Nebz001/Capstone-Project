@@ -4,32 +4,26 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class ActivityReport extends Model
 {
     protected $fillable = [
-        'proposal_id',
+        'activity_proposal_id',
         'organization_id',
-        'user_id',
+        'submitted_by',
         'report_submission_date',
-        'report_file',
         'accomplishment_summary',
-        'report_status',
-        'activity_event_title',
-        'school_code',
-        'department',
-        'poster_image_path',
-        'event_name',
+        'status',
+        'current_approval_step',
+        'event_title',
         'event_starts_at',
+        'event_ends_at',
         'activity_chairs',
         'prepared_by',
         'program_content',
-        'supporting_photo_paths',
-        'certificate_sample_path',
         'evaluation_report',
         'participants_reached_percent',
-        'evaluation_form_sample_path',
-        'attendance_sheet_path',
     ];
 
     protected function casts(): array
@@ -37,14 +31,22 @@ class ActivityReport extends Model
         return [
             'report_submission_date' => 'date',
             'event_starts_at' => 'datetime',
-            'supporting_photo_paths' => 'array',
+            'event_ends_at' => 'datetime',
+            'activity_proposal_id' => 'integer',
+            'submitted_by' => 'integer',
+            'current_approval_step' => 'integer',
             'participants_reached_percent' => 'decimal:2',
         ];
     }
 
     public function proposal(): BelongsTo
     {
-        return $this->belongsTo(ActivityProposal::class, 'proposal_id');
+        return $this->activityProposal();
+    }
+
+    public function activityProposal(): BelongsTo
+    {
+        return $this->belongsTo(ActivityProposal::class, 'activity_proposal_id');
     }
 
     public function organization(): BelongsTo
@@ -54,6 +56,31 @@ class ActivityReport extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->submittedBy();
+    }
+
+    public function submittedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_by');
+    }
+
+    public function effectiveEventTitle(): ?string
+    {
+        return $this->event_title;
+    }
+
+    public function attachments(): MorphMany
+    {
+        return $this->morphMany(Attachment::class, 'attachable');
+    }
+
+    public function workflowSteps(): MorphMany
+    {
+        return $this->morphMany(ApprovalWorkflowStep::class, 'approvable')->orderBy('step_order');
+    }
+
+    public function approvalLogs(): MorphMany
+    {
+        return $this->morphMany(ApprovalLog::class, 'approvable');
     }
 }

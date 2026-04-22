@@ -5,15 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class CommunicationThread extends Model
 {
     protected $fillable = [
         'organization_id',
-        'proposal_id',
+        'subject_type',
+        'subject_id',
         'thread_subject',
-        'thread_type',
-        'thread_status',
+        'status',
     ];
 
     public function organization(): BelongsTo
@@ -21,9 +22,9 @@ class CommunicationThread extends Model
         return $this->belongsTo(Organization::class);
     }
 
-    public function proposal(): BelongsTo
+    public function subject(): MorphTo
     {
-        return $this->belongsTo(ActivityProposal::class, 'proposal_id');
+        return $this->morphTo();
     }
 
     public function messages(): HasMany

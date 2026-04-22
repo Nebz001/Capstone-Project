@@ -89,5 +89,83 @@
       </div>
     @endif
   @endisset
+
+  @isset($workflowSteps)
+    @if (($workflowSteps?->count() ?? 0) > 0)
+      <div class="mt-8 border-t border-slate-100 pt-8">
+        <h2 class="text-base font-bold text-slate-900">Approval Workflow</h2>
+        <p class="mt-1 text-sm text-slate-500">Step-based review for this proposal. Every decision is logged for traceability.</p>
+
+        @if (isset($workflowCurrentStep) && $workflowCurrentStep)
+          <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+            Current step:
+            <span class="font-semibold">#{{ $workflowCurrentStep->step_order }} — {{ $workflowCurrentStep->role?->display_name ?? $workflowCurrentStep->role?->name ?? 'Unassigned role' }}</span>
+          </div>
+        @endif
+
+        <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-5 py-3">Step</th>
+                <th class="px-5 py-3">Role</th>
+                <th class="px-5 py-3">Status</th>
+                <th class="px-5 py-3">Reviewer</th>
+                <th class="px-5 py-3">Acted At</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 bg-white">
+              @foreach ($workflowSteps as $step)
+                <tr>
+                  <td class="px-5 py-3">#{{ $step->step_order }}{{ $step->is_current_step ? ' (current)' : '' }}</td>
+                  <td class="px-5 py-3">{{ $step->role?->display_name ?? $step->role?->name ?? '—' }}</td>
+                  <td class="px-5 py-3">{{ strtoupper((string) $step->status) }}</td>
+                  <td class="px-5 py-3">{{ $step->assignedTo?->full_name ?? '—' }}</td>
+                  <td class="px-5 py-3">{{ optional($step->acted_at)->format('M d, Y g:i A') ?? '—' }}</td>
+                </tr>
+              @endforeach
+            </tbody>
+          </table>
+        </div>
+
+        @isset($workflowActionRoute)
+          <form method="POST" action="{{ $workflowActionRoute }}" class="mt-6 space-y-4">
+            @csrf
+            @method('PATCH')
+            <div>
+              <x-forms.label for="workflow_comments">Comments (optional)</x-forms.label>
+              <x-forms.textarea id="workflow_comments" name="comments" rows="3" placeholder="Add rationale for this decision...">{{ old('comments') }}</x-forms.textarea>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="submit" name="action" value="approve" class="inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Approve step</button>
+              <button type="submit" name="action" value="revision" class="inline-flex rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600">Request revision</button>
+              <button type="submit" name="action" value="reject" class="inline-flex rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Reject</button>
+            </div>
+          </form>
+        @endisset
+
+        @isset($workflowLogs)
+          @if (($workflowLogs?->count() ?? 0) > 0)
+            <div class="mt-6">
+              <h3 class="text-sm font-semibold text-slate-900">Recent workflow logs</h3>
+              <ul class="mt-2 space-y-2 text-sm">
+                @foreach ($workflowLogs as $log)
+                  <li class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <span class="font-semibold">{{ strtoupper((string) $log->action) }}</span>
+                    · {{ $log->from_status ?? '—' }} → {{ $log->to_status ?? '—' }}
+                    · {{ $log->actor?->full_name ?? 'System' }}
+                    · {{ optional($log->created_at)->format('M d, Y g:i A') ?? '—' }}
+                    @if ($log->comments)
+                      <div class="mt-1 text-slate-700">{{ $log->comments }}</div>
+                    @endif
+                  </li>
+                @endforeach
+              </ul>
+            </div>
+          @endif
+        @endisset
+      </div>
+    @endif
+  @endisset
 </x-ui.card>
 @endsection

@@ -9,22 +9,22 @@ class Organization extends Model
 {
     protected $fillable = [
         'organization_name',
+        'acronym',
         'organization_type',
         'college_department',
         'purpose',
-        'adviser_name',
+        'logo_path',
         'founded_date',
-        'organization_status',
-        'profile_information_revision_requested',
-        'profile_revision_notes',
+        'status',
+        'is_profile_locked',
     ];
 
     protected function casts(): array
     {
         return [
             'founded_date' => 'date',
-            'profile_information_revision_requested' => 'boolean',
-            'organization_status' => 'string',
+            'is_profile_locked' => 'boolean',
+            'status' => 'string',
         ];
     }
 
@@ -33,7 +33,7 @@ class Organization extends Model
      */
     public function normalizedOrganizationStatus(): string
     {
-        $raw = $this->organization_status;
+        $raw = $this->status;
 
         if ($raw === null || $raw === '') {
             return 'PENDING';
@@ -52,7 +52,9 @@ class Organization extends Model
      */
     public function isProfileRevisionRequested(): bool
     {
-        return (bool) $this->profile_information_revision_requested;
+        return $this->profileRevisions()
+            ->where('status', 'open')
+            ->exists();
     }
 
     /**
@@ -106,16 +108,6 @@ class Organization extends Model
         return $this->hasMany(OrganizationOfficer::class);
     }
 
-    public function registrations(): HasMany
-    {
-        return $this->hasMany(OrganizationRegistration::class);
-    }
-
-    public function renewals(): HasMany
-    {
-        return $this->hasMany(OrganizationRenewal::class);
-    }
-
     public function activityCalendars(): HasMany
     {
         return $this->hasMany(ActivityCalendar::class);
@@ -134,5 +126,25 @@ class Organization extends Model
     public function communicationThreads(): HasMany
     {
         return $this->hasMany(CommunicationThread::class);
+    }
+
+    public function advisers(): HasMany
+    {
+        return $this->hasMany(OrganizationAdviser::class);
+    }
+
+    public function profileRevisions(): HasMany
+    {
+        return $this->hasMany(OrganizationProfileRevision::class);
+    }
+
+    public function submissions(): HasMany
+    {
+        return $this->hasMany(OrganizationSubmission::class);
+    }
+
+    public function activityRequestForms(): HasMany
+    {
+        return $this->hasMany(ActivityRequestForm::class);
     }
 }

@@ -8,12 +8,21 @@
     $officerValidationPending = $officerValidationPending ?? false;
     $showPageIntro = $showPageIntro ?? (($layout ?? 'layouts.organization-portal') !== 'layouts.admin');
     $renewalBlockedNoOrganization = $renewalBlockedNoOrganization ?? (($organization ?? null) === null);
-    $sessionErrorBlocksForm = session()->has('error');
-    $renewalFormBlocked = $officerValidationPending || $sessionErrorBlocksForm || $renewalBlockedNoOrganization;
     $activeAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
     $renewalAccess = $renewalAccess ?? ['allowed' => true, 'message' => ''];
     $renewalRestrictedByPolicy = ! $renewalAccess['allowed'];
-    $showRenewalForm = ! $renewalRestrictedByPolicy && ! $renewalBlockedNoOrganization;
+    $isBlocked = $renewalIsBlocked ?? ($officerValidationPending || $renewalBlockedNoOrganization || $renewalRestrictedByPolicy);
+    $blockedReason = $renewalBlockedReason ?? null;
+    if (! $blockedReason) {
+        $blockedReason = $officerValidationPending
+            ? 'Your student officer account is pending SDAO validation. You cannot submit or edit organization forms until validation is complete.'
+            : ($renewalRestrictedByPolicy
+                ? (string) ($renewalAccess['message'] ?? '')
+                : ($renewalBlockedNoOrganization
+                    ? 'No organization is linked to your account. Register your organization before submitting a renewal application.'
+                    : ''));
+    }
+    $showRenewalForm = ! $isBlocked;
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -49,25 +58,11 @@
 
     @if (session('error'))
         <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
-    @elseif (! $renewalAccess['allowed'] && ! empty($renewalAccess['message']))
+    @elseif ($isBlocked && $blockedReason !== '')
         <x-feedback.blocked-message
             variant="error"
             class="mb-6"
-            :message="$renewalAccess['message']"
-        />
-    @elseif ($renewalBlockedNoOrganization)
-        <x-feedback.blocked-message
-            variant="error"
-            class="mb-6"
-            message="No organization is linked to your account. Register your organization before submitting a renewal application."
-        />
-    @endif
-
-    @if ($officerValidationPending)
-        <x-feedback.blocked-message
-            variant="error"
-            class="mb-6"
-            message="Your student officer account is pending SDAO validation. You cannot submit or edit organization forms until validation is complete."
+            :message="$blockedReason"
         />
     @endif
 
@@ -77,17 +72,10 @@
             action="{{ route($renewStoreRoute ?? 'organizations.renew.store') }}"
             enctype="multipart/form-data"
             class="space-y-6"
-            data-org-form-blocked="{{ $renewalFormBlocked ? 'true' : 'false' }}"
+            data-org-form-blocked="false"
         >
             @csrf
-
-            <fieldset
-                @disabled($renewalFormBlocked)
-                @class([
-                    'min-w-0 space-y-6 border-0 p-0 m-0',
-                    'pointer-events-none opacity-50' => $renewalFormBlocked,
-                ])
-            >
+            <fieldset class="min-w-0 space-y-6 border-0 p-0 m-0">
 
         {{-- Academic Year --}}
         <x-ui.card padding="p-0">
@@ -412,8 +400,8 @@
         <x-ui.card padding="p-0">
             <div class="px-6 py-6">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                    <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto" :disabled="$renewalFormBlocked">Reset Form</x-ui.button>
-                    <x-ui.button type="submit" class="w-full sm:w-auto" :disabled="$renewalFormBlocked">Submit Renewal</x-ui.button>
+                    <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto">Reset Form</x-ui.button>
+                    <x-ui.button type="submit" class="w-full sm:w-auto">Submit Renewal</x-ui.button>
                 </div>
             </div>
         </x-ui.card>

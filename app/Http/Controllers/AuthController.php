@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -31,7 +32,7 @@ class AuthController extends Controller
       'school_id' => $validated['school_id'],
       'email' => $validated['school_email'],
       'password' => Hash::make($validated['password']),
-      'role_type' => 'ORG_OFFICER',
+      'role_id' => Role::query()->where('name', 'rso_president')->value('id'),
       'account_status' => 'ACTIVE',
       'officer_validation_status' => 'PENDING',
     ]);
@@ -70,11 +71,15 @@ class AuthController extends Controller
     /** @var \App\Models\User $user */
     $user = $request->user();
 
-    if ($user && $user->isSdaoAdmin()) {
+    if ($user && $user->isAdminRole()) {
       return redirect()->route('admin.dashboard');
     }
 
-    if ($user && $user->role_type === 'ORG_OFFICER') {
+    if ($user && $user->isRoleBasedApprover()) {
+      return redirect()->route('approver.dashboard');
+    }
+
+    if ($user && $user->effectiveRoleType() === 'ORG_OFFICER') {
       return redirect()->route('organizations.index');
     }
 

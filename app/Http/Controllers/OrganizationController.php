@@ -7,16 +7,24 @@ use App\Models\ActivityCalendarEntry;
 use App\Models\ActivityProposal;
 use App\Models\ActivityRequestForm;
 use App\Models\ActivityReport;
+use App\Models\ApprovalLog;
+use App\Models\ApprovalWorkflowStep;
+use App\Models\Attachment;
+use App\Models\OrganizationSubmission;
 use App\Models\Organization;
 use App\Models\OrganizationOfficer;
-use App\Models\OrganizationRegistration;
-use App\Models\OrganizationRenewal;
+use App\Models\OrganizationProfileRevision;
+use App\Models\ProposalBudgetItem;
+use App\Models\Role;
+use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Support\SubmissionRoutingProgress;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -228,6 +236,9 @@ class OrganizationController extends Controller
         if ($request->user()?->isSuperAdmin()) {
             return redirect()->route('admin.dashboard');
         }
+        if ($request->user()?->isRoleBasedApprover()) {
+            return redirect()->route('approver.dashboard');
+        }
 
         $calendarEvents = [];
         $proposalDashboard = ['empty' => true];
@@ -255,7 +266,7 @@ class OrganizationController extends Controller
         $events = [];
 
         $proposals = $organization->activityProposals()
-            ->whereNotIn('proposal_status', ['DRAFT'])
+            ->whereNotIn('status', ['draft'])
             ->whereNotNull('proposed_start_date')
             ->orderBy('proposed_start_date')
             ->orderBy('id')
@@ -271,7 +282,7 @@ class OrganizationController extends Controller
                 }
             }
 
-            $normalizedStatus = strtoupper((string) ($proposal->proposal_status ?? 'PENDING'));
+            $normalizedStatus = strtoupper((string) ($proposal->status ?? 'PENDING'));
             $calendarStatus = $normalizedStatus === 'APPROVED' ? 'scheduled' : 'pending';
 
             $events[] = [
@@ -279,7 +290,7 @@ class OrganizationController extends Controller
                 'start' => $start,
                 'end' => $end,
                 'status' => $calendarStatus,
-                'time' => $proposal->proposed_time ? (string) $proposal->proposed_time : null,
+                'time' => $proposal->proposed_start_time ? (string) $proposal->proposed_start_time : null,
                 'venue' => $proposal->venue ? (string) $proposal->venue : null,
             ];
         }
@@ -295,7 +306,7 @@ class OrganizationController extends Controller
         $base = ActivityProposal::query()->where('organization_id', $organization->id);
 
         $nonDraft = (clone $base)
-            ->whereNotIn('proposal_status', ['DRAFT'])
+            ->whereNotIn('status', ['draft'])
             ->orderByDesc('updated_at')
             ->first();
 
@@ -334,12 +345,12 @@ class OrganizationController extends Controller
             ];
         }
 
-        $presentation = $this->activityProposalStatusPresentation($proposal->proposal_status);
-        $summary = SubmissionRoutingProgress::summaryForActivityProposal($proposal->proposal_status);
+        $presentation = $this->activityProposalStatusPresentation($proposal->status);
+        $summary = SubmissionRoutingProgress::summaryForActivityProposal($proposal->status);
 
         $stages = SubmissionRoutingProgress::stagesForActivityProposal($proposal);
 
-        $statusUpper = strtoupper((string) ($proposal->proposal_status ?? ''));
+        $statusUpper = strtoupper((string) ($proposal->status ?? ''));
 
         $primaryAction = null;
         if (in_array($statusUpper, ['REVISION', 'REVISION_REQUIRED'], true)) {
@@ -377,7 +388,7 @@ class OrganizationController extends Controller
         return [
             'empty' => false,
             'proposal' => $proposal,
-            'status_raw' => $proposal->proposal_status,
+            'status_raw' => $proposal->status,
             'status_label' => $presentation['label'],
             'status_badge_class' => $presentation['badge_class'],
             'stages' => $stages,
@@ -508,7 +519,7 @@ class OrganizationController extends Controller
                 ->with('error', 'Use the Register Organization form in the admin portal.');
         }
 
-        if ($user->role_type !== 'ORG_OFFICER') {
+        if ($user->effectiveRoleType() !== 'ORG_OFFICER') {
             abort(403, 'Only organization officers can submit organization registration.');
         }
 
@@ -565,16 +576,16 @@ class OrganizationController extends Controller
 
         $reqs = collect($validated['requirements'] ?? []);
 
-        $registration = null;
+        $submission = null;
 
-        DB::transaction(function () use ($validated, $reqs, $user, $request, $forAdmin, &$registration): void {
+        DB::transaction(function () use ($validated, $reqs, $user, $request, $forAdmin, &$submission): void {
             $organization = Organization::create([
                 'organization_name' => $validated['organization_name'],
                 'organization_type' => $validated['organization_type'],
                 'college_department' => $this->collegeDepartmentForOrganizationType($validated),
                 'purpose' => $validated['purpose'],
                 'founded_date' => $validated['date_organized'],
-                'organization_status' => 'PENDING',
+                'status' => 'pending',
             ]);
 
             if (! $forAdmin) {
@@ -582,7 +593,7 @@ class OrganizationController extends Controller
                     'organization_id' => $organization->id,
                     'user_id' => $user->id,
                     'position_title' => 'President',
-                    'officer_status' => 'ACTIVE',
+                    'status' => 'active',
                 ]);
             }
 
@@ -593,29 +604,33 @@ class OrganizationController extends Controller
                 "organization-requirements/{$organization->id}/registration"
             );
 
-            $registration = OrganizationRegistration::create([
+            $submission = OrganizationSubmission::create([
                 'organization_id' => $organization->id,
-                'user_id' => $user->id,
-                'academic_year' => $validated['academic_year'],
+                'submitted_by' => $user->id,
+                'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
+                'type' => OrganizationSubmission::TYPE_REGISTRATION,
                 'contact_person' => $validated['contact_person'],
                 'contact_no' => $validated['contact_no'],
                 'contact_email' => $validated['email_address'],
                 'submission_date' => now()->toDateString(),
-                'req_letter_of_intent' => $reqs->contains('letter_of_intent'),
-                'req_application_form' => $reqs->contains('application_form'),
-                'req_by_laws' => $reqs->contains('by_laws'),
-                'req_officers_list' => $reqs->contains('updated_list_of_officers_founders'),
-                'req_dean_endorsement' => $reqs->contains('dean_endorsement_faculty_adviser'),
-                'req_proposed_projects' => $reqs->contains('proposed_projects_budget'),
-                'req_others' => $reqs->contains('others'),
-                'req_others_specify' => $validated['requirements_other'] ?? null,
-                'requirement_files' => $filePaths === [] ? null : $filePaths,
+                'notes' => null,
+                'status' => OrganizationSubmission::STATUS_PENDING,
+                'current_approval_step' => 0,
             ]);
+
+            $this->syncSubmissionRequirements(
+                $submission,
+                self::REGISTRATION_REQUIREMENT_KEYS,
+                $reqs,
+                (string) ($validated['requirements_other'] ?? '')
+            );
+            $this->attachRequirementFiles($submission, $filePaths, $user->id);
+
         });
 
         if ($forAdmin) {
             return redirect()
-                ->route('admin.registrations.show', $registration)
+                ->route('admin.registrations.show', $submission)
                 ->with('success', 'Registration application submitted successfully. File under the submitting SDAO admin account.');
         }
 
@@ -643,6 +658,12 @@ class OrganizationController extends Controller
         $officerValidationPending = $user && ! $user->isOfficerValidated();
         $renewalAccess = $this->renewalAccessForRso($user);
         $renewalBlockedNoOrganization = $organization === null;
+        $renewalIsBlocked = $officerValidationPending || $renewalBlockedNoOrganization || ! ($renewalAccess['allowed'] ?? false);
+        $renewalBlockedReason = $officerValidationPending
+            ? 'Your student officer account is pending SDAO validation. You cannot submit or edit organization forms until validation is complete.'
+            : ($renewalBlockedNoOrganization
+                ? 'No organization is linked to your account. Register your organization before submitting a renewal application.'
+                : (string) ($renewalAccess['message'] ?? ''));
 
         return view('organizations.renew', compact(
             'organization',
@@ -650,6 +671,8 @@ class OrganizationController extends Controller
             'officerValidationPending',
             'renewalBlockedNoOrganization',
             'renewalAccess',
+            'renewalIsBlocked',
+            'renewalBlockedReason',
         ));
     }
 
@@ -741,41 +764,38 @@ class OrganizationController extends Controller
             'college_department' => $this->collegeDepartmentForOrganizationType($validated),
         ]);
 
-        $renewal = OrganizationRenewal::create([
+        $submission = OrganizationSubmission::create([
             'organization_id' => $organization->id,
-            'user_id' => $user->id,
-            'academic_year' => $validated['academic_year'],
+            'submitted_by' => $user->id,
+            'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
+            'type' => OrganizationSubmission::TYPE_RENEWAL,
             'contact_person' => $validated['contact_person'],
             'contact_no' => $validated['contact_no'],
             'contact_email' => $validated['email_address'],
             'submission_date' => now()->toDateString(),
-            'req_letter_of_intent' => $reqs->contains('letter_of_intent'),
-            'req_application_form' => $reqs->contains('application_form'),
-            'req_by_laws' => $reqs->contains('by_laws_updated_if_applicable'),
-            'req_officers_list' => $reqs->contains('updated_list_of_officers_founders_ay'),
-            'req_dean_endorsement' => $reqs->contains('dean_endorsement_faculty_adviser'),
-            'req_proposed_projects' => $reqs->contains('proposed_projects_budget'),
-            'req_past_projects' => $reqs->contains('past_projects'),
-            'req_financial_statement' => $reqs->contains('financial_statement_previous_ay'),
-            'req_evaluation_summary' => $reqs->contains('evaluation_summary_past_projects'),
-            'req_others' => $reqs->contains('others'),
-            'req_others_specify' => $validated['requirements_other'] ?? null,
+            'notes' => null,
+            'status' => OrganizationSubmission::STATUS_PENDING,
+            'current_approval_step' => 0,
         ]);
 
         $filePaths = $this->storeRequirementFilesForKeys(
             $request,
             $reqs,
             self::RENEWAL_REQUIREMENT_KEYS,
-            "organization-requirements/{$organization->id}/renewals/{$renewal->id}"
+            "organization-requirements/{$organization->id}/renewals/{$submission->id}"
         );
 
-        if ($filePaths !== []) {
-            $renewal->update(['requirement_files' => $filePaths]);
-        }
+        $this->syncSubmissionRequirements(
+            $submission,
+            self::RENEWAL_REQUIREMENT_KEYS,
+            $reqs,
+            (string) ($validated['requirements_other'] ?? '')
+        );
+        $this->attachRequirementFiles($submission, $filePaths, $user->id);
 
         if ($isAdminRenewal) {
             return redirect()
-                ->route('admin.renewals.show', $renewal)
+                ->route('admin.renewals.show', $submission)
                 ->with('success', 'Renewal application submitted successfully. Recorded under your SDAO admin account.');
         }
 
@@ -820,9 +840,10 @@ class OrganizationController extends Controller
             ];
         }
 
-        $alreadyRenewedThisYear = OrganizationRenewal::query()
+        $alreadyRenewedThisYear = OrganizationSubmission::query()
+            ->renewals()
             ->where('organization_id', $organization->id)
-            ->where('academic_year', $activeAcademicYear)
+            ->whereHas('academicTerm', fn ($q) => $q->where('academic_year', $activeAcademicYear))
             ->exists();
 
         if ($alreadyRenewedThisYear) {
@@ -869,8 +890,9 @@ class OrganizationController extends Controller
 
         $revisionRegistration = null;
         if ($organization && $organization->isProfileRevisionRequested()) {
-            $revisionRegistration = $organization->registrations()
-                ->where('registration_status', 'REVISION')
+            $revisionRegistration = $organization->submissions()
+                ->registrations()
+                ->where('status', OrganizationSubmission::STATUS_REVISION)
                 ->latest('updated_at')
                 ->latest('id')
                 ->first();
@@ -889,7 +911,7 @@ class OrganizationController extends Controller
     }
 
     /**
-     * @return array{0: OrganizationRegistration|OrganizationRenewal|null, 1: string|null}
+     * @return array{0: OrganizationSubmission|null, 1: string|null}
      */
     private function resolveProfileActiveApplication(?Organization $organization): array
     {
@@ -897,15 +919,26 @@ class OrganizationController extends Controller
             return [null, null];
         }
 
-        $registration = $organization->registrations()
+        $registration = $organization->submissions()
+            ->registrations()
+            ->with('academicTerm')
             ->latest('submission_date')
             ->latest('id')
             ->first();
 
-        $renewal = $organization->renewals()
+        $renewal = $organization->submissions()
+            ->renewals()
+            ->with('academicTerm')
             ->latest('submission_date')
             ->latest('id')
             ->first();
+
+        if ($registration) {
+            $registration->setAttribute('academic_year', $registration->academicTerm?->academic_year);
+        }
+        if ($renewal) {
+            $renewal->setAttribute('academic_year', $renewal->academicTerm?->academic_year);
+        }
 
         $renTs = $renewal?->submission_date?->timestamp ?? 0;
         $regTs = $registration?->submission_date?->timestamp ?? 0;
@@ -921,17 +954,13 @@ class OrganizationController extends Controller
         return [null, null];
     }
 
-    private function workflowStatusFromApplication(OrganizationRegistration|OrganizationRenewal|null $application): ?string
+    private function workflowStatusFromApplication(?OrganizationSubmission $application): ?string
     {
         if (! $application) {
             return null;
         }
 
-        if ($application instanceof OrganizationRenewal) {
-            return $application->renewal_status;
-        }
-
-        return $application->registration_status;
+        return $application->legacyStatus();
     }
 
     public function updateProfile(Request $request)
@@ -960,14 +989,18 @@ class OrganizationController extends Controller
             'organization_type' => ['required', 'string', 'max:50'],
             'college_department' => ['required', 'string', 'max:100'],
             'purpose' => ['required', 'string'],
-            'adviser_name' => ['nullable', 'string', 'max:100'],
             'founded_date' => ['nullable', 'date'],
         ]);
 
-        $organization->update(array_merge($validated, [
-            'profile_information_revision_requested' => false,
-            'profile_revision_notes' => null,
-        ]));
+        $organization->update($validated);
+
+        OrganizationProfileRevision::query()
+            ->where('organization_id', $organization->id)
+            ->where('status', 'open')
+            ->update([
+                'status' => 'addressed',
+                'addressed_at' => now(),
+            ]);
 
         return redirect()
             ->route('organizations.profile')
@@ -984,16 +1017,23 @@ class OrganizationController extends Controller
             return redirect()->route('admin.submissions.activity-calendar');
         }
 
-        $organization = $this->resolveOrganizationForWorkflows($request);
+        $officerAccess = $this->officerSubmissionAccessContext($request);
+        if (! $officerAccess['authorized']) {
+            abort(403, 'Only organization officers can access this feature.');
+        }
+
+        $organization = $officerAccess['organization'];
+        $officerValidationPending = $officerAccess['officer_validation_pending'];
 
         if (! $organization) {
             return view('organizations.activity-calendar-submission', [
                 'organization' => null,
                 'latestCalendar' => null,
                 'calendarSubmittedLocked' => false,
-                // Reuse the existing blocked-message UI on the feature page.
-                'officerValidationPending' => true,
-                'blockedMessage' => 'Your account is not yet linked to an active organization. You cannot submit an activity calendar until your officer record is activated.',
+                'officerValidationPending' => $officerValidationPending,
+                'blockedMessage' => $officerAccess['blocked_message'],
+                'isBlocked' => true,
+                'blockedReason' => $officerAccess['blocked_message'],
             ]);
         }
 
@@ -1006,13 +1046,21 @@ class OrganizationController extends Controller
             ->first();
 
         $calendarSubmittedLocked = $latestCalendar !== null
-            && strtoupper((string) $latestCalendar->calendar_status) !== 'REVISION';
+            && strtoupper((string) $latestCalendar->status) !== 'REVISION';
+        $isBlocked = $officerValidationPending || $calendarSubmittedLocked;
+        $blockedReason = $officerValidationPending
+            ? 'Your student officer account is pending SDAO validation. You cannot submit activity calendars until validation is complete.'
+            : ($calendarSubmittedLocked
+                ? 'This activity calendar has already been submitted and can no longer be edited.'
+                : null);
 
         return view('organizations.activity-calendar-submission', [
             'organization' => $organization,
             'latestCalendar' => $latestCalendar,
             'calendarSubmittedLocked' => $calendarSubmittedLocked,
-            'officerValidationPending' => ! $user->isOfficerValidated(),
+            'officerValidationPending' => $officerValidationPending,
+            'isBlocked' => $isBlocked,
+            'blockedReason' => $blockedReason,
         ]);
     }
 
@@ -1028,12 +1076,6 @@ class OrganizationController extends Controller
                 ->with('error', 'Use the Submit Activity Calendar form in the admin portal.');
         }
 
-        if (! $user->isOfficerValidated()) {
-            return redirect()
-                ->route('organizations.activity-calendar-submission')
-                ->with('error', 'Your student officer account is pending SDAO validation.');
-        }
-
         if ($user->isSuperAdmin()) {
             $request->validate([
                 'organization_name' => ['required', 'string', 'max:255'],
@@ -1045,7 +1087,17 @@ class OrganizationController extends Controller
                     ->withInput();
             }
         } else {
-            $organization = $this->resolveOrganizationForWorkflows($request);
+            $officerAccess = $this->officerSubmissionAccessContext($request);
+            if (! $officerAccess['authorized']) {
+                abort(403, 'Only organization officers can access this feature.');
+            }
+            if ($officerAccess['officer_validation_pending']) {
+                return redirect()
+                    ->route('organizations.activity-calendar-submission')
+                    ->with('error', 'Your student officer account is pending SDAO validation.');
+            }
+
+            $organization = $officerAccess['organization'];
             if (! $organization) {
                 return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
             }
@@ -1057,7 +1109,7 @@ class OrganizationController extends Controller
             ->latest('id')
             ->first();
 
-        if ($latestLockedCalendar && strtoupper((string) $latestLockedCalendar->calendar_status) !== 'REVISION') {
+        if ($latestLockedCalendar && strtolower((string) $latestLockedCalendar->status) !== 'revision') {
             $calUrl = $isAdminCalendar
                 ? route('admin.submissions.activity-calendar')
                 : route('organizations.activity-calendar-submission');
@@ -1077,22 +1129,19 @@ class OrganizationController extends Controller
             'term' => ['required', 'string', Rule::in(['term_1', 'term_2', 'term_3'])],
             'organization_name' => ['required', 'string', 'max:255'],
             'date_submitted' => ['required', 'date'],
-            'activities' => ['required', 'array', 'min:5'],
+            'activities' => ['required', 'array'],
             'activities.*.date' => ['required', 'date'],
-            'activities.*.name' => ['required', 'string', 'max:500'],
-            'activities.*.sdg' => ['required', 'string', 'max:64'],
-            'activities.*.venue' => ['required', 'string', 'max:255'],
-            'activities.*.participant_program' => ['required', 'string', 'max:2000'],
-            'activities.*.budget' => ['required', 'string', 'max:255'],
-        ], [
-            'activities.min' => 'Add at least five activities before submitting the activity calendar.',
+            'activities.*.name' => ['required', 'string'],
+            'activities.*.sdg' => ['required', 'string'],
+            'activities.*.venue' => ['required', 'string'],
+            'activities.*.participant_program' => ['required', 'string'],
+            'activities.*.budget' => ['required', 'numeric'],
         ]);
 
         $hasPendingSubmission = ActivityCalendar::query()
             ->where('organization_id', $organization->id)
-            ->where('academic_year', $validated['academic_year'])
-            ->where('semester', $validated['term'])
-            ->where('calendar_status', 'PENDING')
+            ->where('academic_term_id', $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']))
+            ->where('status', 'pending')
             ->exists();
 
         if ($hasPendingSubmission) {
@@ -1103,15 +1152,13 @@ class OrganizationController extends Controller
                 ->withInput();
         }
 
-        DB::transaction(function () use ($organization, $validated): void {
+        DB::transaction(function () use ($organization, $validated, $user): void {
             $calendar = ActivityCalendar::create([
                 'organization_id' => $organization->id,
-                'submitted_organization_name' => $validated['organization_name'],
-                'academic_year' => $validated['academic_year'],
-                'semester' => $validated['term'],
-                'calendar_file' => null,
+                'submitted_by' => $user->id,
+                'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
                 'submission_date' => $validated['date_submitted'],
-                'calendar_status' => 'PENDING',
+                'status' => 'pending',
             ]);
 
             foreach ($validated['activities'] as $row) {
@@ -1119,10 +1166,11 @@ class OrganizationController extends Controller
                     'activity_calendar_id' => $calendar->id,
                     'activity_date' => $row['date'],
                     'activity_name' => $row['name'],
-                    'sdg' => $row['sdg'],
+                    'target_sdg' => $row['sdg'],
                     'venue' => $row['venue'],
-                    'participant_program' => $row['participant_program'],
-                    'budget' => $row['budget'],
+                    'target_participants' => $row['participant_program'],
+                    'target_program' => null,
+                    'estimated_budget' => $row['budget'],
                 ]);
             }
         });
@@ -1242,11 +1290,8 @@ class OrganizationController extends Controller
             'budget_source' => ['required', 'string', Rule::in(['RSO Fund', 'RSO Savings', 'External'])],
             'activity_date' => ['required', 'date'],
             'venue' => ['required', 'string', 'max:255'],
-            'request_letter_has_rationale' => ['accepted'],
-            'request_letter_has_objectives' => ['accepted'],
-            'request_letter_has_program' => ['accepted'],
             'request_letter' => [
-                Rule::requiredIf(fn () => ! $editableRequest || ! $editableRequest->request_letter_path),
+                Rule::requiredIf(fn () => ! $editableRequest),
                 'nullable',
                 'file',
                 'mimes:pdf,doc,docx,jpg,jpeg,png,webp',
@@ -1260,7 +1305,7 @@ class OrganizationController extends Controller
                 'max:10240',
             ],
             'post_survey_form' => [
-                Rule::requiredIf(fn () => ! $editableRequest || ! $editableRequest->post_survey_form_path),
+                Rule::requiredIf(fn () => ! $editableRequest),
                 'nullable',
                 'file',
                 'mimes:pdf,doc,docx,jpg,jpeg,png,webp',
@@ -1290,12 +1335,12 @@ class OrganizationController extends Controller
         }
 
         $basePath = 'activity-request-forms/'.$organization->id.'/'.Str::uuid()->toString();
-        $requestLetterPath = $editableRequest?->request_letter_path;
+        $requestLetterPath = null;
         if ($request->hasFile('request_letter')) {
             $requestLetterPath = $request->file('request_letter')->store($basePath, 'public');
         }
 
-        $speakerResumePath = $editableRequest?->speaker_resume_path;
+        $speakerResumePath = null;
         if ($request->hasFile('speaker_resume')) {
             $speakerResumePath = $request->file('speaker_resume')->store($basePath, 'public');
         }
@@ -1303,16 +1348,15 @@ class OrganizationController extends Controller
             $speakerResumePath = null;
         }
 
-        $postSurveyPath = $editableRequest?->post_survey_form_path;
+        $postSurveyPath = null;
         if ($request->hasFile('post_survey_form')) {
             $postSurveyPath = $request->file('post_survey_form')->store($basePath, 'public');
         }
 
         $payload = [
             'organization_id' => $organization->id,
-            'user_id' => $user->id,
+            'submitted_by' => $user->id,
             'activity_calendar_entry_id' => $selectedCalendarEntry?->id,
-            'rso_name' => $validated['rso_name'],
             'activity_title' => $validated['activity_title'],
             'partner_entities' => $validated['partner_entities'] ?? null,
             'nature_of_activity' => $validated['nature_of_activity'],
@@ -1324,13 +1368,8 @@ class OrganizationController extends Controller
             'budget_source' => $validated['budget_source'],
             'activity_date' => $validated['activity_date'],
             'venue' => $validated['venue'],
-            'request_letter_has_rationale' => true,
-            'request_letter_has_objectives' => true,
-            'request_letter_has_program' => true,
-            'request_letter_path' => $requestLetterPath,
-            'speaker_resume_path' => $speakerResumePath,
-            'post_survey_form_path' => $postSurveyPath,
-            'used_for_proposal_at' => null,
+            'promoted_to_proposal_id' => null,
+            'promoted_at' => null,
         ];
 
         if ($editableRequest) {
@@ -1338,6 +1377,38 @@ class OrganizationController extends Controller
             $activityRequest = $editableRequest;
         } else {
             $activityRequest = ActivityRequestForm::create($payload);
+        }
+
+        if ($request->hasFile('request_letter')) {
+            $this->upsertSingleAttachment(
+                $activityRequest,
+                $user->id,
+                Attachment::TYPE_REQUEST_LETTER,
+                (string) $requestLetterPath,
+                $request->file('request_letter')
+            );
+        }
+        if ($request->hasFile('speaker_resume')) {
+            $this->upsertSingleAttachment(
+                $activityRequest,
+                $user->id,
+                Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+                (string) $speakerResumePath,
+                $request->file('speaker_resume')
+            );
+        } elseif (! in_array('seminar_workshop', (array) $validated['activity_types'], true)) {
+            $activityRequest->attachments()
+                ->where('file_type', Attachment::TYPE_REQUEST_SPEAKER_RESUME)
+                ->delete();
+        }
+        if ($request->hasFile('post_survey_form')) {
+            $this->upsertSingleAttachment(
+                $activityRequest,
+                $user->id,
+                Attachment::TYPE_REQUEST_POST_SURVEY,
+                (string) $postSurveyPath,
+                $request->file('post_survey_form')
+            );
         }
 
         return redirect()
@@ -1357,14 +1428,21 @@ class OrganizationController extends Controller
             return redirect()->route('admin.submissions.activity-proposal');
         }
 
-        $organization = $this->resolveOrganizationForWorkflows($request);
+        $officerAccess = $this->officerSubmissionAccessContext($request);
+        if (! $officerAccess['authorized']) {
+            abort(403, 'Only organization officers can access this feature.');
+        }
+
+        $organization = $officerAccess['organization'];
+        $officerValidationPending = $officerAccess['officer_validation_pending'];
 
         if (! $organization) {
             return view('organizations.activity-proposal-submission', [
                 'organization' => null,
-                'officerValidationPending' => true,
-                // Reuse the existing blocked-message UI on the feature page.
-                'blockedMessage' => 'Your account is not yet linked to an active organization. You cannot submit proposals until your officer record is activated.',
+                'officerValidationPending' => $officerValidationPending,
+                'blockedMessage' => $officerAccess['blocked_message'],
+                'isBlocked' => true,
+                'blockedReason' => $officerAccess['blocked_message'],
                 'proposalSource' => 'unlisted',
                 'calendarEntry' => null,
                 'linkedProposal' => null,
@@ -1393,6 +1471,7 @@ class OrganizationController extends Controller
         $viewData = $this->activityProposalFormViewData($request, $organization, false, $requestForm);
         if (! $viewData instanceof RedirectResponse) {
             $viewData['proposalSource'] = $proposalSource;
+            $viewData['officerValidationPending'] = $officerValidationPending;
         }
 
         return $viewData instanceof RedirectResponse
@@ -1449,9 +1528,10 @@ class OrganizationController extends Controller
             $linkedProposal = ActivityProposal::query()
                 ->where('organization_id', $organization->id)
                 ->where('activity_calendar_entry_id', $calendarEntry->id)
+                ->with('budgetItems')
                 ->first();
 
-            if ($linkedProposal && ! in_array($linkedProposal->proposal_status, ['DRAFT', 'REVISION'], true)) {
+            if ($linkedProposal && ! in_array(strtoupper((string) $linkedProposal->status), ['DRAFT', 'REVISION'], true)) {
                 return redirect()
                     ->route($proposalShowRoute, $linkedProposal)
                     ->with('error', 'This activity already has a submitted proposal. Open it from Activity Submission to view details.');
@@ -1513,16 +1593,20 @@ class OrganizationController extends Controller
                     ->withInput();
             }
         } else {
-            $organization = $this->resolveOrganizationForWorkflows($request);
+            $officerAccess = $this->officerSubmissionAccessContext($request);
+            if (! $officerAccess['authorized']) {
+                abort(403, 'Only organization officers can access this feature.');
+            }
+            if ($officerAccess['officer_validation_pending']) {
+                return redirect()
+                    ->route('organizations.activity-proposal-submission')
+                    ->with('error', 'Your student officer account is pending SDAO validation.');
+            }
+
+            $organization = $officerAccess['organization'];
             if (! $organization) {
                 return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
             }
-        }
-
-        if (! $user->isOfficerValidated()) {
-            return redirect()
-                ->route('organizations.activity-proposal-submission')
-                ->with('error', 'Your student officer account is pending SDAO validation.');
         }
 
         if (! $isAdminProposal) {
@@ -1560,7 +1644,7 @@ class OrganizationController extends Controller
                 ->first();
         }
 
-        if ($existing && ! in_array($existing->proposal_status, ['DRAFT', 'REVISION'], true)) {
+        if ($existing && ! in_array(strtoupper((string) $existing->status), ['DRAFT', 'REVISION'], true)) {
             return redirect()
                 ->route($isAdminProposal ? 'admin.proposals.show' : 'organizations.activity-submission.proposals.show', $existing)
                 ->with('error', 'This proposal can no longer be edited from the submission form. View it under Activity Submission.');
@@ -1581,7 +1665,7 @@ class OrganizationController extends Controller
             ],
             'organization_name' => ['required', 'string', 'max:255'],
             'organization_logo' => [
-                Rule::requiredIf(fn () => $existing === null || ! $existing->organization_logo_path),
+                Rule::requiredIf(fn () => $existing === null || ! $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_LOGO)),
                 'nullable',
                 'file',
                 'image',
@@ -1604,7 +1688,7 @@ class OrganizationController extends Controller
             'external_funding_support' => [
                 Rule::requiredIf(fn () => ! $asDraft
                     && $request->input('source_of_funding') === 'External'
-                    && ($existing === null || ! $existing->external_funding_support_path)),
+                    && ($existing === null || ! $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING))),
                 'nullable',
                 'file',
                 'mimes:pdf,jpg,jpeg,png,webp',
@@ -1665,31 +1749,31 @@ class OrganizationController extends Controller
         }
 
         if ($asDraft) {
-            if ($existing && $existing->proposal_status === 'REVISION') {
-                $proposalStatus = 'REVISION';
+            if ($existing && strtoupper((string) $existing->status) === 'REVISION') {
+                $proposalStatus = 'revision';
                 $submissionDate = $existing->submission_date;
             } else {
-                $proposalStatus = 'DRAFT';
+                $proposalStatus = 'draft';
                 $submissionDate = null;
             }
         } else {
-            $proposalStatus = 'PENDING';
+            $proposalStatus = 'pending';
             $submissionDate = now()->toDateString();
         }
 
         $basePath = 'activity-proposals/'.$organization->id;
 
-        $logoPath = $existing?->organization_logo_path;
+        $logoPath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_LOGO);
         if ($request->hasFile('organization_logo')) {
             $logoPath = $request->file('organization_logo')->store($basePath, 'public');
         }
 
-        $resumePath = $existing?->resume_resource_persons_path;
+        $resumePath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME);
         if ($request->hasFile('resume_resource_persons')) {
             $resumePath = $request->file('resume_resource_persons')->store($basePath, 'public');
         }
 
-        $externalFundingPath = $existing?->external_funding_support_path;
+        $externalFundingPath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING);
         if ($validated['source_of_funding'] !== 'External') {
             $externalFundingPath = null;
         } elseif ($request->hasFile('external_funding_support')) {
@@ -1697,37 +1781,32 @@ class OrganizationController extends Controller
         }
 
         $summary = mb_substr(trim(strip_tags($validated['overall_goal'])), 0, 500);
+        [$proposedStartTime, $proposedEndTime] = $this->resolveProposalTimeWindow((string) $validated['proposed_time']);
+        $currentApprovalStep = $existing?->current_approval_step ?? 0;
 
         $payload = [
             'organization_id' => $organization->id,
-            'calendar_id' => $calendarEntry?->activity_calendar_id,
+            'activity_calendar_id' => $calendarEntry?->activity_calendar_id,
             'activity_calendar_entry_id' => $calendarEntry?->id,
-            'user_id' => $user->id,
-            'form_organization_name' => $validated['organization_name'],
-            'organization_logo_path' => $logoPath,
-            'school_code' => $validated['school'],
-            'department_program' => $validated['department_program'],
-            'academic_year' => $validated['academic_year'],
+            'submitted_by' => $user->id,
+            'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
             'activity_title' => $validated['project_activity_title'],
             'activity_description' => $summary !== '' ? $summary : null,
             'proposed_start_date' => $validated['proposed_start_date'],
             'proposed_end_date' => $validated['proposed_end_date'],
-            'proposed_time' => $validated['proposed_time'],
+            'proposed_start_time' => $proposedStartTime,
+            'proposed_end_time' => $proposedEndTime,
             'venue' => $validated['venue'],
             'overall_goal' => $validated['overall_goal'],
             'specific_objectives' => $validated['specific_objectives'],
             'criteria_mechanics' => $validated['criteria_mechanics'],
             'program_flow' => $validated['program_flow'],
+            'target_sdg' => null,
             'estimated_budget' => $validated['proposed_budget'],
             'source_of_funding' => $validated['source_of_funding'],
-            'external_funding_support_path' => $externalFundingPath,
-            'budget_materials_supplies' => $validated['proposed_budget'],
-            'budget_food_beverage' => 0,
-            'budget_other_expenses' => 0,
-            'budget_breakdown_items' => $normalizedBudgetItems,
-            'resume_resource_persons_path' => $resumePath,
             'submission_date' => $submissionDate,
-            'proposal_status' => $proposalStatus,
+            'status' => $proposalStatus,
+            'current_approval_step' => $currentApprovalStep,
         ];
 
         if ($existing) {
@@ -1736,14 +1815,55 @@ class OrganizationController extends Controller
         } else {
             $proposal = ActivityProposal::create($payload);
         }
+        $this->syncProposalBudgetItems($proposal, $normalizedBudgetItems);
+
+        if ($request->hasFile('organization_logo')) {
+            $this->upsertSingleAttachment(
+                $proposal,
+                $user->id,
+                Attachment::TYPE_PROPOSAL_LOGO,
+                (string) $logoPath,
+                $request->file('organization_logo')
+            );
+        }
+        if ($request->hasFile('resume_resource_persons')) {
+            $this->upsertSingleAttachment(
+                $proposal,
+                $user->id,
+                Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
+                (string) $resumePath,
+                $request->file('resume_resource_persons')
+            );
+        }
+        if ($validated['source_of_funding'] === 'External' && $request->hasFile('external_funding_support')) {
+            $this->upsertSingleAttachment(
+                $proposal,
+                $user->id,
+                Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
+                (string) $externalFundingPath,
+                $request->file('external_funding_support')
+            );
+        } elseif ($validated['source_of_funding'] !== 'External') {
+            $proposal->attachments()
+                ->where('file_type', Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING)
+                ->delete();
+        }
 
         if (! $isAdminProposal && ! $asDraft) {
             $requestForm = $this->resolvePendingActivityRequestForm($request, $organization);
             if ($requestForm) {
                 $requestForm->update([
-                    'used_for_proposal_at' => now(),
+                    'promoted_at' => now(),
                 ]);
             }
+        }
+
+        if (! $asDraft) {
+            $this->initializeProposalApprovalWorkflow(
+                $proposal,
+                $user->id,
+                $existing !== null && strtoupper((string) ($existing->status ?? '')) === 'REVISION'
+            );
         }
 
         $successMessage = $asDraft
@@ -1797,16 +1917,16 @@ class OrganizationController extends Controller
         ?ActivityRequestForm $requestForm = null
     ): array {
         if ($linked !== null) {
-            $time = $linked->proposed_time ?? '';
+            $time = $linked->proposed_start_time ?: '';
             if (is_string($time) && strlen($time) >= 8 && str_contains($time, ':')) {
                 $time = substr($time, 0, 5);
             }
 
             return [
-                'organization_name' => $linked->form_organization_name ?? $organization->organization_name,
+                'organization_name' => $organization->organization_name,
                 'academic_year' => $linked->academic_year ?? $this->activeAcademicYear(),
-                'school' => $linked->school_code ?? $schoolPrefill,
-                'department_program' => $linked->department_program ?? $organization->college_department ?? '',
+                'school' => $schoolPrefill,
+                'department_program' => $organization->college_department ?? '',
                 'project_activity_title' => $linked->activity_title ?? '',
                 'proposed_start_date' => optional($linked->proposed_start_date)?->toDateString() ?? '',
                 'proposed_end_date' => optional($linked->proposed_end_date)?->toDateString() ?? '',
@@ -1820,7 +1940,7 @@ class OrganizationController extends Controller
                 'source_of_funding' => in_array((string) ($linked->source_of_funding ?? ''), ['RSO Fund', 'RSO Savings', 'External'], true)
                     ? (string) $linked->source_of_funding
                     : 'RSO Fund',
-                'budget_items' => is_array($linked->budget_breakdown_items) ? $linked->budget_breakdown_items : [],
+                'budget_items' => $this->proposalBudgetItemsForPrefill($linked),
             ];
         }
 
@@ -1870,6 +1990,148 @@ class OrganizationController extends Controller
         ];
 
         return $this->overlayRequestFormPrefill($prefill, $requestForm);
+    }
+
+    /**
+     * @param  array<int, array{material:string,quantity:float,unit_price:float,price:float}>  $normalizedBudgetItems
+     */
+    private function syncProposalBudgetItems(ActivityProposal $proposal, array $normalizedBudgetItems): void
+    {
+        DB::transaction(function () use ($proposal, $normalizedBudgetItems): void {
+            ProposalBudgetItem::query()
+                ->where('activity_proposal_id', $proposal->id)
+                ->delete();
+
+            foreach ($normalizedBudgetItems as $item) {
+                ProposalBudgetItem::query()->create([
+                    'activity_proposal_id' => $proposal->id,
+                    'category' => 'general',
+                    'item_description' => (string) $item['material'],
+                    'quantity' => round((float) $item['quantity'], 2),
+                    'unit_cost' => round((float) $item['unit_price'], 2),
+                    'total_cost' => round((float) $item['price'], 2),
+                ]);
+            }
+        });
+    }
+
+    /**
+     * @param  array<int, array{material:string,quantity:float,unit_price:float,price:float}>  $normalizedBudgetItems
+     * @return array<int, array{line_no:int,material:string,quantity:float,unit_price:float,price:float}>
+     */
+    private function serializeLegacyBudgetItems(array $normalizedBudgetItems): array
+    {
+        return collect($normalizedBudgetItems)
+            ->values()
+            ->map(function (array $item, int $idx): array {
+                return [
+                    'line_no' => $idx + 1,
+                    'material' => (string) $item['material'],
+                    'quantity' => round((float) $item['quantity'], 2),
+                    'unit_price' => round((float) $item['unit_price'], 2),
+                    'price' => round((float) $item['price'], 2),
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{material:string,quantity:float,unit_price:float,price:float}>
+     */
+    private function proposalBudgetItemsForPrefill(ActivityProposal $proposal): array
+    {
+        $normalized = $proposal->budgetItems()
+            ->orderBy('id')
+            ->get()
+            ->map(fn (ProposalBudgetItem $item): array => [
+                'material' => (string) $item->item_description,
+                'quantity' => (float) $item->quantity,
+                'unit_price' => (float) $item->unit_cost,
+                'price' => (float) $item->total_cost,
+            ])
+            ->all();
+
+        if ($normalized !== []) {
+            return $normalized;
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array{0:?string,1:?string}
+     */
+    private function resolveProposalTimeWindow(string $proposedTime): array
+    {
+        $raw = trim($proposedTime);
+        if ($raw === '') {
+            return [null, null];
+        }
+
+        if (preg_match('/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/', $raw, $m) === 1) {
+            return [$m[1], $m[2]];
+        }
+
+        if (preg_match('/^\d{2}:\d{2}$/', $raw) === 1) {
+            return [$raw, null];
+        }
+
+        return [null, null];
+    }
+
+    private function initializeProposalApprovalWorkflow(ActivityProposal $proposal, int $actorId, bool $isResubmission): void
+    {
+        $existingSteps = $proposal->workflowSteps()->count();
+        if ($existingSteps === 0) {
+            $roles = Role::query()
+                ->whereNotNull('approval_level')
+                ->orderBy('approval_level')
+                ->get(['id']);
+
+            $order = 1;
+            foreach ($roles as $role) {
+                ApprovalWorkflowStep::query()->create([
+                    'approvable_type' => ActivityProposal::class,
+                    'approvable_id' => $proposal->id,
+                    'step_order' => $order,
+                    'role_id' => $role->id,
+                    'assigned_to' => null,
+                    'status' => 'pending',
+                    'is_current_step' => $order === 1,
+                    'review_comments' => null,
+                    'acted_at' => null,
+                ]);
+                $order++;
+            }
+            $proposal->update(['current_approval_step' => 1]);
+        } else {
+            // Preserve prior approvals on revision resubmission; re-open only revision-required step.
+            if ($isResubmission) {
+                $proposal->workflowSteps()
+                    ->where('status', 'revision_required')
+                    ->update([
+                        'status' => 'pending',
+                        'is_current_step' => true,
+                        'review_comments' => null,
+                        'acted_at' => null,
+                    ]);
+                $proposal->update([
+                    'current_approval_step' => (int) ($proposal->workflowSteps()->where('is_current_step', true)->value('step_order') ?? 1),
+                ]);
+            }
+        }
+
+        ApprovalLog::query()->create([
+            'approvable_type' => ActivityProposal::class,
+            'approvable_id' => $proposal->id,
+            'workflow_step_id' => $proposal->workflowSteps()->where('is_current_step', true)->value('id'),
+            'actor_id' => $actorId,
+            'action' => $isResubmission ? 'resubmitted' : 'submitted',
+            'from_status' => $isResubmission ? 'REVISION' : 'DRAFT',
+            'to_status' => 'PENDING',
+            'comments' => null,
+            'created_at' => now(),
+        ]);
     }
 
     /**
@@ -2022,30 +2284,62 @@ class OrganizationController extends Controller
 
         $attendancePath = $request->file('attendance_sheet')->store($base, 'public');
 
-        ActivityReport::create([
-            'proposal_id' => $validated['proposal_id'],
+        $report = ActivityReport::create([
+            'activity_proposal_id' => $validated['proposal_id'],
             'organization_id' => $organization->id,
-            'user_id' => $user->id,
+            'submitted_by' => $user->id,
             'report_submission_date' => now()->toDateString(),
-            'report_file' => null,
+            'status' => 'pending',
             'accomplishment_summary' => $validated['summary_description'],
-            'report_status' => 'PENDING',
-            'activity_event_title' => $validated['activity_event_title'],
-            'school_code' => $validated['school'],
-            'department' => $validated['department'],
-            'poster_image_path' => $posterPath,
-            'event_name' => $validated['event_name'],
+            'event_title' => $validated['activity_event_title'],
             'event_starts_at' => $validated['event_starts_at'],
+            'event_ends_at' => $validated['event_starts_at'],
             'activity_chairs' => $validated['activity_chairs'],
             'prepared_by' => $validated['prepared_by'],
             'program_content' => $validated['program_content'],
-            'supporting_photo_paths' => $photoPaths === [] ? null : $photoPaths,
-            'certificate_sample_path' => $certificatePath,
             'evaluation_report' => $validated['evaluation_report'],
             'participants_reached_percent' => $validated['participants_reached_percent'],
-            'evaluation_form_sample_path' => $evaluationFormPath,
-            'attendance_sheet_path' => $attendancePath,
         ]);
+
+        $this->upsertSingleAttachment(
+            $report,
+            $user->id,
+            Attachment::TYPE_REPORT_POSTER,
+            $posterPath,
+            $request->file('poster_image')
+        );
+        $this->syncIndexedAttachments(
+            $report,
+            $user->id,
+            Attachment::TYPE_REPORT_SUPPORTING_PHOTO,
+            $photoPaths,
+            $uploadedPhotos
+        );
+        if ($certificatePath !== null && $request->hasFile('certificate_sample')) {
+            $this->upsertSingleAttachment(
+                $report,
+                $user->id,
+                Attachment::TYPE_REPORT_CERTIFICATE,
+                $certificatePath,
+                $request->file('certificate_sample')
+            );
+        }
+        if ($evaluationFormPath !== null && $request->hasFile('evaluation_form_sample')) {
+            $this->upsertSingleAttachment(
+                $report,
+                $user->id,
+                Attachment::TYPE_REPORT_EVALUATION_FORM,
+                $evaluationFormPath,
+                $request->file('evaluation_form_sample')
+            );
+        }
+        $this->upsertSingleAttachment(
+            $report,
+            $user->id,
+            Attachment::TYPE_REPORT_ATTENDANCE,
+            $attendancePath,
+            $request->file('attendance_sheet')
+        );
 
         return redirect()
             ->route('organizations.after-activity-report')
@@ -2068,7 +2362,7 @@ class OrganizationController extends Controller
         $today = CarbonImmutable::now()->startOfDay();
 
         $proposals = $organization->activityProposals()
-            ->whereNotIn('proposal_status', ['DRAFT'])
+            ->whereNotIn('status', ['draft'])
             ->with('activityReport')
             ->orderByDesc('proposed_start_date')
             ->orderByDesc('id')
@@ -2080,7 +2374,7 @@ class OrganizationController extends Controller
         $dueReminders = [];
 
         foreach ($proposals as $proposal) {
-            $proposalStatus = strtoupper((string) ($proposal->proposal_status ?? 'PENDING'));
+            $proposalStatus = strtoupper((string) ($proposal->status ?? 'PENDING'));
 
             $startDate = $proposal->proposed_start_date?->copy()->startOfDay();
             $endDate = ($proposal->proposed_end_date ?? $proposal->proposed_start_date)?->copy()->startOfDay();
@@ -2118,7 +2412,7 @@ class OrganizationController extends Controller
                 ];
 
                 $dueReminders[] = [
-                    'proposal_id' => $proposal->id,
+                    'activity_proposal_id' => $proposal->id,
                     'activity_title' => (string) $proposal->activity_title,
                     'deadline' => $reportDeadline,
                     'days_remaining' => $daysRemaining,
@@ -2138,7 +2432,7 @@ class OrganizationController extends Controller
                 'id' => $proposal->id,
                 'activity_title' => (string) $proposal->activity_title,
                 'proposal_status' => $proposalStatus,
-                'proposal_status_label' => $this->activityProposalStatusPresentation($proposal->proposal_status)['label'],
+                'proposal_status_label' => $this->activityProposalStatusPresentation($proposal->status)['label'],
                 'start_date' => $startDate,
                 'end_date' => $endDate,
                 'lifecycle_status' => $lifecycleStatus,
@@ -2203,17 +2497,73 @@ class OrganizationController extends Controller
         return Organization::query()->find($officer->organization_id);
     }
 
+    /**
+     * Central officer-side access context for submission pages.
+     * - true 403 only when user is not in officer flow at all
+     * - officer business-rule blocks are surfaced as page-level messages
+     *
+     * @return array{
+     *   authorized: bool,
+     *   officer_validation_pending: bool,
+     *   organization: ?Organization,
+     *   blocked_message: ?string
+     * }
+     */
+    private function officerSubmissionAccessContext(Request $request): array
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+        if (! $user) {
+            return [
+                'authorized' => false,
+                'officer_validation_pending' => false,
+                'organization' => null,
+                'blocked_message' => null,
+            ];
+        }
+
+        $hasOfficerRecord = $user->organizationOfficers()->exists();
+        $isOfficerRole = $user->effectiveRoleType() === 'ORG_OFFICER';
+        $authorized = $isOfficerRole || $hasOfficerRecord;
+
+        if (! $authorized) {
+            return [
+                'authorized' => false,
+                'officer_validation_pending' => false,
+                'organization' => null,
+                'blocked_message' => null,
+            ];
+        }
+
+        $officerValidationPending = ! $user->isOfficerValidated();
+        $organization = $this->resolveOrganizationForWorkflows($request);
+
+        $blockedMessage = null;
+        if (! $organization) {
+            $blockedMessage = $officerValidationPending
+                ? 'Your student officer account is pending SDAO validation. You cannot submit or edit forms until validation is complete.'
+                : 'Your account is not yet linked to an active organization. You cannot submit or edit forms until your officer record is activated.';
+        }
+
+        return [
+            'authorized' => true,
+            'officer_validation_pending' => $officerValidationPending,
+            'organization' => $organization,
+            'blocked_message' => $blockedMessage,
+        ];
+    }
+
     private function resolveActiveOfficer(Request $request): ?OrganizationOfficer
     {
         /** @var User|null $user */
         $user = $request->user();
 
-        if (! $user || $user->role_type !== 'ORG_OFFICER') {
-            abort(403, 'Only organization officers can access this feature.');
+        if (! $user || $user->effectiveRoleType() !== 'ORG_OFFICER') {
+            return null;
         }
 
         return $user->organizationOfficers()
-            ->where('officer_status', 'ACTIVE')
+            ->where('status', 'active')
             ->orderByDesc('id')
             ->first();
     }
@@ -2228,7 +2578,7 @@ class OrganizationController extends Controller
         return ActivityRequestForm::query()
             ->whereKey($requestId)
             ->where('organization_id', $organization->id)
-            ->whereNull('used_for_proposal_at')
+            ->whereNull('promoted_at')
             ->first();
     }
 
@@ -2242,8 +2592,190 @@ class OrganizationController extends Controller
         return ActivityRequestForm::query()
             ->whereKey($requestId)
             ->where('organization_id', $organization->id)
-            ->whereNull('used_for_proposal_at')
+            ->whereNull('promoted_at')
             ->first();
+    }
+
+    private function resolveOrCreateAcademicTermId(string $academicYear): int
+    {
+        $term = \App\Models\AcademicTerm::query()
+            ->where('academic_year', $academicYear)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->first();
+
+        if (! $term) {
+            $term = \App\Models\AcademicTerm::query()
+                ->where('academic_year', $academicYear)
+                ->orderBy('id')
+                ->first();
+        }
+
+        if ($term) {
+            return (int) $term->id;
+        }
+
+        $startYear = (int) now()->format('Y');
+        if (preg_match('/^(\d{4})-(\d{4})$/', $academicYear, $m) === 1) {
+            $startYear = (int) $m[1];
+        }
+
+        return (int) \App\Models\AcademicTerm::query()->create([
+            'academic_year' => $academicYear,
+            'semester' => 'first',
+            'starts_at' => sprintf('%d-06-01', $startYear),
+            'ends_at' => sprintf('%d-10-31', $startYear),
+            'is_active' => false,
+        ])->id;
+    }
+
+    private function syncSubmissionRequirements(
+        OrganizationSubmission $submission,
+        array $allowedKeys,
+        Collection $selectedKeys,
+        string $requirementsOther
+    ): void {
+        $labels = $this->requirementLabelMap();
+
+        foreach ($allowedKeys as $key) {
+            $label = $labels[$key] ?? str_replace('_', ' ', $key);
+            if ($key === 'others' && trim($requirementsOther) !== '') {
+                $label .= ' ('.trim($requirementsOther).')';
+            }
+
+            SubmissionRequirement::query()->updateOrCreate(
+                [
+                    'submission_id' => $submission->id,
+                    'requirement_key' => $key,
+                ],
+                [
+                    'label' => $label,
+                    'is_submitted' => $selectedKeys->contains($key),
+                ]
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, string>  $filePaths
+     */
+    private function attachRequirementFiles(OrganizationSubmission $submission, array $filePaths, int $uploadedBy): void
+    {
+        foreach ($filePaths as $requirementKey => $storedPath) {
+            if (! is_string($storedPath) || trim($storedPath) === '') {
+                continue;
+            }
+
+            Attachment::query()->updateOrCreate(
+                [
+                    'attachable_type' => OrganizationSubmission::class,
+                    'attachable_id' => $submission->id,
+                    'file_type' => Attachment::fileTypeForSubmissionRequirement($submission->type).':'.$requirementKey,
+                    'stored_path' => $storedPath,
+                ],
+                [
+                    'uploaded_by' => $uploadedBy,
+                    'original_name' => basename($storedPath),
+                    'mime_type' => null,
+                    'file_size_kb' => null,
+                ]
+            );
+        }
+    }
+
+    private function upsertSingleAttachment(
+        Model $attachable,
+        int $uploadedBy,
+        string $fileType,
+        string $storedPath,
+        ?UploadedFile $uploadedFile = null
+    ): void {
+        if (trim($storedPath) === '') {
+            return;
+        }
+
+        Attachment::query()->updateOrCreate(
+            [
+                'attachable_type' => $attachable::class,
+                'attachable_id' => (int) $attachable->getKey(),
+                'file_type' => $fileType,
+            ],
+            [
+                'uploaded_by' => $uploadedBy,
+                'original_name' => $uploadedFile?->getClientOriginalName() ?: basename($storedPath),
+                'stored_path' => $storedPath,
+                'mime_type' => $uploadedFile?->getClientMimeType(),
+                'file_size_kb' => $uploadedFile ? (int) ceil(((int) $uploadedFile->getSize()) / 1024) : null,
+            ]
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $storedPaths
+     * @param  array<int, UploadedFile>  $uploadedFiles
+     */
+    private function syncIndexedAttachments(
+        Model $attachable,
+        int $uploadedBy,
+        string $fileTypePrefix,
+        array $storedPaths,
+        array $uploadedFiles = []
+    ): void {
+        foreach ($storedPaths as $idx => $storedPath) {
+            if (! is_string($storedPath) || trim($storedPath) === '') {
+                continue;
+            }
+
+            $uploadedFile = $uploadedFiles[$idx] ?? null;
+            if ($uploadedFile !== null && ! $uploadedFile instanceof UploadedFile) {
+                $uploadedFile = null;
+            }
+
+            $this->upsertSingleAttachment(
+                $attachable,
+                $uploadedBy,
+                $fileTypePrefix.':'.$idx,
+                $storedPath,
+                $uploadedFile
+            );
+        }
+    }
+
+    private function attachmentPath(?Model $attachable, string $fileType): ?string
+    {
+        if (! $attachable || ! method_exists($attachable, 'attachments')) {
+            return null;
+        }
+
+        $attachment = $attachable->attachments()
+            ->where('file_type', $fileType)
+            ->latest('id')
+            ->first();
+
+        return ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '')
+            ? $attachment->stored_path
+            : null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function requirementLabelMap(): array
+    {
+        return [
+            'letter_of_intent' => 'Letter of intent',
+            'application_form' => 'Application form',
+            'by_laws' => 'By-laws',
+            'updated_list_of_officers_founders' => 'Updated list of officers / founders',
+            'dean_endorsement_faculty_adviser' => 'Dean endorsement (faculty adviser)',
+            'proposed_projects_budget' => 'Proposed projects and budget',
+            'others' => 'Other requirement',
+            'by_laws_updated_if_applicable' => 'By-laws (if updated)',
+            'updated_list_of_officers_founders_ay' => 'Updated list of officers / founders (AY)',
+            'past_projects' => 'Past projects',
+            'financial_statement_previous_ay' => 'Financial statement (previous AY)',
+            'evaluation_summary_past_projects' => 'Evaluation summary (past projects)',
+        ];
     }
 
     /**

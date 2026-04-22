@@ -11,7 +11,7 @@ class CommunicationMessage extends Model
 
     protected $fillable = [
         'thread_id',
-        'user_id',
+        'sent_by',
         'message_content',
         'sent_at',
         'is_read',
@@ -32,6 +32,6 @@ class CommunicationMessage extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'sent_by');
     }
 }

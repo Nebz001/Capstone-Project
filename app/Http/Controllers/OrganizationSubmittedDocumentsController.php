@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
+use App\Models\Attachment;
 use App\Models\Organization;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
+use App\Models\OrganizationSubmission;
 use App\Models\User;
 use App\Support\SubmissionRoutingProgress;
 use Illuminate\Contracts\View\View;
@@ -97,10 +99,10 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         $activeOfficer = null;
         $hasAnyOfficerRecord = false;
-        if ($user && ($user->role_type ?? null) === 'ORG_OFFICER') {
+        if ($user && $user->effectiveRoleType() === 'ORG_OFFICER') {
             $hasAnyOfficerRecord = $user->organizationOfficers()->exists();
             $activeOfficer = $user->organizationOfficers()
-                ->where('officer_status', 'ACTIVE')
+                ->where('status', 'active')
                 ->orderByDesc('id')
                 ->first();
         }
@@ -182,12 +184,13 @@ class OrganizationSubmittedDocumentsController extends Controller
         ]);
     }
 
-    public function showSubmittedRegistration(Request $request, OrganizationRegistration $registration): View
+    public function showSubmittedRegistration(Request $request, OrganizationSubmission $submission): View
     {
-        $this->ensureOfficerOwnsOrganization($request, (int) $registration->organization_id);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
-        $sp = $this->submissionStatusPresentation($registration->registration_status);
-        $fileLinks = $this->registrationFileLinks($registration);
+        $sp = $this->submissionStatusPresentation($submission->legacyStatus());
+        $fileLinks = $this->registrationFileLinksFromSubmission($submission);
 
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $this->submittedDocumentsListUrl($request),
@@ -195,38 +198,36 @@ class OrganizationSubmittedDocumentsController extends Controller
             'subtitle' => 'Organization registration application on file with SDAO.',
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
-            'metaRows' => $this->registrationMetaRows($registration),
-            'remarkHighlight' => $this->registrationRemarksPreview($registration),
+            'metaRows' => $this->registrationMetaRowsFromSubmission($submission),
+            'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
             'fileLinks' => $fileLinks,
-            'workflowLinks' => $this->registrationWorkflowLinks($registration),
+            'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.register')),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Organization registration',
-            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($registration->registration_status),
-            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($registration->registration_status),
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($submission->legacyStatus()),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($submission->legacyStatus()),
         ]);
     }
 
-    public function streamSubmittedRegistrationRequirementFile(Request $request, OrganizationRegistration $registration, string $key): StreamedResponse
+    public function streamSubmittedRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
     {
-        $this->ensureOfficerOwnsOrganization($request, (int) $registration->organization_id);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
         if (! in_array($key, self::REGISTRATION_FILE_KEYS, true)) {
             abort(404);
         }
 
-        return $this->streamRequirementPath(
-            $registration->requirement_files,
-            $key,
-            'organization-requirements/'.(int) $registration->organization_id.'/registration/'
-        );
+        return $this->streamSubmissionRequirementAttachment($submission, $key);
     }
 
-    public function showSubmittedRenewal(Request $request, OrganizationRenewal $renewal): View
+    public function showSubmittedRenewal(Request $request, OrganizationSubmission $submission): View
     {
-        $this->ensureOfficerOwnsOrganization($request, (int) $renewal->organization_id);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
-        $sp = $this->submissionStatusPresentation($renewal->renewal_status);
-        $fileLinks = $this->renewalFileLinks($renewal);
+        $sp = $this->submissionStatusPresentation($submission->legacyStatus());
+        $fileLinks = $this->renewalFileLinksFromSubmission($submission);
 
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $this->submittedDocumentsListUrl($request),
@@ -234,28 +235,27 @@ class OrganizationSubmittedDocumentsController extends Controller
             'subtitle' => 'Organization renewal application on file with SDAO.',
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
-            'metaRows' => $this->renewalMetaRows($renewal),
-            'remarkHighlight' => $this->renewalRemarksPreview($renewal),
+            'metaRows' => $this->renewalMetaRowsFromSubmission($submission),
+            'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
             'fileLinks' => $fileLinks,
-            'workflowLinks' => $this->renewalWorkflowLinks($renewal),
+            'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.renew')),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Organization renewal',
-            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($renewal->renewal_status),
-            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($renewal->renewal_status),
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($submission->legacyStatus()),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($submission->legacyStatus()),
         ]);
     }
 
-    public function streamSubmittedRenewalRequirementFile(Request $request, OrganizationRenewal $renewal, string $key): StreamedResponse
+    public function streamSubmittedRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
     {
-        $this->ensureOfficerOwnsOrganization($request, (int) $renewal->organization_id);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
         if (! in_array($key, self::RENEWAL_FILE_KEYS, true)) {
             abort(404);
         }
 
-        $prefix = 'organization-requirements/'.(int) $renewal->organization_id.'/renewals/'.$renewal->id.'/';
-
-        return $this->streamRequirementPath($renewal->requirement_files, $key, $prefix);
+        return $this->streamSubmissionRequirementAttachment($submission, $key);
     }
 
     public function showSubmittedActivityCalendar(Request $request, ActivityCalendar $calendar): View
@@ -268,7 +268,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             },
         ]);
 
-        $sp = $this->submissionStatusPresentation($calendar->calendar_status);
+        $sp = $this->submissionStatusPresentation($calendar->status);
         $fileLinks = [];
         if ($calendar->calendar_file) {
             $fileLinks[] = [
@@ -302,8 +302,8 @@ class OrganizationSubmittedDocumentsController extends Controller
             'workflowLinks' => $this->activityCalendarWorkflowLinks($calendar),
             'calendarEntries' => $calendar->entries,
             'progressDocumentLabel' => 'Activity calendar',
-            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($calendar->calendar_status),
-            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($calendar->calendar_status),
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($calendar->status),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($calendar->status),
         ]);
     }
 
@@ -333,23 +333,23 @@ class OrganizationSubmittedDocumentsController extends Controller
     public function showSubmittedActivityProposal(Request $request, ActivityProposal $proposal): View
     {
         $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
-        $proposal->load(['calendar', 'calendarEntry']);
+        $proposal->load(['calendar', 'calendarEntry', 'academicTerm']);
 
-        $sp = $this->submissionStatusPresentation($proposal->proposal_status, true);
+        $sp = $this->submissionStatusPresentation($proposal->status, true);
         $fileLinks = [];
-        if ($proposal->organization_logo_path) {
+        if ($this->proposalFilePathByKey($proposal, 'logo')) {
             $fileLinks[] = [
                 'label' => 'Organization logo',
                 'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'logo']),
             ];
         }
-        if ($proposal->external_funding_support_path) {
+        if ($this->proposalFilePathByKey($proposal, 'external')) {
             $fileLinks[] = [
                 'label' => 'External funding support (letter / proof)',
                 'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'external']),
             ];
         }
-        if ($proposal->resume_resource_persons_path) {
+        if ($this->proposalFilePathByKey($proposal, 'resume')) {
             $fileLinks[] = [
                 'label' => 'Résumé / resource persons',
                 'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'resume']),
@@ -357,6 +357,9 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         $school = $proposal->school_code ? (self::SCHOOL_LABELS[$proposal->school_code] ?? $proposal->school_code) : '—';
+        $proposalTime = $proposal->proposed_start_time
+            ? trim($proposal->proposed_start_time.($proposal->proposed_end_time ? ' - '.$proposal->proposed_end_time : ''))
+            : ($proposal->proposed_time ?? '—');
 
         $nav = $this->detailBackNavigation($request);
 
@@ -370,14 +373,14 @@ class OrganizationSubmittedDocumentsController extends Controller
             'metaRows' => [
                 ['label' => 'Activity title', 'value' => $proposal->activity_title ?? '—'],
                 ['label' => 'Organization (form)', 'value' => $proposal->form_organization_name ?? '—'],
-                ['label' => 'Academic year', 'value' => $proposal->academic_year ?? '—'],
+                ['label' => 'Academic year', 'value' => $proposal->academicTerm?->academic_year ?? $proposal->academic_year ?? '—'],
                 ['label' => 'School', 'value' => $school],
                 ['label' => 'Department / program', 'value' => $proposal->department_program ?? '—'],
                 ['label' => 'Proposed dates', 'value' => trim(collect([
                     optional($proposal->proposed_start_date)->format('M j, Y'),
                     optional($proposal->proposed_end_date)->format('M j, Y'),
                 ])->filter()->implode(' → ')) ?: '—'],
-                ['label' => 'Time', 'value' => $proposal->proposed_time ?? '—'],
+                ['label' => 'Time', 'value' => $proposalTime],
                 ['label' => 'Venue', 'value' => $proposal->venue ?? '—'],
                 ['label' => 'Submitted', 'value' => optional($proposal->submission_date)->format('M j, Y') ?? '—'],
                 ['label' => 'Linked activity calendar', 'value' => $proposal->calendar
@@ -393,7 +396,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Activity proposal',
             'progressStages' => SubmissionRoutingProgress::stagesForActivityProposal($proposal),
-            'progressSummary' => SubmissionRoutingProgress::summaryForActivityProposal($proposal->proposal_status),
+            'progressSummary' => SubmissionRoutingProgress::summaryForActivityProposal($proposal->status),
         ]);
     }
 
@@ -404,12 +407,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $organizationId = (int) $proposal->organization_id;
         $expectedPrefix = 'activity-proposals/'.$organizationId.'/';
 
-        $relativePath = match ($key) {
-            'logo' => $proposal->organization_logo_path,
-            'resume' => $proposal->resume_resource_persons_path,
-            'external' => $proposal->external_funding_support_path,
-            default => null,
-        };
+        $relativePath = $this->proposalFilePathByKey($proposal, $key);
 
         if (! is_string($relativePath) || $relativePath === '') {
             abort(404);
@@ -432,28 +430,28 @@ class OrganizationSubmittedDocumentsController extends Controller
         $this->ensureOfficerOwnsOrganization($request, (int) $report->organization_id);
         $report->load('proposal');
 
-        $sp = $this->submissionStatusPresentation($report->report_status, false, 'report');
+        $sp = $this->submissionStatusPresentation($report->status, false, 'report');
 
         $fileLinks = [];
-        if ($report->poster_image_path) {
+        if ($this->reportFilePathByKey($report, 'poster')) {
             $fileLinks[] = ['label' => 'Poster image', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'poster'])];
         }
-        $photos = is_array($report->supporting_photo_paths) ? $report->supporting_photo_paths : [];
-        foreach ($photos as $i => $path) {
-            if (is_string($path) && $path !== '') {
-                $fileLinks[] = [
-                    'label' => 'Supporting photo '.($i + 1),
-                    'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'supporting_'.$i]),
-                ];
-            }
+        $supportingPhotoKeys = $this->reportSupportingPhotoKeys($report);
+        foreach ($supportingPhotoKeys as $i => $key) {
+            $fileLinks[] = [
+                'label' => 'Supporting photo '.($i + 1),
+                'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => $key]),
+            ];
         }
-        if ($report->certificate_sample_path) {
+        if ($this->reportFilePathByKey($report, 'certificate')) {
             $fileLinks[] = ['label' => 'Certificate sample', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'certificate'])];
         }
-        if ($report->evaluation_form_sample_path) {
+        if ($this->reportFilePathByKey($report, 'evaluation_form')) {
             $fileLinks[] = ['label' => 'Evaluation form sample', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'evaluation_form'])];
         }
-        $fileLinks[] = ['label' => 'Attendance sheet', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'attendance'])];
+        if ($this->reportFilePathByKey($report, 'attendance')) {
+            $fileLinks[] = ['label' => 'Attendance sheet', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'attendance'])];
+        }
 
         $school = $report->school_code ? (self::SCHOOL_LABELS[$report->school_code] ?? $report->school_code) : '—';
 
@@ -480,8 +478,8 @@ class OrganizationSubmittedDocumentsController extends Controller
             ],
             'calendarEntries' => null,
             'progressDocumentLabel' => 'After activity report',
-            'progressStages' => SubmissionRoutingProgress::stagesForActivityReport($report->report_status),
-            'progressSummary' => SubmissionRoutingProgress::summaryForActivityReport($report->report_status),
+            'progressStages' => SubmissionRoutingProgress::stagesForActivityReport($report->status),
+            'progressSummary' => SubmissionRoutingProgress::summaryForActivityReport($report->status),
         ]);
     }
 
@@ -494,20 +492,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'activity-reports/'.$organizationId.'/',
         ];
 
-        $relativePath = null;
-        if ($key === 'poster') {
-            $relativePath = $report->poster_image_path;
-        } elseif ($key === 'certificate') {
-            $relativePath = $report->certificate_sample_path;
-        } elseif ($key === 'evaluation_form') {
-            $relativePath = $report->evaluation_form_sample_path;
-        } elseif ($key === 'attendance') {
-            $relativePath = $report->attendance_sheet_path;
-        } elseif (preg_match('/^supporting_(\d+)$/', $key, $m)) {
-            $photos = is_array($report->supporting_photo_paths) ? $report->supporting_photo_paths : [];
-            $idx = (int) $m[1];
-            $relativePath = $photos[$idx] ?? null;
-        }
+        $relativePath = $this->reportFilePathByKey($report, $key);
 
         if (! is_string($relativePath) || $relativePath === '') {
             abort(404);
@@ -541,12 +526,12 @@ class OrganizationSubmittedDocumentsController extends Controller
         /** @var User|null $user */
         $user = $request->user();
 
-        if (! $user || $user->role_type !== 'ORG_OFFICER') {
+        if (! $user || $user->effectiveRoleType() !== 'ORG_OFFICER') {
             abort(403, 'Only organization officers can access this feature.');
         }
 
         $officer = $user->organizationOfficers()
-            ->where('officer_status', 'ACTIVE')
+            ->where('status', 'active')
             ->orderByDesc('id')
             ->first();
 
@@ -780,10 +765,130 @@ class OrganizationSubmittedDocumentsController extends Controller
     /**
      * @return list<array{label: string, href: string, variant: string}>
      */
+    private function submissionWorkflowLinks(OrganizationSubmission $submission, string $resubmitHref): array
+    {
+        $links = [];
+        $status = strtoupper((string) $submission->legacyStatus());
+        if (in_array($status, ['REVISION', 'REVISION_REQUIRED'], true)) {
+            $links[] = ['label' => 'Edit / resubmit', 'href' => $resubmitHref, 'variant' => 'primary'];
+        }
+
+        return $links;
+    }
+
+    /**
+     * @return list<array{label: string, value: string}>
+     */
+    private function registrationMetaRowsFromSubmission(OrganizationSubmission $submission): array
+    {
+        return [
+            ['label' => 'Contact person', 'value' => $submission->contact_person ?? '—'],
+            ['label' => 'Contact number', 'value' => $submission->contact_no ?? '—'],
+            ['label' => 'Contact email', 'value' => $submission->contact_email ?? '—'],
+            ['label' => 'Academic year', 'value' => $submission->academicTerm?->academic_year ?? '—'],
+            ['label' => 'Submitted', 'value' => optional($submission->submission_date)->format('M j, Y') ?? '—'],
+            ['label' => 'Last updated', 'value' => optional($submission->updated_at)->format('M j, Y g:i A') ?? '—'],
+        ];
+    }
+
+    /**
+     * @return list<array{label: string, value: string}>
+     */
+    private function renewalMetaRowsFromSubmission(OrganizationSubmission $submission): array
+    {
+        return [
+            ['label' => 'Contact person', 'value' => $submission->contact_person ?? '—'],
+            ['label' => 'Contact number', 'value' => $submission->contact_no ?? '—'],
+            ['label' => 'Contact email', 'value' => $submission->contact_email ?? '—'],
+            ['label' => 'Academic year', 'value' => $submission->academicTerm?->academic_year ?? '—'],
+            ['label' => 'Submitted', 'value' => optional($submission->submission_date)->format('M j, Y') ?? '—'],
+            ['label' => 'Last updated', 'value' => optional($submission->updated_at)->format('M j, Y g:i A') ?? '—'],
+        ];
+    }
+
+    /**
+     * @return list<array{label: string, url: string}>
+     */
+    private function registrationFileLinksFromSubmission(OrganizationSubmission $submission): array
+    {
+        $links = [];
+        foreach (self::REGISTRATION_FILE_KEYS as $key) {
+            $attachment = $submission->attachments()
+                ->where('file_type', Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key)
+                ->latest('id')
+                ->first();
+            if (! $attachment) {
+                continue;
+            }
+            $label = self::REGISTRATION_FILE_LABELS[$key] ?? $key;
+            $links[] = [
+                'label' => $label,
+                'url' => route('organizations.submitted-documents.registrations.file', [$submission, $key]),
+            ];
+        }
+
+        return $links;
+    }
+
+    /**
+     * @return list<array{label: string, url: string}>
+     */
+    private function renewalFileLinksFromSubmission(OrganizationSubmission $submission): array
+    {
+        $links = [];
+        foreach (self::RENEWAL_FILE_KEYS as $key) {
+            $attachment = $submission->attachments()
+                ->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)
+                ->latest('id')
+                ->first();
+            if (! $attachment) {
+                continue;
+            }
+            $label = self::RENEWAL_FILE_LABELS[$key] ?? $key;
+            $links[] = [
+                'label' => $label,
+                'url' => route('organizations.submitted-documents.renewals.file', [$submission, $key]),
+            ];
+        }
+
+        return $links;
+    }
+
+    private function streamSubmissionRequirementAttachment(OrganizationSubmission $submission, string $requirementKey): StreamedResponse
+    {
+        $prefix = $submission->type === OrganizationSubmission::TYPE_RENEWAL
+            ? Attachment::TYPE_RENEWAL_REQUIREMENT
+            : Attachment::TYPE_REGISTRATION_REQUIREMENT;
+
+        $attachment = $submission->attachments()
+            ->where('file_type', $prefix.':'.$requirementKey)
+            ->latest('id')
+            ->first();
+
+        if (! $attachment) {
+            abort(404);
+        }
+
+        $relativePath = $attachment->stored_path;
+        if (! is_string($relativePath) || $relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        return $disk->response($relativePath, basename($relativePath), [], 'inline');
+    }
+
+    /**
+     * @return list<array{label: string, href: string, variant: string}>
+     */
     private function activityCalendarWorkflowLinks(ActivityCalendar $calendar): array
     {
         $links = [];
-        $status = strtoupper((string) ($calendar->calendar_status ?? ''));
+        $status = strtoupper((string) ($calendar->status ?? ''));
         if ($status === 'REVISION') {
             $links[] = ['label' => 'Edit / resubmit activity calendar', 'href' => route('organizations.activity-calendar-submission'), 'variant' => 'primary'];
         }
@@ -797,7 +902,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     private function activityProposalWorkflowLinks(ActivityProposal $proposal): array
     {
         $links = [];
-        if (strtoupper((string) ($proposal->proposal_status ?? '')) === 'REVISION') {
+        if (strtoupper((string) ($proposal->status ?? '')) === 'REVISION') {
             $links[] = ['label' => 'Address revision (proposal form)', 'href' => route('organizations.activity-proposal-submission'), 'variant' => 'primary'];
         }
         $links[] = ['label' => 'Submit another proposal', 'href' => route('organizations.activity-proposal-submission'), 'variant' => 'secondary'];
@@ -884,26 +989,26 @@ class OrganizationSubmittedDocumentsController extends Controller
         $q = fn (string $url): string => $this->withSuperAdminOrgQuery($request, $url);
         $rows = collect();
 
-        foreach (OrganizationRegistration::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $reg) {
-            $sp = $this->submissionStatusPresentation($reg->registration_status);
-            $nFiles = $this->countRequirementFiles(is_array($reg->requirement_files) ? $reg->requirement_files : null);
-            $detail = $q(route('organizations.submitted-documents.registrations.show', $reg));
+        foreach (OrganizationSubmission::query()->registrations()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $submission) {
+            $sp = $this->submissionStatusPresentation($submission->legacyStatus());
+            $nFiles = $submission->attachments()->where('file_type', 'like', Attachment::TYPE_REGISTRATION_REQUIREMENT.':%')->count();
+            $detail = $q(route('organizations.submitted-documents.registrations.show', $submission));
             $rows->push([
                 'type_key' => 'registration',
                 'type_label' => 'Registration',
                 'title' => 'Organization Registration Application',
-                'submitted_display' => optional($reg->submission_date)->format('M j, Y') ?? '—',
-                'updated_display' => optional($reg->updated_at)->format('M j, Y') ?? '—',
-                'status_raw' => $reg->registration_status,
+                'submitted_display' => optional($submission->submission_date)->format('M j, Y') ?? '—',
+                'updated_display' => optional($submission->updated_at)->format('M j, Y') ?? '—',
+                'status_raw' => $submission->legacyStatus(),
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
-                'academic_year' => $reg->academic_year,
-                'academic_context' => $reg->academic_year ? 'AY '.$reg->academic_year : null,
-                'remarks_preview' => $this->registrationRemarksPreview($reg),
+                'academic_year' => $submission->academicTerm?->academic_year,
+                'academic_context' => $submission->academicTerm?->academic_year ? 'AY '.$submission->academicTerm?->academic_year : null,
+                'remarks_preview' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
                 'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
                 'files_href' => $detail.'#submitted-files',
-                'sort_timestamp' => $reg->updated_at?->getTimestamp() ?? 0,
+                'sort_timestamp' => $submission->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
                     $detail,
                     $nFiles > 0,
@@ -913,26 +1018,26 @@ class OrganizationSubmittedDocumentsController extends Controller
             ]);
         }
 
-        foreach (OrganizationRenewal::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $renewal) {
-            $sp = $this->submissionStatusPresentation($renewal->renewal_status);
-            $nFiles = $this->countRequirementFiles(is_array($renewal->requirement_files) ? $renewal->requirement_files : null);
-            $detail = $q(route('organizations.submitted-documents.renewals.show', $renewal));
+        foreach (OrganizationSubmission::query()->renewals()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $submission) {
+            $sp = $this->submissionStatusPresentation($submission->legacyStatus());
+            $nFiles = $submission->attachments()->where('file_type', 'like', Attachment::TYPE_RENEWAL_REQUIREMENT.':%')->count();
+            $detail = $q(route('organizations.submitted-documents.renewals.show', $submission));
             $rows->push([
                 'type_key' => 'renewal',
                 'type_label' => 'Renewal',
                 'title' => 'Organization Renewal Application',
-                'submitted_display' => optional($renewal->submission_date)->format('M j, Y') ?? '—',
-                'updated_display' => optional($renewal->updated_at)->format('M j, Y') ?? '—',
-                'status_raw' => $renewal->renewal_status,
+                'submitted_display' => optional($submission->submission_date)->format('M j, Y') ?? '—',
+                'updated_display' => optional($submission->updated_at)->format('M j, Y') ?? '—',
+                'status_raw' => $submission->legacyStatus(),
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
-                'academic_year' => $renewal->academic_year,
-                'academic_context' => $renewal->academic_year ? 'AY '.$renewal->academic_year : null,
-                'remarks_preview' => $this->renewalRemarksPreview($renewal),
+                'academic_year' => $submission->academicTerm?->academic_year,
+                'academic_context' => $submission->academicTerm?->academic_year ? 'AY '.$submission->academicTerm?->academic_year : null,
+                'remarks_preview' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
                 'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
                 'files_href' => $detail.'#submitted-files',
-                'sort_timestamp' => $renewal->updated_at?->getTimestamp() ?? 0,
+                'sort_timestamp' => $submission->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
                     $detail,
                     $nFiles > 0,
@@ -943,7 +1048,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         foreach (ActivityCalendar::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $cal) {
-            $sp = $this->submissionStatusPresentation($cal->calendar_status);
+            $sp = $this->submissionStatusPresentation($cal->status);
             $term = $this->activityCalendarTermLabel($cal->semester);
             $title = trim(($cal->academic_year ?? 'AY —').' · '.$term.' Activity Calendar');
             $hasFile = is_string($cal->calendar_file) && $cal->calendar_file !== '';
@@ -956,7 +1061,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'title' => $title,
                 'submitted_display' => optional($cal->submission_date)->format('M j, Y') ?? '—',
                 'updated_display' => optional($cal->updated_at)->format('M j, Y') ?? '—',
-                'status_raw' => $cal->calendar_status,
+                'status_raw' => $cal->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => $cal->academic_year,
@@ -976,10 +1081,19 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         foreach (ActivityProposal::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $proposal) {
-            $sp = $this->submissionStatusPresentation($proposal->proposal_status, true);
-            $nAttach = ($proposal->organization_logo_path ? 1 : 0)
-                + ($proposal->resume_resource_persons_path ? 1 : 0)
-                + ($proposal->external_funding_support_path ? 1 : 0);
+            $sp = $this->submissionStatusPresentation($proposal->status, true);
+            $nAttach = $proposal->attachments()
+                ->whereIn('file_type', [
+                    Attachment::TYPE_PROPOSAL_LOGO,
+                    Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
+                    Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
+                ])
+                ->count();
+            if ($nAttach === 0) {
+                $nAttach = ($proposal->organization_logo_path ? 1 : 0)
+                    + ($proposal->resume_resource_persons_path ? 1 : 0)
+                    + ($proposal->external_funding_support_path ? 1 : 0);
+            }
             // Keep this record under "Manage Organization -> Submitted Documents"
             // so Back navigation remains in the Submitted Documents flow.
             $detail = $q(route('organizations.submitted-documents.proposals.show', $proposal));
@@ -989,7 +1103,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'title' => ($proposal->activity_title ?: 'Activity Proposal').' — Proposal',
                 'submitted_display' => optional($proposal->submission_date)->format('M j, Y') ?? '—',
                 'updated_display' => optional($proposal->updated_at)->format('M j, Y') ?? '—',
-                'status_raw' => $proposal->proposal_status,
+                'status_raw' => $proposal->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => $proposal->academic_year,
@@ -1011,12 +1125,24 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         foreach (ActivityReport::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $report) {
-            $sp = $this->submissionStatusPresentation($report->report_status, false, 'report');
-            $photoCount = is_array($report->supporting_photo_paths) ? count(array_filter($report->supporting_photo_paths, fn ($p) => is_string($p) && $p !== '')) : 0;
-            $nFiles = ($report->poster_image_path ? 1 : 0) + $photoCount
-                + ($report->certificate_sample_path ? 1 : 0)
-                + ($report->evaluation_form_sample_path ? 1 : 0)
-                + ($report->attendance_sheet_path ? 1 : 0);
+            $sp = $this->submissionStatusPresentation($report->status, false, 'report');
+            $nFiles = $report->attachments()
+                ->where(function ($q): void {
+                    $q->whereIn('file_type', [
+                        Attachment::TYPE_REPORT_POSTER,
+                        Attachment::TYPE_REPORT_CERTIFICATE,
+                        Attachment::TYPE_REPORT_EVALUATION_FORM,
+                        Attachment::TYPE_REPORT_ATTENDANCE,
+                    ])->orWhere('file_type', 'like', Attachment::TYPE_REPORT_SUPPORTING_PHOTO.':%');
+                })
+                ->count();
+            if ($nFiles === 0) {
+                $photoCount = is_array($report->supporting_photo_paths) ? count(array_filter($report->supporting_photo_paths, fn ($p) => is_string($p) && $p !== '')) : 0;
+                $nFiles = ($report->poster_image_path ? 1 : 0) + $photoCount
+                    + ($report->certificate_sample_path ? 1 : 0)
+                    + ($report->evaluation_form_sample_path ? 1 : 0)
+                    + ($report->attendance_sheet_path ? 1 : 0);
+            }
             $eventTitle = $report->event_name ?? $report->activity_event_title ?? 'Event';
             $detail = $q(route('organizations.submitted-documents.reports.show', $report));
             $rows->push([
@@ -1025,7 +1151,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'title' => 'After Activity Report — '.$eventTitle,
                 'submitted_display' => optional($report->report_submission_date)->format('M j, Y') ?? '—',
                 'updated_display' => optional($report->updated_at)->format('M j, Y') ?? '—',
-                'status_raw' => $report->report_status,
+                'status_raw' => $report->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => null,
@@ -1047,6 +1173,107 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $rows;
+    }
+
+    private function proposalFilePathByKey(ActivityProposal $proposal, string $key): ?string
+    {
+        $fileType = match ($key) {
+            'logo' => Attachment::TYPE_PROPOSAL_LOGO,
+            'resume' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
+            'external' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
+            default => null,
+        };
+
+        if ($fileType !== null) {
+            $attachment = $proposal->attachments()
+                ->where('file_type', $fileType)
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                return $attachment->stored_path;
+            }
+        }
+
+        return match ($key) {
+            'logo' => $proposal->organization_logo_path,
+            'resume' => $proposal->resume_resource_persons_path,
+            'external' => $proposal->external_funding_support_path,
+            default => null,
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function reportSupportingPhotoKeys(ActivityReport $report): array
+    {
+        $attachmentKeys = $report->attachments()
+            ->where('file_type', 'like', Attachment::TYPE_REPORT_SUPPORTING_PHOTO.':%')
+            ->orderBy('file_type')
+            ->get()
+            ->map(function (Attachment $attachment): ?string {
+                $suffix = str_replace(Attachment::TYPE_REPORT_SUPPORTING_PHOTO.':', '', (string) $attachment->file_type);
+                return ctype_digit($suffix) ? 'supporting_'.$suffix : null;
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($attachmentKeys !== []) {
+            return $attachmentKeys;
+        }
+
+        $legacyPhotos = is_array($report->supporting_photo_paths) ? $report->supporting_photo_paths : [];
+        $keys = [];
+        foreach ($legacyPhotos as $idx => $path) {
+            if (is_string($path) && $path !== '') {
+                $keys[] = 'supporting_'.$idx;
+            }
+        }
+
+        return $keys;
+    }
+
+    private function reportFilePathByKey(ActivityReport $report, string $key): ?string
+    {
+        $fileType = match ($key) {
+            'poster' => Attachment::TYPE_REPORT_POSTER,
+            'certificate' => Attachment::TYPE_REPORT_CERTIFICATE,
+            'evaluation_form' => Attachment::TYPE_REPORT_EVALUATION_FORM,
+            'attendance' => Attachment::TYPE_REPORT_ATTENDANCE,
+            default => null,
+        };
+
+        if (preg_match('/^supporting_(\d+)$/', $key, $m) === 1) {
+            $attachment = $report->attachments()
+                ->where('file_type', Attachment::TYPE_REPORT_SUPPORTING_PHOTO.':'.((int) $m[1]))
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                return $attachment->stored_path;
+            }
+
+            $legacyPhotos = is_array($report->supporting_photo_paths) ? $report->supporting_photo_paths : [];
+            return $legacyPhotos[(int) $m[1]] ?? null;
+        }
+
+        if ($fileType !== null) {
+            $attachment = $report->attachments()
+                ->where('file_type', $fileType)
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                return $attachment->stored_path;
+            }
+        }
+
+        return match ($key) {
+            'poster' => $report->poster_image_path,
+            'certificate' => $report->certificate_sample_path,
+            'evaluation_form' => $report->evaluation_form_sample_path,
+            'attendance' => $report->attendance_sheet_path,
+            default => null,
+        };
     }
 
     private function variantKeyFromBadge(string $badgeClass): string

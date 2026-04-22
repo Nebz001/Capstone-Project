@@ -13,7 +13,7 @@ class OrganizationOfficer extends Model
         'position_title',
         'term_start',
         'term_end',
-        'officer_status',
+        'status',
     ];
 
     protected function casts(): array

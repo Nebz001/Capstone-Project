@@ -5,12 +5,17 @@ namespace App\Http\Controllers;
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
+use App\Models\ApprovalLog;
+use App\Models\ApprovalWorkflowStep;
+use App\Models\Attachment;
 use App\Models\Organization;
-use App\Models\OrganizationRegistration;
-use App\Models\OrganizationRenewal;
+use App\Models\OrganizationProfileRevision;
+use App\Models\OrganizationSubmission;
+use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,29 +54,17 @@ class AdminController extends Controller
     /**
      * @return array<string, 'pending'|'validated'|'revision'>
      */
-    private function initialRegistrationSectionReviewState(OrganizationRegistration $registration): array
+    private function initialRegistrationSectionReviewState(OrganizationSubmission $submission): array
     {
-        $stored = $registration->section_review_state;
-        if (is_array($stored)) {
-            $out = [];
-            foreach (self::REGISTRATION_REVIEW_SECTION_KEYS as $k) {
-                $v = $stored[$k] ?? 'pending';
-                $out[$k] = in_array($v, ['validated', 'revision', 'pending'], true) ? $v : 'pending';
-            }
-
-            return $out;
-        }
-
-        if (strtoupper((string) $registration->registration_status) === 'APPROVED') {
+        if ($submission->status === OrganizationSubmission::STATUS_APPROVED) {
             return array_fill_keys(self::REGISTRATION_REVIEW_SECTION_KEYS, 'validated');
         }
 
-        $out = [];
-        foreach ($this->registrationReviewSectionRevisionColumns() as $key => $col) {
-            $out[$key] = trim((string) ($registration->{$col} ?? '')) !== '' ? 'revision' : 'pending';
+        if ($submission->status === OrganizationSubmission::STATUS_REVISION) {
+            return array_fill_keys(self::REGISTRATION_REVIEW_SECTION_KEYS, 'revision');
         }
 
-        return $out;
+        return array_fill_keys(self::REGISTRATION_REVIEW_SECTION_KEYS, 'pending');
     }
 
     public function dashboard(Request $request): View
@@ -79,18 +72,18 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
 
         $counts = [
-            'registrations' => OrganizationRegistration::query()->where('registration_status', 'PENDING')->count(),
-            'renewals' => OrganizationRenewal::query()->where('renewal_status', 'PENDING')->count(),
-            'calendars' => ActivityCalendar::query()->where('calendar_status', 'PENDING')->count(),
-            'proposals' => ActivityProposal::query()->where('proposal_status', 'PENDING')->count(),
-            'reports' => ActivityReport::query()->where('report_status', 'PENDING')->count(),
+            'registrations' => OrganizationSubmission::query()->registrations()->where('status', OrganizationSubmission::STATUS_PENDING)->count(),
+            'renewals' => OrganizationSubmission::query()->renewals()->where('status', OrganizationSubmission::STATUS_PENDING)->count(),
+            'calendars' => ActivityCalendar::query()->where('status', 'pending')->count(),
+            'proposals' => ActivityProposal::query()->where('status', 'pending')->count(),
+            'reports' => ActivityReport::query()->where('status', 'pending')->count(),
         ];
 
         $calendarEvents = $this->buildCentralizedCalendarEvents();
 
         $registeredOrganizations = Organization::query()
             ->orderBy('organization_name')
-            ->get(['id', 'organization_name', 'organization_status', 'college_department', 'organization_type']);
+            ->get(['id', 'organization_name', 'status', 'college_department', 'organization_type']);
 
         return view('admin.dashboard', compact('counts', 'calendarEvents', 'registeredOrganizations'));
     }
@@ -140,8 +133,9 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $records = OrganizationRegistration::query()
-            ->with(['organization', 'user'])
+        $records = OrganizationSubmission::query()
+            ->registrations()
+            ->with(['organization', 'submittedBy'])
             ->latest('submission_date')
             ->latest('id')
             ->paginate(10);
@@ -150,12 +144,12 @@ class AdminController extends Controller
             'pageTitle' => 'Registration Review',
             'pageSubtitle' => 'Monitor submitted RSO registration applications.',
             'routeBase' => 'admin.registrations.show',
-            'rows' => $records->through(function (OrganizationRegistration $record): array {
+            'rows' => $records->through(function (OrganizationSubmission $record): array {
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
-                    'submitted_by' => $record->user?->full_name ?? 'N/A',
+                    'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
-                    'status' => $record->registration_status ?? 'PENDING',
+                    'status' => $record->legacyStatus(),
                     'id' => $record->id,
                 ];
             }),
@@ -166,8 +160,9 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $records = OrganizationRenewal::query()
-            ->with(['organization', 'user'])
+        $records = OrganizationSubmission::query()
+            ->renewals()
+            ->with(['organization', 'submittedBy'])
             ->latest('submission_date')
             ->latest('id')
             ->paginate(10);
@@ -176,12 +171,12 @@ class AdminController extends Controller
             'pageTitle' => 'Renewal Review',
             'pageSubtitle' => 'Monitor submitted RSO renewal applications.',
             'routeBase' => 'admin.renewals.show',
-            'rows' => $records->through(function (OrganizationRenewal $record): array {
+            'rows' => $records->through(function (OrganizationSubmission $record): array {
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
-                    'submitted_by' => $record->user?->full_name ?? 'N/A',
+                    'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
-                    'status' => $record->renewal_status ?? 'PENDING',
+                    'status' => $record->legacyStatus(),
                     'id' => $record->id,
                 ];
             }),
@@ -207,7 +202,7 @@ class AdminController extends Controller
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => 'Organization Submission',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
-                    'status' => $record->calendar_status ?? 'PENDING',
+                    'status' => strtoupper((string) ($record->status ?? 'pending')),
                     'id' => $record->id,
                 ];
             }),
@@ -231,9 +226,9 @@ class AdminController extends Controller
             'rows' => $records->through(function (ActivityProposal $record): array {
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
-                    'submitted_by' => $record->user?->full_name ?? 'N/A',
+                    'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
-                    'status' => $record->proposal_status ?? 'PENDING',
+                    'status' => strtoupper((string) ($record->status ?? 'pending')),
                     'id' => $record->id,
                 ];
             }),
@@ -245,7 +240,7 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
 
         $records = ActivityReport::query()
-            ->with(['organization', 'user'])
+            ->with(['organization', 'submittedBy'])
             ->latest('report_submission_date')
             ->latest('id')
             ->paginate(10);
@@ -257,9 +252,9 @@ class AdminController extends Controller
             'rows' => $records->through(function (ActivityReport $record): array {
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
-                    'submitted_by' => $record->user?->full_name ?? 'N/A',
+                    'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
                     'submission_date' => optional($record->report_submission_date)->format('M d, Y') ?? 'N/A',
-                    'status' => $record->report_status ?? 'PENDING',
+                    'status' => strtoupper((string) ($record->status ?? 'pending')),
                     'id' => $record->id,
                 ];
             }),
@@ -277,7 +272,6 @@ class AdminController extends Controller
                     ->latest('id')
                     ->with('organization'),
             ])
-            ->orderByRaw("CASE role_type WHEN 'ORG_OFFICER' THEN 0 WHEN 'APPROVER' THEN 1 WHEN 'ADMIN' THEN 2 ELSE 3 END")
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->paginate(15);
@@ -312,7 +306,7 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
 
         abort_if($user->isSdaoAdmin(), 404);
-        abort_if($user->role_type !== 'ORG_OFFICER', 404);
+        abort_if($user->effectiveRoleType() !== 'ORG_OFFICER', 404);
 
         $validated = $request->validate([
             'validation_status' => ['required', 'in:APPROVED,ACTIVE,REJECTED,REVISION_REQUIRED'],
@@ -355,22 +349,10 @@ class AdminController extends Controller
 
         $fieldKey = (string) $validated['field_key'];
         $actionType = (string) $validated['action_type'];
-        $reviews = is_array($user->account_field_reviews) ? $user->account_field_reviews : [];
-
-        $reviews[$fieldKey] = [
-            'status' => $actionType === 'approve' ? 'approved' : 'revision',
-            'message' => $actionType === 'revision' ? trim((string) $validated['revision_message']) : null,
-            'reviewed_by' => $request->user()?->id,
-            'reviewed_at' => now()->toIso8601String(),
-        ];
-
-        $user->update([
-            'account_field_reviews' => $reviews,
-        ]);
 
         return redirect()
             ->route('admin.accounts.show', $user)
-            ->with('success', $actionType === 'approve' ? 'Field marked as reviewed.' : 'Field revision feedback saved.');
+            ->with('success', 'Field-level account reviews were removed in the redesigned schema. No database update was performed.');
     }
 
     /**
@@ -389,7 +371,7 @@ class AdminController extends Controller
             ],
         ];
 
-        if ($account->role_type === 'ORG_OFFICER') {
+        if ($account->effectiveRoleType() === 'ORG_OFFICER') {
             $fields['linked_organization'] = [
                 'label' => 'Linked organization',
                 'value' => $latestOfficerRecord?->organization?->organization_name ?? 'Not linked',
@@ -425,24 +407,12 @@ class AdminController extends Controller
      */
     private function normalizedAccountFieldReviews(User $account, array $allowedKeys): array
     {
-        $stored = is_array($account->account_field_reviews) ? $account->account_field_reviews : [];
-        $normalized = [];
-
-        foreach ($allowedKeys as $key) {
-            $raw = is_array($stored[$key] ?? null) ? $stored[$key] : [];
-            $status = (string) ($raw['status'] ?? '');
-            if (! in_array($status, ['approved', 'revision'], true)) {
-                $status = 'pending';
-            }
-            $normalized[$key] = [
-                'status' => $status,
-                'message' => isset($raw['message']) && is_string($raw['message']) && trim($raw['message']) !== '' ? trim($raw['message']) : null,
-                'reviewed_by' => isset($raw['reviewed_by']) ? (int) $raw['reviewed_by'] : null,
-                'reviewed_at' => isset($raw['reviewed_at']) && is_string($raw['reviewed_at']) ? $raw['reviewed_at'] : null,
-            ];
-        }
-
-        return $normalized;
+        return collect($allowedKeys)->mapWithKeys(fn (string $key): array => [$key => [
+            'status' => 'pending',
+            'message' => null,
+            'reviewed_by' => null,
+            'reviewed_at' => null,
+        ]])->all();
     }
 
     public function centralizedCalendar(Request $request): View
@@ -454,15 +424,16 @@ class AdminController extends Controller
         return view('admin.calendar', compact('calendarEvents'));
     }
 
-    public function showRegistration(Request $request, OrganizationRegistration $registration): View
+    public function showRegistration(Request $request, OrganizationSubmission $submission): View
     {
         $this->authorizeAdmin($request);
 
-        $registration->load(['organization', 'user']);
-
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        $submission->load(['organization', 'submittedBy', 'academicTerm', 'requirements', 'attachments']);
         return view('admin.registrations.show', [
-            'registration' => $registration,
-            'initialSectionReviewState' => $this->initialRegistrationSectionReviewState($registration),
+            'registration' => $submission,
+            'submission' => $submission,
+            'initialSectionReviewState' => $this->initialRegistrationSectionReviewState($submission),
         ]);
     }
 
@@ -470,29 +441,23 @@ class AdminController extends Controller
      * Stream a registration requirement file from the public disk (auth + path scoped to this org).
      * Avoids relying on the public/storage symlink, which often causes 404s when the link is missing.
      */
-    public function showRegistrationRequirementFile(Request $request, OrganizationRegistration $registration, string $key): StreamedResponse
+    public function showRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
     {
         $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
 
         if (! in_array($key, self::REGISTRATION_REQUIREMENT_FILE_KEYS, true)) {
             abort(404);
         }
 
-        $files = $registration->requirement_files;
-        if (! is_array($files) || empty($files[$key]) || ! is_string($files[$key])) {
+        $attachment = $submission->attachments()
+            ->where('file_type', Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key)
+            ->latest('id')
+            ->first();
+        if (! $attachment) {
             abort(404);
         }
-
-        $relativePath = $files[$key];
-        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
-            abort(404);
-        }
-
-        $organizationId = (int) $registration->organization_id;
-        $expectedPrefix = 'organization-requirements/'.$organizationId.'/registration/';
-        if (! str_starts_with($relativePath, $expectedPrefix)) {
-            abort(404);
-        }
+        $relativePath = (string) $attachment->stored_path;
 
         $disk = Storage::disk('public');
         if (! $disk->exists($relativePath)) {
@@ -504,20 +469,12 @@ class AdminController extends Controller
         return $disk->response($relativePath, $filename, [], 'inline');
     }
 
-    public function updateRegistrationStatus(Request $request, OrganizationRegistration $registration): RedirectResponse
+    public function updateRegistrationStatus(Request $request, OrganizationSubmission $submission): RedirectResponse
     {
         $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
 
-        $sectionKeys = self::REGISTRATION_REVIEW_SECTION_KEYS;
-        $sectionReviewRules = [];
-        foreach ($sectionKeys as $k) {
-            $sectionReviewRules['section_review.'.$k] = [
-                Rule::requiredIf(fn () => $request->input('decision') !== 'REJECTED'),
-                Rule::in(['validated', 'revision', 'pending']),
-            ];
-        }
-
-        $validator = Validator::make($request->all(), array_merge([
+        $validator = Validator::make($request->all(), [
             'decision' => ['required', Rule::in(['APPROVED', 'REJECTED'])],
             'remarks' => [
                 Rule::when(
@@ -526,64 +483,7 @@ class AdminController extends Controller
                     ['nullable', 'string', 'max:5000'],
                 ),
             ],
-            'revision_comment_application' => ['nullable', 'string', 'max:5000'],
-            'revision_comment_contact' => ['nullable', 'string', 'max:5000'],
-            'revision_comment_organizational' => ['nullable', 'string', 'max:5000'],
-            'revision_comment_requirements' => ['nullable', 'string', 'max:5000'],
-            'section_review' => [
-                Rule::requiredIf(fn () => $request->input('decision') !== 'REJECTED'),
-                'array',
-            ],
-        ], $sectionReviewRules));
-
-        $validator->after(function ($validator) use ($request, $sectionKeys): void {
-            if ($request->input('decision') === 'REJECTED') {
-                return;
-            }
-
-            $sections = $request->input('section_review', []);
-            if (! is_array($sections)) {
-                $validator->errors()->add('section_review', 'Section review data is missing.');
-
-                return;
-            }
-
-            foreach ($sectionKeys as $k) {
-                if (($sections[$k] ?? 'pending') === 'pending') {
-                    $validator->errors()->add(
-                        'section_review',
-                        'Review every section: mark each as Verified or Need revision before submitting.',
-                    );
-                    break;
-                }
-            }
-
-            $colMap = $this->registrationReviewSectionRevisionColumns();
-            foreach ($colMap as $sk => $column) {
-                if (($sections[$sk] ?? '') === 'revision') {
-                    $text = trim((string) $request->input($column, ''));
-                    if (strlen($text) < 3) {
-                        $validator->errors()->add(
-                            $column,
-                            'Add section feedback (at least 3 characters) for this part of the form.',
-                        );
-                    }
-                }
-            }
-
-            $anyRevision = collect($sectionKeys)->contains(fn ($k) => ($sections[$k] ?? '') === 'revision');
-            if ($anyRevision) {
-                $generalOk = strlen(trim((string) $request->input('remarks', ''))) >= 3;
-                $sectionTexts = collect($colMap)->map(fn ($col) => $request->input($col))->all();
-                $anySectionText = collect($sectionTexts)->contains(fn ($t) => strlen(trim((string) $t)) >= 3);
-                if (! $generalOk && ! $anySectionText) {
-                    $validator->errors()->add(
-                        'remarks',
-                        'For revision, add general remarks (at least 3 characters) and/or section feedback for each part marked Need revision.',
-                    );
-                }
-            }
-        });
+        ]);
 
         $validated = $validator->validate();
 
@@ -591,80 +491,36 @@ class AdminController extends Controller
         $admin = $request->user();
         $decision = $validated['decision'];
 
-        /** @var array<string, string> $sectionStates */
-        $sectionStates = $validated['section_review'] ?? [];
-
-        if ($decision !== 'REJECTED') {
-            $anyRevision = in_array('revision', $sectionStates, true);
-            $decision = $anyRevision ? 'REVISION' : 'APPROVED';
-        }
-
         $remarks = trim((string) ($validated['remarks'] ?? ''));
-
-        $colMap = $this->registrationReviewSectionRevisionColumns();
-        $sectionFields = [];
-        foreach ($colMap as $sk => $column) {
-            $raw = trim((string) $request->input($column, ''));
-            if ($decision === 'REVISION' && ($sectionStates[$sk] ?? '') === 'revision') {
-                $sectionFields[$column] = $raw;
-            } else {
-                $sectionFields[$column] = '';
-            }
-        }
-
-        DB::transaction(function () use ($registration, $decision, $remarks, $admin, $sectionFields, $sectionStates): void {
-            $registration->registration_status = $decision;
-            $registration->approved_by_sdao = $admin->full_name;
-            $registration->approval_date = now()->toDateString();
-
-            if ($decision === 'REJECTED') {
-                $registration->section_review_state = null;
-            } else {
-                $registration->section_review_state = $sectionStates;
-            }
-
-            if ($decision === 'REVISION') {
-                foreach ($sectionFields as $column => $value) {
-                    $registration->{$column} = $value !== '' ? $value : null;
-                }
-            } else {
-                foreach (array_keys($sectionFields) as $column) {
-                    $registration->{$column} = null;
-                }
-            }
+        DB::transaction(function () use ($submission, $decision, $remarks, $admin): void {
+            $submission->update([
+                'status' => match ($decision) {
+                    'APPROVED' => OrganizationSubmission::STATUS_APPROVED,
+                    'REJECTED' => OrganizationSubmission::STATUS_REJECTED,
+                    default => OrganizationSubmission::STATUS_PENDING,
+                },
+                'approval_decision' => $decision === 'APPROVED' ? 'approved' : null,
+                'additional_remarks' => $remarks !== '' ? $remarks : null,
+                'notes' => $remarks !== '' ? $remarks : $submission->notes,
+                'current_approval_step' => 0,
+            ]);
 
             if ($decision === 'APPROVED') {
-                $registration->approval_decision = 'APPROVED';
-                $registration->additional_remarks = $remarks !== '' ? $remarks : null;
-                $registration->organization?->update([
-                    'organization_status' => 'ACTIVE',
-                    'profile_information_revision_requested' => false,
-                    'profile_revision_notes' => null,
-                ]);
-            } else {
-                $registration->approval_decision = null;
-                $registration->additional_remarks = $remarks !== '' ? $remarks : null;
+                $submission->organization?->update(['status' => 'active']);
             }
 
-            if ($decision === 'REVISION') {
-                $registration->organization?->update([
-                    'profile_information_revision_requested' => true,
-                    'profile_revision_notes' => $this->composeRegistrationRevisionNotesForProfile($remarks, $sectionFields),
+            if ($decision === 'REJECTED' && $remarks !== '') {
+                OrganizationProfileRevision::query()->create([
+                    'organization_id' => $submission->organization_id,
+                    'requested_by' => $admin->id,
+                    'revision_notes' => $remarks,
+                    'status' => 'open',
                 ]);
             }
-
-            if ($decision === 'REJECTED') {
-                $registration->organization?->update([
-                    'profile_information_revision_requested' => false,
-                    'profile_revision_notes' => null,
-                ]);
-            }
-
-            $registration->save();
         });
 
         return redirect()
-            ->route('admin.registrations.show', $registration)
+            ->route('admin.registrations.show', $submission)
             ->with('success', 'Registration decision saved successfully.');
     }
 
@@ -693,25 +549,26 @@ class AdminController extends Controller
         return $blocks === [] ? null : implode("\n\n—\n\n", $blocks);
     }
 
-    public function showRenewal(Request $request, OrganizationRenewal $renewal): View
+    public function showRenewal(Request $request, OrganizationSubmission $submission): View
     {
         $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
 
-        $renewal->load(['organization', 'user']);
+        $submission->load(['organization', 'submittedBy', 'academicTerm']);
 
         return view('admin.review-show', [
             'pageTitle' => 'Renewal Submission Details',
             'backRoute' => route('admin.renewals.index'),
-            'status' => $renewal->renewal_status ?? 'PENDING',
+            'status' => $submission->legacyStatus(),
             'details' => [
-                'Organization' => $renewal->organization?->organization_name ?? 'N/A',
-                'Submitted By' => $renewal->user?->full_name ?? 'N/A',
-                'Academic Year' => $renewal->academic_year ?? 'N/A',
-                'Contact Person' => $renewal->contact_person ?? 'N/A',
-                'Submission Date' => optional($renewal->submission_date)->format('M d, Y') ?? 'N/A',
-                'Contact Email' => $renewal->contact_email ?? 'N/A',
+                'Organization' => $submission->organization?->organization_name ?? 'N/A',
+                'Submitted By' => $submission->submittedBy?->full_name ?? 'N/A',
+                'Academic Year' => $submission->academicTerm?->academic_year ?? 'N/A',
+                'Contact Person' => $submission->contact_person ?? 'N/A',
+                'Submission Date' => optional($submission->submission_date)->format('M d, Y') ?? 'N/A',
+                'Contact Email' => $submission->contact_email ?? 'N/A',
             ],
-            'organization' => $renewal->organization,
+            'organization' => $submission->organization,
         ]);
     }
 
@@ -720,12 +577,14 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
 
         $validated = $request->validate([
-            'profile_revision_notes' => ['nullable', 'string', 'max:2000'],
+            'profile_revision_notes' => ['required', 'string', 'max:2000'],
         ]);
 
-        $organization->update([
-            'profile_information_revision_requested' => true,
-            'profile_revision_notes' => $validated['profile_revision_notes'] ?? null,
+        OrganizationProfileRevision::query()->create([
+            'organization_id' => $organization->id,
+            'requested_by' => (int) $request->user()->id,
+            'revision_notes' => (string) $validated['profile_revision_notes'],
+            'status' => 'open',
         ]);
 
         return back()->with(
@@ -756,7 +615,7 @@ class AdminController extends Controller
         return view('admin.review-show', [
             'pageTitle' => 'Activity Calendar Submission Details',
             'backRoute' => route('admin.calendars.index'),
-            'status' => $calendar->calendar_status ?? 'PENDING',
+            'status' => strtoupper((string) ($calendar->status ?? 'pending')),
             'details' => [
                 'Organization (profile)' => $calendar->organization?->organization_name ?? 'N/A',
                 'RSO name (form)' => $calendar->submitted_organization_name ?? 'N/A',
@@ -773,7 +632,9 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $proposal->load(['organization', 'user']);
+        $proposal->load(['organization', 'user', 'submittedBy', 'academicTerm', 'budgetItems', 'workflowSteps.role', 'approvalLogs.actor']);
+        $this->ensureProposalWorkflow($proposal);
+        $proposal->load(['workflowSteps.role', 'approvalLogs.actor']);
 
         $schoolLabels = [
             'sace' => 'School of Architecture, Computer and Engineering',
@@ -782,53 +643,180 @@ class AdminController extends Controller
             'shs' => 'Senior High School',
         ];
 
-        $logoUrl = $proposal->organization_logo_path
-            ? Storage::disk('public')->url($proposal->organization_logo_path)
+        $logoPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_LOGO, $proposal->organization_logo_path);
+        $logoUrl = $logoPath
+            ? Storage::disk('public')->url($logoPath)
             : null;
-        $resumeUrl = $proposal->resume_resource_persons_path
-            ? Storage::disk('public')->url($proposal->resume_resource_persons_path)
+        $resumePath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME, $proposal->resume_resource_persons_path);
+        $resumeUrl = $resumePath
+            ? Storage::disk('public')->url($resumePath)
             : null;
+        $externalPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING, $proposal->external_funding_support_path);
+        $externalUrl = $externalPath ? Storage::disk('public')->url($externalPath) : null;
+        $proposalTime = $proposal->proposed_start_time
+            ? trim($proposal->proposed_start_time.($proposal->proposed_end_time ? ' - '.$proposal->proposed_end_time : ''))
+            : ($proposal->proposed_time ?? 'N/A');
+        $budgetRows = $proposal->budgetItems;
+        $budgetRowsCount = $budgetRows->count();
+        $budgetRowsTotal = $budgetRowsCount > 0
+            ? number_format((float) $budgetRows->sum('total_cost'), 2)
+            : 'N/A';
 
         $details = [
             'Organization (profile)' => $proposal->organization?->organization_name ?? 'N/A',
-            'Submitted By' => $proposal->user?->full_name ?? 'N/A',
+            'Submitted By' => $proposal->submittedBy?->full_name ?? $proposal->user?->full_name ?? 'N/A',
             'Submission Date' => optional($proposal->submission_date)->format('M d, Y') ?? 'N/A',
             'Organization name (form)' => $proposal->form_organization_name ?? 'N/A',
-            'Academic Year' => $proposal->academic_year ?? 'N/A',
+            'Academic Year' => $proposal->academicTerm?->academic_year ?? $proposal->academic_year ?? 'N/A',
             'School' => $proposal->school_code ? ($schoolLabels[$proposal->school_code] ?? $proposal->school_code) : 'N/A',
             'Department / Program' => $proposal->department_program ?? 'N/A',
             'Organization logo' => $logoUrl ?? 'N/A',
             'Activity Title' => $proposal->activity_title ?? 'N/A',
             'Proposed Start' => optional($proposal->proposed_start_date)->format('M d, Y') ?? 'N/A',
             'Proposed End' => optional($proposal->proposed_end_date)->format('M d, Y') ?? 'N/A',
-            'Proposed Time' => $proposal->proposed_time ?? 'N/A',
+            'Proposed Time' => $proposalTime,
             'Venue' => $proposal->venue ?? 'N/A',
             'Overall Goal' => $proposal->overall_goal ?? ($proposal->activity_description ?? 'N/A'),
             'Specific Objectives' => $proposal->specific_objectives ?? 'N/A',
             'Criteria / Mechanics' => $proposal->criteria_mechanics ?? 'N/A',
             'Program Flow' => $proposal->program_flow ?? 'N/A',
             'Proposed Budget (total)' => $proposal->estimated_budget !== null ? number_format((float) $proposal->estimated_budget, 2) : 'N/A',
+            'Budget Items Rows' => $budgetRowsCount > 0 ? (string) $budgetRowsCount : 'N/A',
+            'Budget Items Total' => $budgetRowsTotal,
             'Source of Funding' => $proposal->source_of_funding ?? 'N/A',
             'Materials and Supplies' => $proposal->budget_materials_supplies !== null ? number_format((float) $proposal->budget_materials_supplies, 2) : 'N/A',
             'Food and Beverage' => $proposal->budget_food_beverage !== null ? number_format((float) $proposal->budget_food_beverage, 2) : 'N/A',
             'Other Expenses' => $proposal->budget_other_expenses !== null ? number_format((float) $proposal->budget_other_expenses, 2) : 'N/A',
             'Resume (resource persons)' => $resumeUrl ?? 'N/A',
+            'External funding support' => $externalUrl ?? 'N/A',
         ];
 
         return view('admin.review-show', [
             'pageTitle' => 'Activity Proposal Submission Details',
             'backRoute' => route('admin.proposals.index'),
-            'status' => $proposal->proposal_status ?? 'PENDING',
+            'status' => strtoupper((string) ($proposal->status ?? 'pending')),
             'details' => $details,
             'organization' => $proposal->organization,
+            'workflowSteps' => $proposal->workflowSteps,
+            'workflowLogs' => $proposal->approvalLogs()->latest('created_at')->limit(15)->get(),
+            'workflowActionRoute' => route('admin.proposals.workflow', $proposal),
+            'workflowCurrentStep' => $proposal->workflowSteps->firstWhere('is_current_step', true),
         ]);
+    }
+
+    public function updateProposalWorkflow(Request $request, ActivityProposal $proposal): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+        $this->ensureProposalWorkflow($proposal);
+
+        $validated = $request->validate([
+            'action' => ['required', Rule::in(['approve', 'reject', 'revision'])],
+            'comments' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $action = (string) $validated['action'];
+        $comments = trim((string) ($validated['comments'] ?? ''));
+        $fromStatus = strtoupper((string) ($proposal->status ?? 'PENDING'));
+
+        /** @var User $admin */
+        $admin = $request->user();
+
+        DB::transaction(function () use ($proposal, $action, $comments, $fromStatus, $admin): void {
+            $currentStep = $proposal->workflowSteps()
+                ->where('is_current_step', true)
+                ->orderBy('step_order')
+                ->first();
+
+            if (! $currentStep) {
+                $currentStep = $proposal->workflowSteps()->orderBy('step_order')->first();
+                if ($currentStep) {
+                    $currentStep->update(['is_current_step' => true]);
+                }
+            }
+
+            if (! $currentStep) {
+                abort(422, 'No workflow steps available for this proposal.');
+            }
+
+            $toStatus = $fromStatus;
+            $logAction = 'approved';
+
+            $currentApprovalStep = (int) $currentStep->step_order;
+            if ($action === 'approve') {
+                $currentStep->update([
+                    'assigned_to' => $admin->id,
+                    'status' => 'approved',
+                    'is_current_step' => false,
+                    'review_comments' => $comments !== '' ? $comments : null,
+                    'acted_at' => now(),
+                ]);
+
+                $nextStep = $proposal->workflowSteps()
+                    ->where('step_order', '>', $currentStep->step_order)
+                    ->orderBy('step_order')
+                    ->first();
+
+                if ($nextStep) {
+                    $nextStep->update(['is_current_step' => true]);
+                    $toStatus = 'UNDER_REVIEW';
+                    $currentApprovalStep = (int) $nextStep->step_order;
+                } else {
+                    $toStatus = 'APPROVED';
+                }
+                $logAction = 'approved';
+            } elseif ($action === 'revision') {
+                $currentStep->update([
+                    'assigned_to' => $admin->id,
+                    'status' => 'revision_required',
+                    'is_current_step' => false,
+                    'review_comments' => $comments !== '' ? $comments : null,
+                    'acted_at' => now(),
+                ]);
+                $toStatus = 'REVISION';
+                $logAction = 'revision_requested';
+            } else {
+                $currentStep->update([
+                    'assigned_to' => $admin->id,
+                    'status' => 'rejected',
+                    'is_current_step' => false,
+                    'review_comments' => $comments !== '' ? $comments : null,
+                    'acted_at' => now(),
+                ]);
+                $toStatus = 'REJECTED';
+                $logAction = 'rejected';
+            }
+
+            $proposal->update([
+                'status' => strtolower($toStatus),
+                'current_approval_step' => $currentApprovalStep,
+            ]);
+
+            ApprovalLog::query()->create([
+                'approvable_type' => ActivityProposal::class,
+                'approvable_id' => $proposal->id,
+                'workflow_step_id' => $currentStep->id,
+                'actor_id' => $admin->id,
+                'action' => $logAction,
+                'from_status' => $fromStatus,
+                'to_status' => $toStatus,
+                'comments' => $comments !== '' ? $comments : null,
+                'created_at' => now(),
+            ]);
+        });
+
+        return redirect()
+            ->route('admin.proposals.show', $proposal)
+            ->with('success', 'Proposal workflow decision saved.');
     }
 
     public function showReport(Request $request, ActivityReport $report): View
     {
         $this->authorizeAdmin($request);
 
-        $report->load(['organization', 'user']);
+        $report->load(['organization', 'user', 'attachments']);
+
+        $posterPath = $this->attachmentPathOrLegacy($report, Attachment::TYPE_REPORT_POSTER, $report->poster_image_path);
+        $attendancePath = $this->attachmentPathOrLegacy($report, Attachment::TYPE_REPORT_ATTENDANCE, $report->attendance_sheet_path);
 
         $schoolLabels = [
             'sace' => 'School of Architecture, Computer and Engineering',
@@ -853,12 +841,14 @@ class AdminController extends Controller
             'Activity Evaluation' => $report->evaluation_report ?? 'N/A',
             'Participants Reached (%)' => $report->participants_reached_percent !== null ? (string) $report->participants_reached_percent.'%' : 'N/A',
             'Legacy Report File' => $report->report_file ?? 'N/A',
+            'Poster file' => $posterPath ? Storage::disk('public')->url($posterPath) : 'N/A',
+            'Attendance file' => $attendancePath ? Storage::disk('public')->url($attendancePath) : 'N/A',
         ];
 
         return view('admin.review-show', [
             'pageTitle' => 'After Activity Report Submission Details',
             'backRoute' => route('admin.reports.index'),
-            'status' => $report->report_status ?? 'PENDING',
+            'status' => strtoupper((string) ($report->status ?? 'pending')),
             'details' => $details,
             'organization' => $report->organization,
         ]);
@@ -877,8 +867,8 @@ class AdminController extends Controller
     private function buildCentralizedCalendarEvents()
     {
         $proposalEvents = ActivityProposal::query()
-            ->where('proposal_status', '!=', 'DRAFT')
-            ->with(['organization', 'user'])
+            ->where('status', '!=', 'draft')
+            ->with(['organization', 'submittedBy'])
             ->latest('submission_date')
             ->latest('id')
             ->get()
@@ -887,9 +877,9 @@ class AdminController extends Controller
                     'title' => $proposal->activity_title ?? 'Untitled Activity',
                     'start' => optional($proposal->proposed_start_date)?->toDateString(),
                     'end' => optional($proposal->proposed_end_date)?->addDay()->toDateString(),
-                    'status' => $proposal->proposal_status ?? 'PENDING',
+                    'status' => strtoupper((string) ($proposal->status ?? 'pending')),
                     'organization_name' => $proposal->organization?->organization_name ?? 'N/A',
-                    'submitted_by' => $proposal->user?->full_name ?? 'N/A',
+                    'submitted_by' => $proposal->submittedBy?->full_name ?? 'N/A',
                     'date' => trim(
                         collect([
                             optional($proposal->proposed_start_date)->format('M d, Y'),
@@ -905,5 +895,49 @@ class AdminController extends Controller
             });
 
         return $proposalEvents->values();
+    }
+
+    private function attachmentPathOrLegacy(Model $attachable, string $fileType, ?string $legacyPath): ?string
+    {
+        if (method_exists($attachable, 'attachments')) {
+            $attachment = $attachable->attachments()
+                ->where('file_type', $fileType)
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                return $attachment->stored_path;
+            }
+        }
+
+        return $legacyPath;
+    }
+
+    private function ensureProposalWorkflow(ActivityProposal $proposal): void
+    {
+        $existing = $proposal->workflowSteps()->count();
+        if ($existing > 0) {
+            return;
+        }
+
+        $roles = Role::query()
+            ->whereNotNull('approval_level')
+            ->orderBy('approval_level')
+            ->get(['id']);
+
+        $order = 1;
+        foreach ($roles as $role) {
+            ApprovalWorkflowStep::query()->create([
+                'approvable_type' => ActivityProposal::class,
+                'approvable_id' => $proposal->id,
+                'step_order' => $order,
+                'role_id' => $role->id,
+                'assigned_to' => null,
+                'status' => 'pending',
+                'is_current_step' => $order === 1,
+                'review_comments' => null,
+                'acted_at' => null,
+            ]);
+            $order++;
+        }
     }
 }
