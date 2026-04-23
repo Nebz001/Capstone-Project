@@ -25,9 +25,18 @@
     $proposalSource = $hasCalendarActivities ? 'calendar' : 'unlisted';
   }
   $selectedCalendarEntryId = (int) old('activity_calendar_entry_id', $requestForm?->activity_calendar_entry_id);
+  $sdgOptions = array_map(fn ($n) => 'SDG '.$n, range(1, 17));
+  $selectedTargetSdgsRaw = old('target_sdg', $requestForm?->target_sdg ?? []);
+  if (is_array($selectedTargetSdgsRaw)) {
+    $selectedTargetSdgs = array_values(array_filter($selectedTargetSdgsRaw, fn ($value) => is_string($value) && $value !== ''));
+  } elseif (is_string($selectedTargetSdgsRaw) && trim($selectedTargetSdgsRaw) !== '') {
+    $selectedTargetSdgs = array_values(array_filter(array_map('trim', explode(',', $selectedTargetSdgsRaw))));
+  } else {
+    $selectedTargetSdgs = [];
+  }
 @endphp
 
-<div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
+<div class="proposal-request-page mx-auto max-w-screen-2xl overflow-x-hidden px-4 py-8 sm:px-6 lg:px-10">
   <header class="mb-8">
     <a href="{{ route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
@@ -90,6 +99,7 @@
   @endif
 
   <form
+    id="activity-proposal-request-form"
     method="POST"
     action="{{ route('organizations.activity-proposal-request.store') }}"
     enctype="multipart/form-data"
@@ -98,6 +108,12 @@
     @csrf
     @if ($requestForm)
       <input type="hidden" name="request_id" value="{{ $requestForm->id }}">
+    @endif
+    @if ($errors->any())
+      <x-feedback.blocked-message
+        variant="error"
+        :message="'Please complete the required fields marked below before continuing to Step 2.'"
+      />
     @endif
 
     <fieldset
@@ -111,24 +127,53 @@
         <x-ui.card-section-header title="Proposal Option" subtitle="Choose how you want to prepare this proposal." content-padding="px-6" />
         <div class="px-6 py-6">
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="cursor-pointer rounded-xl border px-4 py-3 transition {{ $proposalSource === 'calendar' ? 'border-[#003E9F] bg-[#003E9F]/5' : 'border-slate-200 bg-white hover:border-slate-300' }}">
+            <label
+              data-proposal-option="calendar"
+              class="proposal-source-option cursor-pointer rounded-xl border px-4 py-3 transition duration-150 {{ $proposalSource === 'calendar' ? 'border-2 border-[#003E9F] bg-[#003E9F]/10 shadow-sm ring-1 ring-[#003E9F]/20' : 'border-slate-200 bg-white hover:border-slate-300' }}"
+            >
               <input type="radio" name="proposal_source" value="calendar" class="sr-only" @checked($proposalSource === 'calendar') />
-              <p class="text-sm font-semibold text-slate-900">From submitted Activity Calendar</p>
-              <p class="mt-1 text-xs text-slate-600">Link this proposal to an activity already listed in your submitted calendar.</p>
+              <div class="flex items-start justify-between gap-3">
+                <p data-option-title class="text-sm font-semibold {{ $proposalSource === 'calendar' ? 'text-[#003E9F]' : 'text-slate-900' }}">From submitted Activity Calendar</p>
+                <span
+                  data-option-check
+                  class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold transition {{ $proposalSource === 'calendar' ? 'border-[#003E9F] bg-[#003E9F] text-white' : 'border-slate-300 bg-white text-transparent' }}"
+                  aria-hidden="true"
+                >
+                  ✓
+                </span>
+              </div>
+              <p data-option-helper class="mt-1 text-xs {{ $proposalSource === 'calendar' ? 'text-[#003E9F]/80' : 'text-slate-600' }}">Link this proposal to an activity already listed in your submitted calendar.</p>
             </label>
-            <label class="cursor-pointer rounded-xl border px-4 py-3 transition {{ $proposalSource === 'unlisted' ? 'border-[#003E9F] bg-[#003E9F]/5' : 'border-slate-200 bg-white hover:border-slate-300' }}">
+            <label
+              data-proposal-option="unlisted"
+              class="proposal-source-option cursor-pointer rounded-xl border px-4 py-3 transition duration-150 {{ $proposalSource === 'unlisted' ? 'border-2 border-[#003E9F] bg-[#003E9F]/10 shadow-sm ring-1 ring-[#003E9F]/20' : 'border-slate-200 bg-white hover:border-slate-300' }}"
+            >
               <input type="radio" name="proposal_source" value="unlisted" class="sr-only" @checked($proposalSource === 'unlisted') />
-              <p class="text-sm font-semibold text-slate-900">Activity not in submitted calendar</p>
-              <p class="mt-1 text-xs text-slate-600">Use this for biglaan/unplanned activities or activities not included in the original calendar.</p>
+              <div class="flex items-start justify-between gap-3">
+                <p data-option-title class="text-sm font-semibold {{ $proposalSource === 'unlisted' ? 'text-[#003E9F]' : 'text-slate-900' }}">Activity not in submitted calendar</p>
+                <span
+                  data-option-check
+                  class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold transition {{ $proposalSource === 'unlisted' ? 'border-[#003E9F] bg-[#003E9F] text-white' : 'border-slate-300 bg-white text-transparent' }}"
+                  aria-hidden="true"
+                >
+                  ✓
+                </span>
+              </div>
+              <p data-option-helper class="mt-1 text-xs {{ $proposalSource === 'unlisted' ? 'text-[#003E9F]/80' : 'text-slate-600' }}">Use this for unplanned activities not included in the original calendar (Biglaan).</p>
             </label>
           </div>
           <div id="calendar-link-wrap" class="mt-4 {{ $proposalSource === 'calendar' ? '' : 'hidden' }}">
-            <x-forms.label for="activity_calendar_entry_id" required>Select submitted calendar activity to link</x-forms.label>
-            <x-forms.select id="activity_calendar_entry_id" name="activity_calendar_entry_id" :required="$proposalSource === 'calendar'">
+            <x-forms.label for="activity_calendar_entry_id" required class="{{ $errors->has('activity_calendar_entry_id') ? '!text-rose-700' : '' }}">Select submitted calendar activity to link</x-forms.label>
+            <x-forms.select id="activity_calendar_entry_id" name="activity_calendar_entry_id" :required="$proposalSource === 'calendar'" class="{{ $errors->has('activity_calendar_entry_id') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}">
               <option value="" disabled @selected($selectedCalendarEntryId <= 0)>Select activity</option>
               @foreach ($calendarEntries as $entry)
+                @php
+                  $entryProposalStatus = strtoupper((string) ($entry->proposal->status ?? $entry->proposal->proposal_status ?? ''));
+                  $entryUnavailable = $entry->proposal && ! in_array($entryProposalStatus, ['DRAFT', 'REVISION'], true);
+                @endphp
                 <option
                   value="{{ $entry->id }}"
+                  @disabled($entryUnavailable)
                   @selected($selectedCalendarEntryId === (int) $entry->id)
                   data-title="{{ $entry->activity_name }}"
                   data-date="{{ optional($entry->activity_date)->toDateString() }}"
@@ -136,11 +181,14 @@
                   data-sdg="{{ $entry->sdg }}"
                   data-budget="{{ $entry->budget }}"
                 >
-                  {{ optional($entry->activity_date)->format('M j, Y') ?? 'No date' }} — {{ $entry->activity_name }}
+                  {{ optional($entry->activity_date)->format('M j, Y') ?? 'No date' }} — {{ $entry->activity_name }}{{ $entryUnavailable ? ' (Already has submitted proposal)' : '' }}
                 </option>
               @endforeach
             </x-forms.select>
-            <x-forms.helper>Only activities from your submitted Activity Calendar are listed here.</x-forms.helper>
+            <x-forms.helper>Only activities from your submitted Activity Calendar are listed here. Activities with already submitted proposals are disabled.</x-forms.helper>
+            @error('activity_calendar_entry_id')
+              <x-forms.error>{{ $message }}</x-forms.error>
+            @enderror
           </div>
         </div>
       </x-ui.card>
@@ -150,12 +198,27 @@
         <div class="px-6 py-6">
           <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
-              <x-forms.label for="rso_name" required>Name of RSO</x-forms.label>
-              <x-forms.input id="rso_name" name="rso_name" type="text" :value="old('rso_name', $requestForm?->rso_name ?? ($organization?->organization_name ?? ''))" required />
+              <x-forms.label for="rso_name" required class="{{ $errors->has('rso_name') ? '!text-rose-700' : '' }}">Name of RSO</x-forms.label>
+              <x-forms.input
+                id="rso_name"
+                name="rso_name"
+                type="text"
+                :value="$organization?->organization_name ?? ''"
+                readonly
+                required
+                class="{{ $errors->has('rso_name') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }} bg-slate-100 text-slate-700 cursor-not-allowed"
+              />
+              <x-forms.helper>This value is auto-filled from your linked officer organization.</x-forms.helper>
+              @error('rso_name')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
             <div>
-              <x-forms.label for="activity_title" required>Title of Activity</x-forms.label>
-              <x-forms.input id="activity_title" name="activity_title" type="text" :value="old('activity_title', $requestForm?->activity_title)" required />
+              <x-forms.label for="activity_title" required class="{{ $errors->has('activity_title') ? '!text-rose-700' : '' }}">Title of Activity</x-forms.label>
+              <x-forms.input id="activity_title" name="activity_title" type="text" :value="old('activity_title', $requestForm?->activity_title)" required class="{{ $errors->has('activity_title') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+              @error('activity_title')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
             <div class="md:col-span-2">
               <x-forms.label for="partner_entities">Partner Organization(s) / School(s) / RSO</x-forms.label>
@@ -169,8 +232,8 @@
         <x-ui.card-section-header title="Nature and Type of Activity" subtitle="Select all applicable options." content-padding="px-6" />
         <div class="px-6 py-6 space-y-6">
           <div>
-            <p class="text-sm font-semibold text-slate-900">Nature of Activity <span class="text-rose-600">*</span></p>
-            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <p class="text-sm font-semibold {{ $errors->has('nature_of_activity') ? 'text-rose-700' : 'text-slate-900' }}">Nature of Activity <span class="text-rose-600">*</span></p>
+            <div id="nature-options-wrap" class="mt-3 grid grid-cols-1 gap-3 rounded-xl {{ $errors->has('nature_of_activity') ? 'border border-rose-300 bg-rose-50/40 p-3' : '' }} sm:grid-cols-2">
               @foreach ($natureOptions as $key)
                 @php
                   $label = match ($key) {
@@ -186,21 +249,29 @@
                 </x-forms.choice>
               @endforeach
             </div>
-            <div class="mt-3">
-              <x-forms.label for="nature_other">Nature of Activity (Others)</x-forms.label>
+            @error('nature_of_activity')
+              <x-forms.error>Please select at least one option.</x-forms.error>
+            @enderror
+            <p id="nature-required-reminder" class="mt-2 hidden text-xs font-medium text-amber-700">Please fill out this field.</p>
+            <div id="nature-other-wrap" class="mt-3 {{ in_array('others', $selectedNature, true) ? '' : 'hidden' }}">
+              <x-forms.label for="nature_other" class="{{ $errors->has('nature_other') ? '!text-rose-700' : '' }}">Nature of Activity (Others)</x-forms.label>
               <x-forms.input
                 id="nature_other"
                 name="nature_other"
                 type="text"
                 :value="old('nature_other', $requestForm?->nature_other)"
                 :disabled="! in_array('others', $selectedNature, true)"
+                class="{{ $errors->has('nature_other') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}"
               />
+              @error('nature_other')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
           </div>
 
           <div>
-            <p class="text-sm font-semibold text-slate-900">Type of Activity <span class="text-rose-600">*</span></p>
-            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <p class="text-sm font-semibold {{ $errors->has('activity_types') ? 'text-rose-700' : 'text-slate-900' }}">Type of Activity <span class="text-rose-600">*</span></p>
+            <div id="type-options-wrap" class="mt-3 grid grid-cols-1 gap-3 rounded-xl {{ $errors->has('activity_types') ? 'border border-rose-300 bg-rose-50/40 p-3' : '' }} sm:grid-cols-2">
               @foreach ($typeOptions as $key)
                 @php
                   $label = match ($key) {
@@ -222,15 +293,23 @@
                 </x-forms.choice>
               @endforeach
             </div>
-            <div class="mt-3">
-              <x-forms.label for="activity_type_other">Type of Activity (Others)</x-forms.label>
+            @error('activity_types')
+              <x-forms.error>Please select at least one option.</x-forms.error>
+            @enderror
+            <p id="type-required-reminder" class="mt-2 hidden text-xs font-medium text-amber-700">Please fill out this field.</p>
+            <div id="activity-type-other-wrap" class="mt-3 {{ in_array('others', $selectedTypes, true) ? '' : 'hidden' }}">
+              <x-forms.label for="activity_type_other" class="{{ $errors->has('activity_type_other') ? '!text-rose-700' : '' }}">Type of Activity (Others)</x-forms.label>
               <x-forms.input
                 id="activity_type_other"
                 name="activity_type_other"
                 type="text"
                 :value="old('activity_type_other', $requestForm?->activity_type_other)"
                 :disabled="! in_array('others', $selectedTypes, true)"
+                class="{{ $errors->has('activity_type_other') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}"
               />
+              @error('activity_type_other')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
           </div>
         </div>
@@ -241,29 +320,89 @@
         <div class="px-6 py-6">
           <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
-              <x-forms.label for="target_sdg" required>Target SDG</x-forms.label>
-              <x-forms.input id="target_sdg" name="target_sdg" type="text" :value="old('target_sdg', $requestForm?->target_sdg)" required />
+              <x-forms.label for="target-sdg-trigger" required class="{{ $errors->has('target_sdg') ? '!text-rose-700' : '' }}">Target SDG</x-forms.label>
+              <div id="target-sdg-dropdown" class="relative mt-2">
+                <button
+                  type="button"
+                  id="target-sdg-trigger"
+                  class="flex w-full items-center justify-between rounded-xl border bg-white px-4 py-3 text-left text-sm text-slate-900 shadow-sm transition hover:border-slate-400 focus:outline-none focus:ring-4 {{ $errors->has('target_sdg') ? 'border-rose-400 focus:ring-rose-500/20' : 'border-slate-300 focus:ring-sky-500/15' }}"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                >
+                  <span id="target-sdg-trigger-text" class="{{ count($selectedTargetSdgs) > 0 ? 'text-slate-900' : 'text-slate-500' }}">
+                    {{ count($selectedTargetSdgs) > 0 ? implode(', ', $selectedTargetSdgs) : 'Select one or more SDGs' }}
+                  </span>
+                  <svg class="h-5 w-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                <div
+                  id="target-sdg-menu"
+                  class="absolute left-0 right-0 z-20 mt-2 hidden max-h-64 overflow-y-auto rounded-xl border {{ $errors->has('target_sdg') ? 'border-rose-300' : 'border-slate-200' }} bg-white p-2 shadow-lg"
+                  role="menu"
+                >
+                  @foreach ($sdgOptions as $index => $sdgOption)
+                    <label class="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        id="target_sdg_{{ $index + 1 }}"
+                        name="target_sdg[]"
+                        value="{{ $sdgOption }}"
+                        class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500/30"
+                        @checked(in_array($sdgOption, $selectedTargetSdgs, true))
+                      />
+                      <span>{{ $sdgOption }}</span>
+                    </label>
+                  @endforeach
+                </div>
+              </div>
+              <x-forms.input id="target_sdg_required_proxy" type="text" class="sr-only" tabindex="-1" aria-hidden="true" />
+              <x-forms.helper>Click the dropdown and check all SDGs that apply.</x-forms.helper>
+              @error('target_sdg')
+                <x-forms.error>Please select at least one option.</x-forms.error>
+              @enderror
+              <p id="sdg-required-reminder" class="mt-2 hidden text-xs font-medium text-amber-700">Please fill out this field.</p>
+              <div id="target-sdg-selected-wrap" class="mt-2 {{ count($selectedTargetSdgs) > 0 ? '' : 'hidden' }}">
+                <p class="text-xs font-medium text-slate-700">Selected SDGs</p>
+                <div id="target-sdg-selected-list" class="mt-2 flex flex-wrap gap-2">
+                  @foreach ($selectedTargetSdgs as $selectedSdg)
+                    <span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{{ $selectedSdg }}</span>
+                  @endforeach
+                </div>
+              </div>
             </div>
             <div>
-              <x-forms.label for="proposed_budget" required>Proposed Budget</x-forms.label>
-              <x-forms.input id="proposed_budget" name="proposed_budget" type="number" step="0.01" min="0" :value="old('proposed_budget', $requestForm?->proposed_budget)" required />
+              <x-forms.label for="proposed_budget" required class="{{ $errors->has('proposed_budget') ? '!text-rose-700' : '' }}">Proposed Budget</x-forms.label>
+              <x-forms.input id="proposed_budget" name="proposed_budget" type="number" step="0.01" min="0" :value="old('proposed_budget', $requestForm?->proposed_budget)" required class="{{ $errors->has('proposed_budget') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+              @error('proposed_budget')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
             <div>
-              <x-forms.label for="budget_source" required>Budget Source</x-forms.label>
-              <x-forms.select id="budget_source" name="budget_source" required>
+              <x-forms.label for="budget_source" required class="{{ $errors->has('budget_source') ? '!text-rose-700' : '' }}">Budget Source</x-forms.label>
+              <x-forms.select id="budget_source" name="budget_source" required class="{{ $errors->has('budget_source') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}">
                 <option value="" disabled @selected(old('budget_source') === null || old('budget_source') === '')>Select source</option>
                 <option value="RSO Fund" @selected(old('budget_source', $requestForm?->budget_source) === 'RSO Fund')>RSO Fund</option>
                 <option value="RSO Savings" @selected(old('budget_source', $requestForm?->budget_source) === 'RSO Savings')>RSO Savings</option>
                 <option value="External" @selected(old('budget_source', $requestForm?->budget_source) === 'External')>External</option>
               </x-forms.select>
+              @error('budget_source')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
             <div>
-              <x-forms.label for="activity_date" required>Date of Activity</x-forms.label>
-              <x-forms.input id="activity_date" name="activity_date" type="date" :value="old('activity_date', optional($requestForm?->activity_date)->toDateString())" required />
+              <x-forms.label for="activity_date" required class="{{ $errors->has('activity_date') ? '!text-rose-700' : '' }}">Date of Activity</x-forms.label>
+              <x-forms.input id="activity_date" name="activity_date" type="date" :value="old('activity_date', optional($requestForm?->activity_date)->toDateString())" required class="{{ $errors->has('activity_date') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+              @error('activity_date')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
             <div class="md:col-span-2">
-              <x-forms.label for="venue" required>Venue</x-forms.label>
-              <x-forms.input id="venue" name="venue" type="text" :value="old('venue', $requestForm?->venue)" required />
+              <x-forms.label for="venue" required class="{{ $errors->has('venue') ? '!text-rose-700' : '' }}">Venue</x-forms.label>
+              <x-forms.input id="venue" name="venue" type="text" :value="old('venue', $requestForm?->venue)" required class="{{ $errors->has('venue') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+              @error('venue')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
           </div>
         </div>
@@ -287,19 +426,28 @@
               </x-forms.choice>
             </div>
             <div class="mt-3">
-              <x-forms.label for="request_letter" :required="! $requestForm?->request_letter_path">Upload Request Letter</x-forms.label>
-              <x-forms.input id="request_letter" name="request_letter" type="file" :required="! $requestForm?->request_letter_path" />
+              <x-forms.label for="request_letter" :required="! $requestForm?->request_letter_path" class="{{ $errors->has('request_letter') ? '!text-rose-700' : '' }}">Upload Request Letter</x-forms.label>
+              <x-forms.input id="request_letter" name="request_letter" type="file" :required="! $requestForm?->request_letter_path" class="{{ $errors->has('request_letter') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+              @error('request_letter')
+                <x-forms.error>{{ $message }}</x-forms.error>
+              @enderror
             </div>
           </div>
 
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <x-forms.label for="speaker_resume">Resume of Speaker (required if Seminar / Workshop is selected)</x-forms.label>
-            <x-forms.input id="speaker_resume" name="speaker_resume" type="file" />
+            <x-forms.label for="speaker_resume" class="{{ $errors->has('speaker_resume') ? '!text-rose-700' : '' }}">Resume of Speaker (required if Seminar / Workshop is selected)</x-forms.label>
+            <x-forms.input id="speaker_resume" name="speaker_resume" type="file" class="{{ $errors->has('speaker_resume') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+            @error('speaker_resume')
+              <x-forms.error>{{ $message }}</x-forms.error>
+            @enderror
           </div>
 
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <x-forms.label for="post_survey_form" :required="! $requestForm?->post_survey_form_path">Sample Post-Survey Form</x-forms.label>
-            <x-forms.input id="post_survey_form" name="post_survey_form" type="file" :required="! $requestForm?->post_survey_form_path" />
+            <x-forms.label for="post_survey_form" :required="! $requestForm?->post_survey_form_path" class="{{ $errors->has('post_survey_form') ? '!text-rose-700' : '' }}">Sample Post-Survey Form</x-forms.label>
+            <x-forms.input id="post_survey_form" name="post_survey_form" type="file" :required="! $requestForm?->post_survey_form_path" class="{{ $errors->has('post_survey_form') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+            @error('post_survey_form')
+              <x-forms.error>{{ $message }}</x-forms.error>
+            @enderror
           </div>
         </div>
       </x-ui.card>
@@ -315,16 +463,42 @@
   </form>
   @endif
 </div>
+<style>
+  .proposal-request-page .grid > * {
+    min-width: 0;
+  }
+
+  .proposal-request-page input[type="file"] {
+    max-width: 100%;
+  }
+</style>
 <script>
   (() => {
     const proposalSourceRadios = Array.from(document.querySelectorAll('input[name="proposal_source"]'));
+    const proposalForm = document.getElementById('activity-proposal-request-form');
     const calendarLinkWrap = document.getElementById('calendar-link-wrap');
+    const proposalSourceCards = Array.from(document.querySelectorAll('[data-proposal-option]'));
     const calendarSelect = document.getElementById('activity_calendar_entry_id');
     const titleInput = document.getElementById('activity_title');
     const dateInput = document.getElementById('activity_date');
     const venueInput = document.getElementById('venue');
-    const sdgInput = document.getElementById('target_sdg');
+    const sdgDropdown = document.getElementById('target-sdg-dropdown');
+    const sdgTrigger = document.getElementById('target-sdg-trigger');
+    const sdgTriggerText = document.getElementById('target-sdg-trigger-text');
+    const sdgMenu = document.getElementById('target-sdg-menu');
+    const sdgCheckboxes = Array.from(document.querySelectorAll('input[name="target_sdg[]"]'));
+    const sdgRequiredProxy = document.getElementById('target_sdg_required_proxy');
+    const selectedSdgWrap = document.getElementById('target-sdg-selected-wrap');
+    const selectedSdgList = document.getElementById('target-sdg-selected-list');
+    const natureOptionsWrap = document.getElementById('nature-options-wrap');
+    const typeOptionsWrap = document.getElementById('type-options-wrap');
+    const natureRequiredReminder = document.getElementById('nature-required-reminder');
+    const typeRequiredReminder = document.getElementById('type-required-reminder');
+    const sdgRequiredReminder = document.getElementById('sdg-required-reminder');
+    const natureCheckboxes = Array.from(document.querySelectorAll('input[name="nature_of_activity[]"]'));
+    const typeCheckboxes = Array.from(document.querySelectorAll('input[name="activity_types[]"]'));
     const budgetInput = document.getElementById('proposed_budget');
+    let hasAttemptedSubmit = false;
 
     const selectedProposalSource = () => {
       const hit = proposalSourceRadios.find((r) => r.checked);
@@ -344,6 +518,81 @@
           calendarSelect.value = '';
         }
       }
+
+      proposalSourceCards.forEach((card) => {
+        const isActive = card.getAttribute('data-proposal-option') === source;
+        card.classList.toggle('border-2', isActive);
+        card.classList.toggle('border-[#003E9F]', isActive);
+        card.classList.toggle('bg-[#003E9F]/10', isActive);
+        card.classList.toggle('shadow-sm', isActive);
+        card.classList.toggle('ring-1', isActive);
+        card.classList.toggle('ring-[#003E9F]/20', isActive);
+        card.classList.toggle('border-slate-200', !isActive);
+        card.classList.toggle('bg-white', !isActive);
+        card.classList.toggle('hover:border-slate-300', !isActive);
+
+        const title = card.querySelector('[data-option-title]');
+        if (title) {
+          title.classList.toggle('text-[#003E9F]', isActive);
+          title.classList.toggle('text-slate-900', !isActive);
+        }
+
+        const helper = card.querySelector('[data-option-helper]');
+        if (helper) {
+          helper.classList.toggle('text-[#003E9F]/80', isActive);
+          helper.classList.toggle('text-slate-600', !isActive);
+        }
+
+        const check = card.querySelector('[data-option-check]');
+        if (check) {
+          check.classList.toggle('border-[#003E9F]', isActive);
+          check.classList.toggle('bg-[#003E9F]', isActive);
+          check.classList.toggle('text-white', isActive);
+          check.classList.toggle('border-slate-300', !isActive);
+          check.classList.toggle('bg-white', !isActive);
+          check.classList.toggle('text-transparent', !isActive);
+        }
+      });
+    };
+
+    const normalizeSdgValues = (value) => {
+      if (!value || typeof value !== 'string') return [];
+      return value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    };
+
+    const syncSelectedSdgBadges = () => {
+      if (!selectedSdgList || !selectedSdgWrap) return;
+      const selected = sdgCheckboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+      selectedSdgWrap.classList.toggle('hidden', selected.length === 0);
+      selectedSdgList.innerHTML = selected
+        .map((sdg) => `<span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">${sdg}</span>`)
+        .join('');
+      if (sdgTriggerText) {
+        sdgTriggerText.textContent = selected.length > 0 ? selected.join(', ') : 'Select one or more SDGs';
+        sdgTriggerText.classList.toggle('text-slate-500', selected.length === 0);
+        sdgTriggerText.classList.toggle('text-slate-900', selected.length > 0);
+      }
+      if (sdgRequiredProxy) {
+        sdgRequiredProxy.value = selected.length > 0 ? 'selected' : '';
+      }
+      if (hasAttemptedSubmit && sdgRequiredReminder) {
+        sdgRequiredReminder.classList.toggle('hidden', selected.length > 0);
+      }
+      if (hasAttemptedSubmit && sdgTrigger) {
+        sdgTrigger.classList.toggle('border-rose-400', selected.length === 0);
+      }
+    };
+
+    const setSelectedSdgs = (sdgText) => {
+      const selectedValues = normalizeSdgValues(sdgText);
+      const selectedSet = new Set(selectedValues);
+      sdgCheckboxes.forEach((checkbox) => {
+        checkbox.checked = selectedSet.has(checkbox.value);
+      });
+      syncSelectedSdgBadges();
     };
 
     const autofillFromCalendarSelection = () => {
@@ -360,7 +609,7 @@
       if (titleInput) titleInput.value = title;
       if (dateInput) dateInput.value = date;
       if (venueInput) venueInput.value = venue;
-      if (sdgInput) sdgInput.value = sdg;
+      setSelectedSdgs(sdg);
       if (budgetInput) budgetInput.value = budget;
     };
 
@@ -370,21 +619,44 @@
     if (calendarSelect) {
       calendarSelect.addEventListener('change', autofillFromCalendarSelection);
     }
+    if (sdgTrigger && sdgMenu) {
+      sdgTrigger.addEventListener('click', () => {
+        const isOpen = !sdgMenu.classList.contains('hidden');
+        sdgMenu.classList.toggle('hidden', isOpen);
+        sdgTrigger.setAttribute('aria-expanded', String(!isOpen));
+      });
+      document.addEventListener('click', (event) => {
+        if (!sdgDropdown) return;
+        if (sdgDropdown.contains(event.target)) return;
+        sdgMenu.classList.add('hidden');
+        sdgTrigger.setAttribute('aria-expanded', 'false');
+      });
+    }
+    if (sdgCheckboxes.length > 0) {
+      sdgCheckboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', syncSelectedSdgBadges);
+      });
+      syncSelectedSdgBadges();
+    }
 
     syncProposalSourceUi();
     if (calendarSelect && calendarSelect.value) {
       autofillFromCalendarSelection();
     }
 
-    const setupSingleSelectCheckboxGroup = (selector, othersCheckboxId, othersInputId) => {
+    const setupSingleSelectCheckboxGroup = (selector, othersCheckboxId, othersInputId, othersWrapId) => {
       const checkboxes = Array.from(document.querySelectorAll(selector));
       if (checkboxes.length === 0) return;
       const othersCheckbox = document.getElementById(othersCheckboxId);
       const othersInput = document.getElementById(othersInputId);
+      const othersWrap = document.getElementById(othersWrapId);
 
       const syncOthersInput = () => {
         if (!othersInput || !othersCheckbox) return;
         const enabled = othersCheckbox.checked;
+        if (othersWrap) {
+          othersWrap.classList.toggle('hidden', !enabled);
+        }
         othersInput.disabled = !enabled;
         if (!enabled) {
           othersInput.value = '';
@@ -405,8 +677,113 @@
       syncOthersInput();
     };
 
-    setupSingleSelectCheckboxGroup('input[name="nature_of_activity[]"]', 'nature_others', 'nature_other');
-    setupSingleSelectCheckboxGroup('input[name="activity_types[]"]', 'activity_type_others', 'activity_type_other');
+    setupSingleSelectCheckboxGroup('input[name="nature_of_activity[]"]', 'nature_others', 'nature_other', 'nature-other-wrap');
+    setupSingleSelectCheckboxGroup('input[name="activity_types[]"]', 'activity_type_others', 'activity_type_other', 'activity-type-other-wrap');
+
+    const showGroupReminderState = (wrapEl, reminderEl, hasSelection) => {
+      if (reminderEl) {
+        reminderEl.classList.toggle('hidden', hasSelection);
+      }
+      if (wrapEl) {
+        wrapEl.classList.toggle('border', !hasSelection);
+        wrapEl.classList.toggle('border-rose-300', !hasSelection);
+        wrapEl.classList.toggle('bg-rose-50/40', !hasSelection);
+        wrapEl.classList.toggle('p-3', !hasSelection);
+      }
+    };
+
+    const scrollToInvalidTarget = (target) => {
+      if (!target || typeof target.scrollIntoView !== 'function') return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    };
+
+    const firstInvalidByDomOrder = (a, b) => {
+      if (!a) return b || null;
+      if (!b) return a || null;
+      const pos = a.compareDocumentPosition(b);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return a;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return b;
+      return a;
+    };
+
+    const getFirstCustomInvalidTarget = () => {
+      const hasNature = natureCheckboxes.some((checkbox) => checkbox.checked);
+      if (!hasNature) return natureOptionsWrap || natureRequiredReminder;
+
+      const hasType = typeCheckboxes.some((checkbox) => checkbox.checked);
+      if (!hasType) return typeOptionsWrap || typeRequiredReminder;
+
+      const hasSdg = sdgCheckboxes.some((checkbox) => checkbox.checked);
+      if (!hasSdg) return sdgTrigger || sdgRequiredReminder;
+
+      return null;
+    };
+
+    const validateCustomRequiredSections = () => {
+      const hasNature = natureCheckboxes.some((checkbox) => checkbox.checked);
+      const hasType = typeCheckboxes.some((checkbox) => checkbox.checked);
+      const hasSdg = sdgCheckboxes.some((checkbox) => checkbox.checked);
+
+      showGroupReminderState(natureOptionsWrap, natureRequiredReminder, hasNature);
+      showGroupReminderState(typeOptionsWrap, typeRequiredReminder, hasType);
+
+      if (sdgRequiredReminder) {
+        sdgRequiredReminder.classList.toggle('hidden', hasSdg);
+      }
+      if (sdgTrigger) {
+        sdgTrigger.classList.toggle('border-rose-400', !hasSdg);
+        sdgTrigger.classList.toggle('focus:ring-rose-500/20', !hasSdg);
+        sdgTrigger.classList.toggle('border-slate-300', hasSdg);
+        sdgTrigger.classList.toggle('focus:ring-sky-500/15', hasSdg);
+      }
+
+      return hasNature && hasType && hasSdg;
+    };
+
+    if (natureCheckboxes.length > 0) {
+      natureCheckboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+          if (!hasAttemptedSubmit) return;
+          const hasNature = natureCheckboxes.some((item) => item.checked);
+          showGroupReminderState(natureOptionsWrap, natureRequiredReminder, hasNature);
+        });
+      });
+    }
+    if (typeCheckboxes.length > 0) {
+      typeCheckboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+          if (!hasAttemptedSubmit) return;
+          const hasType = typeCheckboxes.some((item) => item.checked);
+          showGroupReminderState(typeOptionsWrap, typeRequiredReminder, hasType);
+        });
+      });
+    }
+
+    if (proposalForm) {
+      proposalForm.addEventListener('submit', (event) => {
+        hasAttemptedSubmit = true;
+        const customSectionsValid = validateCustomRequiredSections();
+        const nativeValid = proposalForm.checkValidity();
+        const nativeInvalidTarget = nativeValid ? null : proposalForm.querySelector(':invalid');
+        const customInvalidTarget = customSectionsValid ? null : getFirstCustomInvalidTarget();
+        const firstInvalidTarget = firstInvalidByDomOrder(customInvalidTarget, nativeInvalidTarget);
+
+        if (!customSectionsValid || !nativeValid) {
+          event.preventDefault();
+          scrollToInvalidTarget(firstInvalidTarget);
+          if (nativeInvalidTarget && firstInvalidTarget === nativeInvalidTarget && typeof nativeInvalidTarget.focus === 'function') {
+            nativeInvalidTarget.focus({ preventScroll: true });
+            if (typeof nativeInvalidTarget.reportValidity === 'function') {
+              nativeInvalidTarget.reportValidity();
+            } else {
+              proposalForm.reportValidity();
+            }
+          } else if (firstInvalidTarget && typeof firstInvalidTarget.focus === 'function') {
+            firstInvalidTarget.focus({ preventScroll: true });
+          }
+        }
+      });
+    }
   })();
 </script>
 @endsection

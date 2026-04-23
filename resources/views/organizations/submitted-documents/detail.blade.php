@@ -66,14 +66,32 @@
   <x-ui.card padding="p-0" class="mb-6">
     <x-ui.card-section-header title="Submission details" content-padding="px-6" />
     <div class="border-t border-slate-100 px-6 py-5">
-      <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        @foreach ($metaRows as $row)
-          <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $row['label'] }}</dt>
-            <dd class="mt-1 text-sm text-slate-800">{{ $row['value'] }}</dd>
-          </div>
-        @endforeach
-      </dl>
+      @if (! empty($metaSections ?? []))
+        <div class="space-y-6">
+          @foreach ($metaSections as $section)
+            <section>
+              <h3 class="mb-3 text-sm font-semibold text-slate-900">{{ $section['title'] ?? 'Details' }}</h3>
+              <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                @foreach (($section['rows'] ?? []) as $row)
+                  <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $row['label'] }}</dt>
+                    <dd class="mt-1 whitespace-pre-line text-sm text-slate-800">{{ $row['value'] }}</dd>
+                  </div>
+                @endforeach
+              </dl>
+            </section>
+          @endforeach
+        </div>
+      @else
+        <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          @foreach ($metaRows as $row)
+            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $row['label'] }}</dt>
+              <dd class="mt-1 whitespace-pre-line text-sm text-slate-800">{{ $row['value'] }}</dd>
+            </div>
+          @endforeach
+        </dl>
+      @endif
     </div>
   </x-ui.card>
 

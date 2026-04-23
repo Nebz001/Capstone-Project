@@ -1220,7 +1220,7 @@ class OrganizationController extends Controller
         $latestCalendar = ActivityCalendar::query()
             ->where('organization_id', $organization->id)
             ->with([
-                'entries' => fn ($q) => $q->orderBy('activity_date')->orderBy('id'),
+                'entries' => fn ($q) => $q->with('proposal')->orderBy('activity_date')->orderBy('id'),
             ])
             ->latest('submission_date')
             ->latest('id')
@@ -1257,7 +1257,13 @@ class OrganizationController extends Controller
                 ->with('error', 'Your student officer account is pending SDAO validation.');
         }
 
+        // Always bind RSO name to the logged-in officer's linked organization.
+        $request->merge([
+            'rso_name' => (string) ($organization->organization_name ?? ''),
+        ]);
+
         $editableRequest = $this->resolveEditableActivityRequestForm($request, $organization);
+        $targetSdgOptions = array_map(static fn ($n) => 'SDG '.$n, range(1, 17));
 
         $validated = $request->validate([
             'request_id' => ['nullable', 'integer'],
@@ -1286,7 +1292,8 @@ class OrganizationController extends Controller
                 'string',
                 'max:255',
             ],
-            'target_sdg' => ['required', 'string', 'max:64'],
+            'target_sdg' => ['required', 'array', 'min:1'],
+            'target_sdg.*' => ['string', Rule::in($targetSdgOptions)],
             'proposed_budget' => ['required', 'numeric', 'min:0'],
             'budget_source' => ['required', 'string', Rule::in(['RSO Fund', 'RSO Savings', 'External'])],
             'activity_date' => ['required', 'date'],
@@ -1364,7 +1371,7 @@ class OrganizationController extends Controller
             'nature_other' => $validated['nature_other'] ?? null,
             'activity_types' => $validated['activity_types'],
             'activity_type_other' => $validated['activity_type_other'] ?? null,
-            'target_sdg' => $validated['target_sdg'],
+            'target_sdg' => implode(', ', $validated['target_sdg']),
             'proposed_budget' => $validated['proposed_budget'],
             'budget_source' => $validated['budget_source'],
             'activity_date' => $validated['activity_date'],
@@ -1677,7 +1684,8 @@ class OrganizationController extends Controller
             'project_activity_title' => ['required', 'string', 'max:200'],
             'proposed_start_date' => ['required', 'date'],
             'proposed_end_date' => ['required', 'date', 'after_or_equal:proposed_start_date'],
-            'proposed_time' => ['required', 'string', 'max:32'],
+            'proposed_start_time' => ['required', 'date_format:H:i'],
+            'proposed_end_time' => ['required', 'date_format:H:i', 'after:proposed_start_time'],
             'venue' => ['required', 'string', 'max:255'],
             'overall_goal' => ['required', 'string', 'max:5000'],
             'specific_objectives' => ['required', 'string', 'max:5000'],
@@ -1699,7 +1707,39 @@ class OrganizationController extends Controller
             'proposal_action' => ['nullable', 'string', Rule::in(['draft', 'submit'])],
         ], [
             'proposed_end_date.after_or_equal' => 'The proposed end date must be on or after the start date.',
+            'proposed_end_time.after' => 'The proposed end time must be later than the proposed start time.',
         ]);
+
+        $academicTermId = $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']);
+        $normalizedTitle = mb_strtolower(trim((string) $validated['project_activity_title']));
+        $duplicateTitleExists = ActivityProposal::query()
+            ->where('organization_id', $organization->id)
+            ->where('academic_term_id', $academicTermId)
+            ->whereRaw('LOWER(TRIM(activity_title)) = ?', [$normalizedTitle])
+            ->when($existing, fn ($q) => $q->whereKeyNot($existing->id))
+            ->exists();
+        if ($duplicateTitleExists) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'project_activity_title' => 'A proposal with this activity title already exists.',
+                ]);
+        }
+
+        if ($calendarEntry && $existing === null) {
+            $submittedProposalExists = ActivityProposal::query()
+                ->where('organization_id', $organization->id)
+                ->where('activity_calendar_entry_id', $calendarEntry->id)
+                ->whereNotIn('status', ['draft'])
+                ->exists();
+            if ($submittedProposalExists) {
+                return back()
+                    ->withInput()
+                    ->withErrors([
+                        'activity_calendar_entry_id' => 'This activity already has a submitted proposal.',
+                    ]);
+            }
+        }
 
         $budgetItems = json_decode((string) ($validated['budget_items_payload'] ?? '[]'), true);
         if (! is_array($budgetItems) || $budgetItems === []) {
@@ -1719,9 +1759,9 @@ class OrganizationController extends Controller
             $material = trim((string) ($item['material'] ?? ''));
             $quantity = (float) ($item['quantity'] ?? 0);
             $unitPrice = (float) ($item['unit_price'] ?? 0);
-            $price = (float) ($item['price'] ?? 0);
+            $price = round($quantity * $unitPrice, 2);
 
-            if ($material === '' || $quantity <= 0 || $unitPrice < 0 || $price < 0) {
+            if ($material === '' || $quantity <= 0 || $unitPrice < 0) {
                 return back()
                     ->withInput()
                     ->withErrors([
@@ -1781,7 +1821,6 @@ class OrganizationController extends Controller
         }
 
         $summary = mb_substr(trim(strip_tags($validated['overall_goal'])), 0, 500);
-        [$proposedStartTime, $proposedEndTime] = $this->resolveProposalTimeWindow((string) $validated['proposed_time']);
         $currentApprovalStep = $existing?->current_approval_step ?? 0;
 
         $payload = [
@@ -1789,13 +1828,15 @@ class OrganizationController extends Controller
             'activity_calendar_id' => $calendarEntry?->activity_calendar_id,
             'activity_calendar_entry_id' => $calendarEntry?->id,
             'submitted_by' => $user->id,
-            'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
+            'academic_term_id' => $academicTermId,
+            'school_code' => $validated['school'],
+            'program' => $validated['department_program'],
             'activity_title' => $validated['project_activity_title'],
             'activity_description' => $summary !== '' ? $summary : null,
             'proposed_start_date' => $validated['proposed_start_date'],
             'proposed_end_date' => $validated['proposed_end_date'],
-            'proposed_start_time' => $proposedStartTime,
-            'proposed_end_time' => $proposedEndTime,
+            'proposed_start_time' => $validated['proposed_start_time'],
+            'proposed_end_time' => $validated['proposed_end_time'],
             'venue' => $validated['venue'],
             'overall_goal' => $validated['overall_goal'],
             'specific_objectives' => $validated['specific_objectives'],
@@ -1917,20 +1958,25 @@ class OrganizationController extends Controller
         ?ActivityRequestForm $requestForm = null
     ): array {
         if ($linked !== null) {
-            $time = $linked->proposed_start_time ?: '';
-            if (is_string($time) && strlen($time) >= 8 && str_contains($time, ':')) {
-                $time = substr($time, 0, 5);
+            $startTime = $linked->proposed_start_time ?: '';
+            if (is_string($startTime) && strlen($startTime) >= 8 && str_contains($startTime, ':')) {
+                $startTime = substr($startTime, 0, 5);
+            }
+            $endTime = $linked->proposed_end_time ?: '';
+            if (is_string($endTime) && strlen($endTime) >= 8 && str_contains($endTime, ':')) {
+                $endTime = substr($endTime, 0, 5);
             }
 
             return [
                 'organization_name' => $organization->organization_name,
                 'academic_year' => $linked->academic_year ?? $this->activeAcademicYear(),
-                'school' => $schoolPrefill,
-                'department_program' => $organization->college_department ?? '',
+                'school' => $linked->school_code ?: $schoolPrefill,
+                'department_program' => $linked->program ?? '',
                 'project_activity_title' => $linked->activity_title ?? '',
                 'proposed_start_date' => optional($linked->proposed_start_date)?->toDateString() ?? '',
                 'proposed_end_date' => optional($linked->proposed_end_date)?->toDateString() ?? '',
-                'proposed_time' => $time,
+                'proposed_start_time' => $startTime,
+                'proposed_end_time' => $endTime,
                 'venue' => $linked->venue ?? '',
                 'overall_goal' => $linked->overall_goal ?? '',
                 'specific_objectives' => $linked->specific_objectives ?? '',
@@ -1952,11 +1998,12 @@ class OrganizationController extends Controller
                 'organization_name' => $organization->organization_name,
                 'academic_year' => $cal?->academic_year ?? $this->activeAcademicYear(),
                 'school' => $schoolPrefill,
-                'department_program' => $organization->college_department ?? '',
+                'department_program' => '',
                 'project_activity_title' => $entry->activity_name ?? '',
                 'proposed_start_date' => $dateStr,
                 'proposed_end_date' => $dateStr,
-                'proposed_time' => '',
+                'proposed_start_time' => '',
+                'proposed_end_time' => '',
                 'venue' => $entry->venue ?? '',
                 'overall_goal' => '',
                 'specific_objectives' => '',
@@ -1974,11 +2021,12 @@ class OrganizationController extends Controller
             'organization_name' => $organization->organization_name,
             'academic_year' => $this->activeAcademicYear(),
             'school' => $schoolPrefill,
-            'department_program' => $organization->college_department ?? '',
+            'department_program' => '',
             'project_activity_title' => '',
             'proposed_start_date' => '',
             'proposed_end_date' => '',
-            'proposed_time' => '',
+            'proposed_start_time' => '',
+            'proposed_end_time' => '',
             'venue' => '',
             'overall_goal' => '',
             'specific_objectives' => '',
@@ -2058,27 +2106,6 @@ class OrganizationController extends Controller
         return [];
     }
 
-    /**
-     * @return array{0:?string,1:?string}
-     */
-    private function resolveProposalTimeWindow(string $proposedTime): array
-    {
-        $raw = trim($proposedTime);
-        if ($raw === '') {
-            return [null, null];
-        }
-
-        if (preg_match('/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/', $raw, $m) === 1) {
-            return [$m[1], $m[2]];
-        }
-
-        if (preg_match('/^\d{2}:\d{2}$/', $raw) === 1) {
-            return [$raw, null];
-        }
-
-        return [null, null];
-    }
-
     private function initializeProposalApprovalWorkflow(ActivityProposal $proposal, int $actorId, bool $isResubmission): void
     {
         $existingSteps = $proposal->workflowSteps()->count();
@@ -2147,7 +2174,6 @@ class OrganizationController extends Controller
         $prefill['organization_name'] = (string) ($requestForm->rso_name ?: $prefill['organization_name']);
         $prefill['project_activity_title'] = (string) ($requestForm->activity_title ?: $prefill['project_activity_title']);
         $prefill['proposed_start_date'] = $requestForm->activity_date?->toDateString() ?: $prefill['proposed_start_date'];
-        $prefill['proposed_end_date'] = $requestForm->activity_date?->toDateString() ?: $prefill['proposed_end_date'];
         $prefill['venue'] = (string) ($requestForm->venue ?: $prefill['venue']);
         $prefill['proposed_budget'] = $requestForm->proposed_budget !== null
             ? (string) $requestForm->proposed_budget

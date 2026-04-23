@@ -17,7 +17,7 @@
   @endif
 </head>
 
-<body class="min-h-screen bg-slate-100 antialiased">
+<body class="min-h-screen overflow-x-hidden bg-slate-100 antialiased">
 
   @include('organizations.partials.navbar')
 

@@ -119,6 +119,9 @@ Route::prefix('officer')->name('officer.')->group(function () {
 Route::prefix('approver')->name('approver.')->middleware('auth')->controller(ApproverDashboardController::class)->group(function () {
     Route::get('/dashboard', 'dashboard')->name('dashboard');
     Route::get('/assignments/{step}', 'showAssignment')->name('assignments.show');
+    Route::get('/assignments/{step}/proposal-files/{key}', 'streamAssignmentProposalFile')
+        ->name('assignments.proposals.file')
+        ->where('key', '[a-z_]+');
     Route::patch('/assignments/{step}', 'decide')->name('assignments.decide');
 });
 

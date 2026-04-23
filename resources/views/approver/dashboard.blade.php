@@ -37,15 +37,23 @@
   <div class="border-t border-slate-100 px-6 py-5">
     <form method="GET" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
       <div>
-        <x-forms.label for="filter_document_type">Document type</x-forms.label>
-        <x-forms.select id="filter_document_type" name="document_type">
-          <option value="">All</option>
-          <option value="organization_registration" @selected(($filters['document_type'] ?? '') === 'organization_registration')>Organization Registration</option>
-          <option value="organization_renewal" @selected(($filters['document_type'] ?? '') === 'organization_renewal')>Organization Renewal</option>
-          <option value="activity_calendar" @selected(($filters['document_type'] ?? '') === 'activity_calendar')>Activity Calendar</option>
-          <option value="activity_proposal" @selected(($filters['document_type'] ?? '') === 'activity_proposal')>Activity Proposal</option>
-          <option value="activity_report" @selected(($filters['document_type'] ?? '') === 'activity_report')>Activity Report</option>
-        </x-forms.select>
+        @if ($allowMultiDocumentTypes ?? false)
+          <x-forms.label for="filter_document_type">Document type</x-forms.label>
+          <x-forms.select id="filter_document_type" name="document_type">
+            <option value="">All</option>
+            <option value="organization_registration" @selected(($filters['document_type'] ?? '') === 'organization_registration')>Organization Registration</option>
+            <option value="organization_renewal" @selected(($filters['document_type'] ?? '') === 'organization_renewal')>Organization Renewal</option>
+            <option value="activity_calendar" @selected(($filters['document_type'] ?? '') === 'activity_calendar')>Activity Calendar</option>
+            <option value="activity_proposal" @selected(($filters['document_type'] ?? '') === 'activity_proposal')>Activity Proposal</option>
+            <option value="activity_report" @selected(($filters['document_type'] ?? '') === 'activity_report')>Activity Report</option>
+          </x-forms.select>
+        @else
+          <x-forms.label>Document type</x-forms.label>
+          <input type="hidden" name="document_type" value="activity_proposal" />
+          <div class="mt-2 inline-flex min-h-[46px] w-full items-center rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
+            Activity Proposal
+          </div>
+        @endif
       </div>
       <div>
         <x-forms.label for="filter_status">Status</x-forms.label>

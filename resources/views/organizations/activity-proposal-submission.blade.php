@@ -33,6 +33,7 @@
   $proposalGetRoute = $activityProposalGetRoute ?? 'organizations.activity-proposal-submission';
   $activeAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
   $requestForm = $requestForm ?? null;
+  $hasStep1Autofill = $requestForm !== null;
   $proposalSource = $proposalSource ?? request('proposal_source', 'calendar');
   if (! in_array($proposalSource, ['calendar', 'unlisted'], true)) {
     $proposalSource = 'calendar';
@@ -304,6 +305,8 @@
                 type="text"
                 placeholder="e.g., Computer Society"
                 :value="old('organization_name', $prefill['organization_name'] ?? $organization?->organization_name)"
+                :readonly="$hasStep1Autofill"
+                class="{{ $hasStep1Autofill ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : '' }}"
                 required
               />
             </div>
@@ -320,7 +323,7 @@
               />
             </div>
             <div>
-              <x-forms.label for="school" required>School</x-forms.label>
+              <x-forms.label for="school" required>Department</x-forms.label>
               <x-forms.select id="school" name="school" required>
                 @php $schoolVal = old('school', $prefill['school'] ?? $schoolPrefill); @endphp
                 <option value="" disabled @selected($schoolVal === null || $schoolVal === '')>Select school</option>
@@ -330,13 +333,13 @@
               </x-forms.select>
             </div>
             <div>
-              <x-forms.label for="department_program" required>Department / Program</x-forms.label>
+              <x-forms.label for="department_program" required>Program</x-forms.label>
               <x-forms.input
                 id="department_program"
                 name="department_program"
                 type="text"
                 placeholder="e.g., Computer Engineering"
-                :value="old('department_program', $prefill['department_program'] ?? $organization?->college_department)"
+                :value="old('department_program', $prefill['department_program'] ?? '')"
                 required
               />
             </div>
@@ -359,6 +362,8 @@
                 name="project_activity_title"
                 type="text"
                 :value="old('project_activity_title', $prefill['project_activity_title'] ?? '')"
+                :readonly="$hasStep1Autofill"
+                class="{{ $hasStep1Autofill ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : '' }}"
                 required
               />
             </div>
@@ -369,6 +374,8 @@
                 name="proposed_start_date"
                 type="date"
                 :value="old('proposed_start_date', $prefill['proposed_start_date'] ?? '')"
+                :readonly="$hasStep1Autofill"
+                class="{{ $hasStep1Autofill ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : '' }}"
                 required
               />
             </div>
@@ -384,12 +391,22 @@
               />
             </div>
             <div>
-              <x-forms.label for="proposed_time" required>Proposed Time</x-forms.label>
+              <x-forms.label for="proposed_start_time" required>Proposed Start Time</x-forms.label>
               <x-forms.input
-                id="proposed_time"
-                name="proposed_time"
+                id="proposed_start_time"
+                name="proposed_start_time"
                 type="time"
-                :value="old('proposed_time', $prefill['proposed_time'] ?? '')"
+                :value="old('proposed_start_time', $prefill['proposed_start_time'] ?? '')"
+                required
+              />
+            </div>
+            <div>
+              <x-forms.label for="proposed_end_time" required>Proposed End Time</x-forms.label>
+              <x-forms.input
+                id="proposed_end_time"
+                name="proposed_end_time"
+                type="time"
+                :value="old('proposed_end_time', $prefill['proposed_end_time'] ?? '')"
                 required
               />
             </div>
@@ -401,6 +418,8 @@
                 type="text"
                 placeholder="e.g., University Auditorium"
                 :value="old('venue', $prefill['venue'] ?? '')"
+                :readonly="$hasStep1Autofill"
+                class="{{ $hasStep1Autofill ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : '' }}"
                 required
               />
             </div>
@@ -480,6 +499,8 @@
                 min="0"
                 placeholder="0.00"
                 :value="old('proposed_budget', $prefill['proposed_budget'] ?? '')"
+                :readonly="$hasStep1Autofill"
+                class="{{ $hasStep1Autofill ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : '' }}"
                 required
               />
             </div>
@@ -488,38 +509,45 @@
                 Source of Funding
                 <span class="text-rose-600">*</span>
               </span>
-              <div class="mt-2 flex flex-wrap gap-6">
-                <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
-                  <input
-                    type="radio"
-                    name="source_of_funding"
-                    value="RSO Fund"
-                    class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
-                    @checked($sourceOfFundingValue === 'RSO Fund')
-                  />
-                  RSO Fund
-                </label>
-                <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
-                  <input
-                    type="radio"
-                    name="source_of_funding"
-                    value="RSO Savings"
-                    class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
-                    @checked($sourceOfFundingValue === 'RSO Savings')
-                  />
-                  RSO Savings
-                </label>
-                <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
-                  <input
-                    type="radio"
-                    name="source_of_funding"
-                    value="External"
-                    class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
-                    @checked($sourceOfFundingValue === 'External')
-                  />
-                  External
-                </label>
-              </div>
+              @if ($hasStep1Autofill)
+                <input type="hidden" id="source_of_funding_locked" name="source_of_funding" value="{{ $sourceOfFundingValue }}" />
+                <div class="mt-2 inline-flex items-center rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+                  {{ $sourceOfFundingValue }}
+                </div>
+              @else
+                <div class="mt-2 flex flex-wrap gap-6">
+                  <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                    <input
+                      type="radio"
+                      name="source_of_funding"
+                      value="RSO Fund"
+                      class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
+                      @checked($sourceOfFundingValue === 'RSO Fund')
+                    />
+                    RSO Fund
+                  </label>
+                  <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                    <input
+                      type="radio"
+                      name="source_of_funding"
+                      value="RSO Savings"
+                      class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
+                      @checked($sourceOfFundingValue === 'RSO Savings')
+                    />
+                    RSO Savings
+                  </label>
+                  <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                    <input
+                      type="radio"
+                      name="source_of_funding"
+                      value="External"
+                      class="size-4 border-slate-300 text-[#003E9F] focus:ring-[#003E9F]/25"
+                      @checked($sourceOfFundingValue === 'External')
+                    />
+                    External
+                  </label>
+                </div>
+              @endif
             </div>
             <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div class="mb-3 flex items-center justify-between">
@@ -533,9 +561,9 @@
                 </button>
               </div>
               <input type="hidden" id="budget_items_payload" name="budget_items_payload" value="{{ $prefillBudgetItems }}" />
-              <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <div class="max-h-[18.5rem] overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
                 <table class="w-full min-w-[640px] table-fixed text-sm">
-                  <thead class="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  <thead class="sticky top-0 z-10 bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
                     <tr>
                       <th class="px-3 py-2 text-left">Material</th>
                       <th class="w-28 px-3 py-2 text-left">Quantity</th>
@@ -672,14 +700,33 @@
       syncEndMin();
     })();
     (function () {
+      var startTime = document.getElementById('proposed_start_time');
+      var endTime = document.getElementById('proposed_end_time');
+      if (!startTime || !endTime) return;
+      function syncEndTimeMin() {
+        if (startTime.value) {
+          endTime.min = startTime.value;
+        } else {
+          endTime.removeAttribute('min');
+        }
+      }
+      startTime.addEventListener('change', syncEndTimeMin);
+      startTime.addEventListener('input', syncEndTimeMin);
+      syncEndTimeMin();
+    })();
+    (function () {
       var wrap = document.getElementById('external-funding-attachment');
       if (!wrap) return;
       var radios = document.querySelectorAll('input[name="source_of_funding"]');
+      var lockedFunding = document.getElementById('source_of_funding_locked');
       function sync() {
         var v = '';
         radios.forEach(function (r) {
           if (r.checked) v = r.value;
         });
+        if (!v && lockedFunding) {
+          v = lockedFunding.value || '';
+        }
         if (v === 'External') {
           wrap.classList.remove('hidden');
         } else {
@@ -713,7 +760,7 @@
           '<td class="px-3 py-2"><input type="text" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="material" value="' + (item.material || '') + '" /></td>' +
           '<td class="px-3 py-2"><input type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="quantity" value="' + (item.quantity || '') + '" /></td>' +
           '<td class="px-3 py-2"><input type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="unit_price" value="' + (item.unit_price || '') + '" /></td>' +
-          '<td class="px-3 py-2"><input type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" data-col="price" value="' + (item.price || '') + '" /></td>' +
+          '<td class="px-3 py-2"><input type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-sm font-medium text-slate-700" data-col="price" value="' + (item.price || '') + '" readonly tabindex="-1" /></td>' +
           '<td class="px-3 py-2 text-center"><button type="button" class="rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50" data-remove-row>Remove</button></td>';
         return tr;
       }
@@ -721,14 +768,21 @@
       function readRows() {
         var rows = Array.from(body.querySelectorAll('tr'));
         return rows.map(function (row) {
+          var quantity = money(row.querySelector('[data-col="quantity"]').value);
+          var unitPrice = money(row.querySelector('[data-col="unit_price"]').value);
+          var computedPrice = quantity * unitPrice;
+          var priceInput = row.querySelector('[data-col="price"]');
+          if (priceInput) {
+            priceInput.value = computedPrice > 0 ? computedPrice.toFixed(2) : '';
+          }
           return {
             material: row.querySelector('[data-col="material"]').value.trim(),
-            quantity: money(row.querySelector('[data-col="quantity"]').value),
-            unit_price: money(row.querySelector('[data-col="unit_price"]').value),
-            price: money(row.querySelector('[data-col="price"]').value),
+            quantity: quantity,
+            unit_price: unitPrice,
+            price: computedPrice,
           };
         }).filter(function (r) {
-          return r.material !== '' || r.quantity > 0 || r.unit_price > 0 || r.price > 0;
+          return r.material !== '' || r.quantity > 0 || r.unit_price > 0;
         });
       }
 

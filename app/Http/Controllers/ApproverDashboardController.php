@@ -4,11 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
+use App\Models\ActivityRequestForm;
 use App\Models\ActivityReport;
+use App\Models\Attachment;
 use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
 use App\Models\Notification;
 use App\Models\OrganizationSubmission;
+use App\Models\ProposalFieldReview;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
@@ -17,7 +20,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ApproverDashboardController extends Controller
 {
@@ -26,14 +32,17 @@ class ApproverDashboardController extends Controller
     public function dashboard(Request $request): View
     {
         $user = $this->requireApprover($request);
+        $allowMultiDocumentTypes = $this->approverCanReviewAllDocumentTypes($user);
 
-        $documentType = (string) $request->string('document_type', '');
+        $documentType = $allowMultiDocumentTypes
+            ? (string) $request->string('document_type', '')
+            : 'activity_proposal';
         $status = strtolower((string) $request->string('status', ''));
         $organizationSearch = trim((string) $request->string('organization', ''));
         $dateFrom = $request->date('date_from');
         $dateTo = $request->date('date_to');
 
-        $pendingSteps = $this->basePendingQueueQuery($user)
+        $pendingSteps = $this->basePendingQueueQuery($user, $allowMultiDocumentTypes)
             ->orderBy('created_at')
             ->get();
         $this->loadApprovableRelations($pendingSteps);
@@ -92,6 +101,7 @@ class ApproverDashboardController extends Controller
                 $query->whereNull('assigned_to')
                     ->orWhere('assigned_to', $user->id);
             })
+            ->when(! $allowMultiDocumentTypes, fn ($q) => $q->where('approvable_type', ActivityProposal::class))
             ->orderByDesc('updated_at')
             ->limit(12)
             ->get();
@@ -163,6 +173,7 @@ class ApproverDashboardController extends Controller
                 'date_from' => $dateFrom?->toDateString(),
                 'date_to' => $dateTo?->toDateString(),
             ],
+            'allowMultiDocumentTypes' => $allowMultiDocumentTypes,
         ]);
     }
 
@@ -181,14 +192,46 @@ class ApproverDashboardController extends Controller
 
         return view('approver.assignment-review', [
             'pageTitle' => $details['page_title'],
-            'status' => strtoupper((string) ($approvable->status ?? 'pending')),
+            'status' => strtoupper((string) ($details['scoped_status'] ?? ($approvable->status ?? 'pending'))),
             'details' => $details['details'],
+            'detailSections' => $details['detail_sections'] ?? [],
+            'proposalFileLinks' => $details['proposal_file_links'] ?? [],
+            'isProposalReview' => (bool) ($details['is_proposal_review'] ?? false),
             'calendarEntries' => $details['calendar_entries'],
             'workflowSteps' => $approvable->workflowSteps,
             'workflowLogs' => $approvable->approvalLogs()->with('actor:id,first_name,last_name')->latest('created_at')->limit(15)->get(),
             'workflowCurrentStep' => $step,
             'workflowActionRoute' => route('approver.assignments.decide', $step),
         ]);
+    }
+
+    public function streamAssignmentProposalFile(Request $request, ApprovalWorkflowStep $step, string $key): StreamedResponse
+    {
+        $user = $this->requireApprover($request);
+        $step = $this->resolveAuthorizedCurrentStep($step, $user);
+        $approvable = $step->approvable;
+        if (! $approvable instanceof ActivityProposal) {
+            abort(404);
+        }
+
+        $proposal = $approvable;
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $relativePath = $this->proposalReviewFilePathByKey($proposal, $requestForm, $key);
+        if (! is_string($relativePath) || trim($relativePath) === '') {
+            abort(404);
+        }
+
+        $relativePath = trim($relativePath);
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        return $disk->response($relativePath, basename($relativePath), [], 'inline');
     }
 
     public function decide(Request $request, ApprovalWorkflowStep $step): RedirectResponse
@@ -201,16 +244,136 @@ class ApproverDashboardController extends Controller
             abort(404, 'Assigned document no longer exists.');
         }
 
-        $validated = $request->validate([
-            'action' => ['required', Rule::in(['approve', 'reject', 'revision'])],
-            'comments' => ['nullable', 'string', 'max:5000'],
-        ]);
+        if ($approvable instanceof ActivityProposal) {
+            if (! Schema::hasTable('proposal_field_reviews')) {
+                return back()->withErrors([
+                    'field_reviews' => 'Field-level review storage is unavailable. Please run migrations and try again.',
+                ]);
+            }
 
-        $action = (string) $validated['action'];
-        $comments = trim((string) ($validated['comments'] ?? ''));
+            $this->loadApprovableWithWorkflow($approvable);
+            $detailSnapshot = $this->buildReviewDetails($approvable, $currentStep);
+            $reviewableKeys = collect((array) ($detailSnapshot['detail_sections'] ?? []))
+                ->flatMap(fn (array $section): array => (array) ($section['rows'] ?? []))
+                ->map(fn (array $row): string => (string) ($row['key'] ?? ''))
+                ->filter(fn (string $key): bool => $key !== '')
+                ->values()
+                ->all();
+
+            $validated = $request->validate([
+                'field_reviews' => ['nullable', 'array'],
+                'field_reviews.*.status' => ['nullable', Rule::in(['approved', 'revision', 'rejected'])],
+                'field_reviews.*.label' => ['nullable', 'string', 'max:255'],
+                'field_reviews.*.comment' => ['nullable', 'string', 'max:2000'],
+            ]);
+
+            $fieldReviews = collect((array) ($validated['field_reviews'] ?? []))
+                ->filter(fn (array $review, string $fieldKey): bool => in_array((string) $fieldKey, $reviewableKeys, true))
+                ->map(function (array $review, string $fieldKey): array {
+                    return [
+                        'field_key' => (string) $fieldKey,
+                        'field_label' => trim((string) ($review['label'] ?? $fieldKey)),
+                        'status' => (string) ($review['status'] ?? ''),
+                        'comment' => trim((string) ($review['comment'] ?? '')),
+                    ];
+                })
+                ->filter(fn (array $row): bool => $row['status'] !== '')
+                ->values();
+
+            $missingReasonField = $fieldReviews
+                ->first(fn (array $row): bool => in_array($row['status'], ['revision', 'rejected'], true) && $row['comment'] === '');
+            if ($missingReasonField) {
+                return back()
+                    ->withInput()
+                    ->withErrors([
+                        "field_reviews.{$missingReasonField['field_key']}.comment" => 'Comment is required when marking a field as For Revision or Rejected.',
+                    ]);
+            }
+
+            $action = 'approve';
+            $comments = '';
+        } else {
+            $validated = $request->validate([
+                'action' => ['required', Rule::in(['approve', 'reject', 'revision'])],
+                'comments' => ['nullable', 'string', 'max:5000'],
+            ]);
+            $action = (string) $validated['action'];
+            $comments = trim((string) ($validated['comments'] ?? ''));
+            $fieldReviews = collect();
+            $reviewableKeys = [];
+        }
+
         $fromStatus = strtoupper((string) ($approvable->status ?? 'PENDING'));
+        $resultMode = 'final';
+        $missingFieldLabels = [];
 
-        DB::transaction(function () use ($approvable, $currentStep, $action, $comments, $fromStatus, $user): void {
+        DB::transaction(function () use ($approvable, $currentStep, $action, $comments, $fromStatus, $user, $fieldReviews, $reviewableKeys, &$resultMode, &$missingFieldLabels): void {
+            if ($approvable instanceof ActivityProposal && Schema::hasTable('proposal_field_reviews')) {
+                if (count($reviewableKeys) === 0) {
+                    $resultMode = 'incomplete';
+                    $missingFieldLabels = ['No reviewable fields were found for this step.'];
+
+                    return;
+                }
+
+                foreach ($fieldReviews as $row) {
+                    ProposalFieldReview::query()->updateOrCreate(
+                        [
+                            'activity_proposal_id' => $approvable->id,
+                            'workflow_step_id' => $currentStep->id,
+                            'field_key' => $row['field_key'],
+                        ],
+                        [
+                            'reviewer_id' => $user->id,
+                            'field_label' => $row['field_label'],
+                            'status' => $row['status'],
+                            'comment' => $row['comment'] !== '' ? $row['comment'] : null,
+                            'reviewed_at' => now(),
+                        ]
+                    );
+                }
+
+                $persistedReviews = ProposalFieldReview::query()
+                    ->where('activity_proposal_id', $approvable->id)
+                    ->where('workflow_step_id', $currentStep->id)
+                    ->whereIn('field_key', $reviewableKeys)
+                    ->get()
+                    ->keyBy('field_key');
+
+                $statuses = collect($reviewableKeys)
+                    ->map(fn (string $key): ?string => $persistedReviews->get($key)?->status)
+                    ->filter()
+                    ->values();
+                $unreviewedCount = count($reviewableKeys) - $statuses->count();
+
+                if ($unreviewedCount > 0) {
+                    $resultMode = 'incomplete';
+                    $missingFieldLabels = collect($reviewableKeys)
+                        ->filter(fn (string $key): bool => ! $persistedReviews->has($key))
+                        ->map(function (string $key) use ($fieldReviews): string {
+                            $incoming = $fieldReviews->firstWhere('field_key', $key);
+
+                            return (string) ($incoming['field_label'] ?? str_replace('_', ' ', $key));
+                        })
+                        ->values()
+                        ->all();
+
+                    return;
+                }
+
+                $hasRejected = $statuses->contains('rejected');
+                $hasRevision = ! $hasRejected && $statuses->contains('revision');
+                $action = $hasRejected ? 'reject' : ($hasRevision ? 'revision' : 'approve');
+                $comments = $fieldReviews
+                    ->filter(fn (array $row): bool => in_array($row['status'], ['revision', 'rejected'], true))
+                    ->map(fn (array $row): string => "{$row['field_label']}: {$row['comment']}")
+                    ->values()
+                    ->implode(PHP_EOL);
+                if ($comments === '' && $action !== 'approve') {
+                    $comments = 'Field-level review marked this proposal for '.$action.'.';
+                }
+            }
+
             $toStatus = $fromStatus;
             $logAction = 'approved';
             $currentApprovalStep = (int) $currentStep->step_order;
@@ -232,7 +395,13 @@ class ApproverDashboardController extends Controller
                     ->first();
 
                 if ($nextStep) {
-                    $nextStep->update(['is_current_step' => true]);
+                    $nextStep->update([
+                        'status' => 'pending',
+                        'is_current_step' => true,
+                        'assigned_to' => null,
+                        'acted_at' => null,
+                        'review_comments' => null,
+                    ]);
                     $toStatus = 'UNDER_REVIEW';
                     $currentApprovalStep = (int) $nextStep->step_order;
                 } else {
@@ -278,6 +447,17 @@ class ApproverDashboardController extends Controller
             ]);
         });
 
+        if ($resultMode === 'incomplete') {
+            $message = 'All required fields must be reviewed before submitting this approver step.';
+            if (count($missingFieldLabels) > 0) {
+                $message .= ' Missing: '.implode(', ', $missingFieldLabels).'.';
+            }
+
+            return back()
+                ->withInput()
+                ->withErrors(['field_reviews' => $message]);
+        }
+
         return redirect()
             ->route('approver.dashboard')
             ->with('success', 'Approval decision saved.');
@@ -294,16 +474,22 @@ class ApproverDashboardController extends Controller
         return $user;
     }
 
-    private function basePendingQueueQuery(User $user)
+    private function basePendingQueueQuery(User $user, bool $allowMultiDocumentTypes)
     {
         return ApprovalWorkflowStep::query()
             ->where('role_id', (int) $user->role_id)
             ->where('is_current_step', true)
             ->whereIn('status', ['pending', 'under_review', 'revision_required'])
+            ->when(! $allowMultiDocumentTypes, fn ($q) => $q->where('approvable_type', ActivityProposal::class))
             ->where(function ($query) use ($user): void {
                 $query->whereNull('assigned_to')
                     ->orWhere('assigned_to', $user->id);
             });
+    }
+
+    private function approverCanReviewAllDocumentTypes(User $user): bool
+    {
+        return in_array((string) $user->role?->name, ['sdao_staff', 'academic_director', 'executive_director', 'admin'], true);
     }
 
     private function loadApprovableRelations(Collection $steps): void
@@ -377,6 +563,8 @@ class ApproverDashboardController extends Controller
 
         if ($approvable instanceof ActivityCalendar) {
             $approvable->load(['entries' => fn ($query) => $query->orderBy('activity_date')->orderBy('id')]);
+        } elseif ($approvable instanceof ActivityProposal) {
+            $approvable->load(['calendar', 'calendarEntry', 'academicTerm', 'attachments']);
         }
     }
 
@@ -398,12 +586,134 @@ class ApproverDashboardController extends Controller
         } elseif ($approvable instanceof ActivityCalendar) {
             $base['Activities Count'] = (string) $approvable->entries->count();
         } elseif ($approvable instanceof ActivityProposal) {
+            $existingFieldReviews = Schema::hasTable('proposal_field_reviews')
+                ? ProposalFieldReview::query()
+                    ->where('activity_proposal_id', $approvable->id)
+                    ->where('workflow_step_id', $step->id)
+                    ->get()
+                    ->keyBy('field_key')
+                : collect();
+            $requestForm = $this->relatedRequestFormForProposal($approvable);
+            $linkedCalendar = $approvable->calendar
+                ? trim(($approvable->calendar->academic_year ?? '—').' · '.(string) ($approvable->calendar->semester ?? '—'))
+                : '—';
+            $calendarRow = $approvable->calendarEntry
+                ? trim(($approvable->calendarEntry->activity_name ?? '—').' · '.(optional($approvable->calendarEntry->activity_date)->format('M j, Y') ?? ''))
+                : '—';
+            $proposalTime = $this->proposalTimeRangeLabel($approvable);
+            $department = (string) ($approvable->school_code ?: ($approvable->organization?->college_school ?? ''));
+
             $base['Activity Title'] = $approvable->activity_title ?? 'N/A';
             $base['Proposed Dates'] = trim(collect([
                 optional($approvable->proposed_start_date)->format('M d, Y'),
                 optional($approvable->proposed_end_date)->format('M d, Y'),
             ])->filter()->implode(' - ')) ?: 'N/A';
             $base['Venue'] = $approvable->venue ?? 'N/A';
+
+            $step1Rows = [
+                ['key' => 'step1_proposal_option', 'label' => 'Proposal Option', 'value' => $approvable->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar'],
+                ['key' => 'step1_rso_name', 'label' => 'RSO Name', 'value' => $requestForm?->rso_name ?: ($approvable->organization?->organization_name ?? '—')],
+                ['key' => 'step1_partner_entities', 'label' => 'Partner Entities', 'value' => $requestForm?->partner_entities ?: '—'],
+                ['key' => 'step1_nature_of_activity', 'label' => 'Nature of Activity', 'value' => $this->requestFormOptionsLabel((array) ($requestForm?->nature_of_activity ?? []), $requestForm?->nature_other)],
+                ['key' => 'step1_type_of_activity', 'label' => 'Type of Activity', 'value' => $this->requestFormOptionsLabel((array) ($requestForm?->activity_types ?? []), $requestForm?->activity_type_other)],
+                ['key' => 'step1_target_sdg', 'label' => 'Target SDG', 'value' => $requestForm?->target_sdg ?: ($approvable->target_sdg ?: '—')],
+                ['key' => 'step1_proposed_budget', 'label' => 'Step 1 Proposed Budget', 'value' => $requestForm?->proposed_budget !== null ? number_format((float) $requestForm->proposed_budget, 2) : '—'],
+                ['key' => 'step1_budget_source', 'label' => 'Step 1 Budget Source', 'value' => $requestForm?->budget_source ?: '—'],
+            ];
+            if ($approvable->activity_calendar_entry_id) {
+                array_splice($step1Rows, 2, 0, [
+                    ['key' => 'step1_linked_activity_calendar', 'label' => 'Linked Activity Calendar', 'value' => $linkedCalendar],
+                    ['key' => 'step1_calendar_activity_row', 'label' => 'Calendar Activity Row', 'value' => $calendarRow],
+                ]);
+            }
+
+            $step2Rows = [
+                ['key' => 'step2_activity_title', 'label' => 'Activity Title', 'value' => $approvable->activity_title ?: '—'],
+                ['key' => 'step2_organization', 'label' => 'Organization (Form)', 'value' => $approvable->organization?->organization_name ?: '—'],
+                ['key' => 'step2_academic_year', 'label' => 'Academic Year', 'value' => $approvable->academicTerm?->academic_year ?: '—'],
+                ['key' => 'step2_department', 'label' => 'Department', 'value' => $department !== '' ? $department : '—'],
+                ['key' => 'step2_program', 'label' => 'Program', 'value' => $approvable->program ?: '—'],
+                ['key' => 'step2_proposed_dates', 'label' => 'Proposed Dates', 'value' => trim(collect([
+                    optional($approvable->proposed_start_date)->format('M d, Y'),
+                    optional($approvable->proposed_end_date)->format('M d, Y'),
+                ])->filter()->implode(' - ')) ?: '—'],
+                ['key' => 'step2_proposed_time', 'label' => 'Proposed Time', 'value' => $proposalTime],
+                ['key' => 'step2_venue', 'label' => 'Venue', 'value' => $approvable->venue ?: '—'],
+                ['key' => 'step2_overall_goal', 'label' => 'Overall Goal', 'value' => $approvable->overall_goal ?: '—'],
+                ['key' => 'step2_specific_objectives', 'label' => 'Specific Objectives', 'value' => $approvable->specific_objectives ?: '—'],
+                ['key' => 'step2_criteria_mechanics', 'label' => 'Criteria / Mechanics', 'value' => $approvable->criteria_mechanics ?: '—'],
+                ['key' => 'step2_program_flow', 'label' => 'Program Flow', 'value' => $approvable->program_flow ?: '—'],
+                ['key' => 'step2_budget_total', 'label' => 'Proposed Budget (Total)', 'value' => $approvable->estimated_budget !== null ? number_format((float) $approvable->estimated_budget, 2) : '—'],
+                ['key' => 'step2_source_of_funding', 'label' => 'Source of Funding', 'value' => $approvable->source_of_funding ?: '—'],
+            ];
+
+            $mapReview = function (array $row) use ($existingFieldReviews): array {
+                $review = $existingFieldReviews->get($row['key']);
+                $row['review'] = [
+                    'status' => (string) ($review?->status ?? ''),
+                    'comment' => (string) ($review?->comment ?? ''),
+                ];
+
+                return $row;
+            };
+            $step1Rows = array_map($mapReview, $step1Rows);
+            $step2Rows = array_map($mapReview, $step2Rows);
+
+            $proposalFileLinks = [
+                ['label' => 'Organization Logo', 'key' => 'organization_logo'],
+                ['label' => 'Upload Request Letter', 'key' => 'request_letter'],
+                ['label' => 'Resume of Speaker', 'key' => 'speaker_resume'],
+                ['label' => 'Sample Post-Survey Form', 'key' => 'post_survey_form'],
+            ];
+            $proposalFileLinks = collect($proposalFileLinks)
+                ->filter(fn (array $item): bool => $this->proposalReviewFilePathByKey($approvable, $requestForm, $item['key']) !== null)
+                ->map(fn (array $item): array => [
+                    'label' => $item['label'],
+                    'key' => $item['key'],
+                    'url' => route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => $item['key']]),
+                ])
+                ->values()
+                ->all();
+            $fileReviewRows = collect($proposalFileLinks)
+                ->map(function (array $file) use ($existingFieldReviews): array {
+                    $reviewKey = 'file_'.$file['key'];
+                    $review = $existingFieldReviews->get($reviewKey);
+
+                    return [
+                        'key' => $reviewKey,
+                        'label' => $file['label'],
+                        'value' => 'Submitted file attached.',
+                        'link_url' => $file['url'],
+                        'review' => [
+                            'status' => (string) ($review?->status ?? ''),
+                            'comment' => (string) ($review?->comment ?? ''),
+                        ],
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $reviewableKeys = collect([$step1Rows, $step2Rows, $fileReviewRows])
+                ->flatten(1)
+                ->map(fn (array $row): string => (string) ($row['key'] ?? ''))
+                ->filter(fn (string $key): bool => $key !== '')
+                ->values()
+                ->all();
+            $stageStatus = $this->proposalStageStatusFromFieldReviews($existingFieldReviews, $reviewableKeys);
+
+            return [
+                'page_title' => $this->resolveDocumentType($approvable)['label'].' Review',
+                'details' => $base,
+                'detail_sections' => [
+                    ['title' => 'Step 1: Activity Request Form', 'rows' => $step1Rows],
+                    ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
+                    ['title' => 'Submitted Files', 'rows' => $fileReviewRows],
+                ],
+                'proposal_file_links' => $proposalFileLinks,
+                'is_proposal_review' => true,
+                'scoped_status' => $stageStatus,
+                'calendar_entries' => collect(),
+            ];
         } elseif ($approvable instanceof ActivityReport) {
             $base['Event Title'] = $approvable->event_title ?? 'N/A';
             $base['Event Starts'] = optional($approvable->event_starts_at)->format('M d, Y g:i A') ?? 'N/A';
@@ -413,8 +723,145 @@ class ApproverDashboardController extends Controller
         return [
             'page_title' => $this->resolveDocumentType($approvable)['label'].' Review',
             'details' => $base,
+            'detail_sections' => [],
+            'proposal_file_links' => [],
+            'is_proposal_review' => false,
+            'scoped_status' => strtoupper((string) ($approvable->status ?? 'pending')),
             'calendar_entries' => $approvable instanceof ActivityCalendar ? $approvable->entries : collect(),
         ];
+    }
+
+    private function proposalStageStatusFromFieldReviews(Collection $existingFieldReviews, array $reviewableKeys): string
+    {
+        if (count($reviewableKeys) === 0) {
+            return 'PENDING';
+        }
+
+        $statuses = collect($reviewableKeys)
+            ->map(fn (string $key): ?string => $existingFieldReviews->get($key)?->status)
+            ->filter()
+            ->values();
+
+        if ($statuses->count() < count($reviewableKeys)) {
+            return 'PENDING';
+        }
+        if ($statuses->contains('rejected')) {
+            return 'REJECTED';
+        }
+        if ($statuses->contains('revision')) {
+            return 'REVISION_REQUIRED';
+        }
+
+        return 'APPROVED';
+    }
+
+    private function relatedRequestFormForProposal(ActivityProposal $proposal): ?ActivityRequestForm
+    {
+        $base = ActivityRequestForm::query()
+            ->where('organization_id', $proposal->organization_id)
+            ->where('submitted_by', $proposal->submitted_by)
+            ->whereNotNull('promoted_at');
+
+        if ($proposal->activity_calendar_entry_id) {
+            $hit = (clone $base)
+                ->where('activity_calendar_entry_id', $proposal->activity_calendar_entry_id)
+                ->latest('promoted_at')
+                ->latest('id')
+                ->first();
+            if ($hit) {
+                return $hit;
+            }
+        }
+
+        return (clone $base)
+            ->where('activity_title', (string) ($proposal->activity_title ?? ''))
+            ->latest('promoted_at')
+            ->latest('id')
+            ->first();
+    }
+
+    private function proposalReviewFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
+    {
+        $proposalType = match ($key) {
+            'organization_logo' => Attachment::TYPE_PROPOSAL_LOGO,
+            default => null,
+        };
+        if ($proposalType !== null) {
+            $attachment = $proposal->attachments()
+                ->where('file_type', $proposalType)
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+                return trim($attachment->stored_path);
+            }
+        }
+
+        if ($requestForm) {
+            $requestType = match ($key) {
+                'request_letter' => Attachment::TYPE_REQUEST_LETTER,
+                'speaker_resume' => Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+                'post_survey_form' => Attachment::TYPE_REQUEST_POST_SURVEY,
+                default => null,
+            };
+            if ($requestType !== null) {
+                $attachment = $requestForm->attachments()
+                    ->where('file_type', $requestType)
+                    ->latest('id')
+                    ->first();
+                if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+                    return trim($attachment->stored_path);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function proposalTimeRangeLabel(ActivityProposal $proposal): string
+    {
+        $start = $this->formatTimeValue($proposal->proposed_start_time);
+        $end = $this->formatTimeValue($proposal->proposed_end_time);
+        if ($start && $end) {
+            return $start.' - '.$end;
+        }
+
+        return $start ?: '—';
+    }
+
+    private function formatTimeValue(?string $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        $trimmed = trim($value);
+        $normalized = strlen($trimmed) >= 5 ? substr($trimmed, 0, 5) : $trimmed;
+        $dt = \DateTime::createFromFormat('H:i', $normalized);
+
+        return $dt ? $dt->format('g:i A') : $trimmed;
+    }
+
+    /**
+     * @param  array<int, string>  $values
+     */
+    private function requestFormOptionsLabel(array $values, ?string $otherText = null): string
+    {
+        $values = array_values(array_filter($values, fn ($v) => is_string($v) && trim($v) !== ''));
+        if ($values === []) {
+            return '—';
+        }
+
+        $labels = array_map(
+            fn (string $value): string => ucfirst(str_replace('_', ' ', $value)),
+            $values
+        );
+        if (in_array('Others', $labels, true) && is_string($otherText) && trim($otherText) !== '') {
+            $labels = array_map(
+                fn (string $label): string => $label === 'Others' ? 'Others: '.trim($otherText) : $label,
+                $labels
+            );
+        }
+
+        return implode(', ', $labels);
     }
 
     private function resolveDocumentType(Model $approvable): array

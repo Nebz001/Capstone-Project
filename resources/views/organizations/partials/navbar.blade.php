@@ -1,5 +1,5 @@
 <nav id="organization-navbar" class="sticky top-0 z-50 border-b-2 border-[#F5C400] bg-[#003E9F] shadow-md">
-  <div class="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+  <div class="mx-auto flex w-full max-w-7xl min-w-0 items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
 
     {{-- Left: Logo + Title --}}
     <a href="{{ route('organizations.index') }}" class="flex min-w-0 items-center gap-3">
@@ -16,7 +16,7 @@
     </a>
 
     {{-- Right: Active term (display only) + user controls --}}
-    <div class="ml-4 flex flex-none items-center gap-1 sm:gap-2">
+    <div class="ml-4 flex min-w-0 shrink items-center gap-1 sm:gap-2">
 
       <x-active-term-status variant="navbar" />
 

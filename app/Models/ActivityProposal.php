@@ -16,6 +16,8 @@ class ActivityProposal extends Model
         'activity_calendar_entry_id',
         'submitted_by',
         'academic_term_id',
+        'school_code',
+        'program',
         'activity_title',
         'activity_description',
         'proposed_start_date',
@@ -42,6 +44,7 @@ class ActivityProposal extends Model
             'proposed_end_date' => 'date',
             'submission_date' => 'date',
             'academic_term_id' => 'integer',
+            'school_code' => 'string',
             'activity_calendar_id' => 'integer',
             'activity_calendar_entry_id' => 'integer',
             'submitted_by' => 'integer',
@@ -109,6 +112,11 @@ class ActivityProposal extends Model
     public function budgetItems(): HasMany
     {
         return $this->hasMany(ProposalBudgetItem::class, 'activity_proposal_id');
+    }
+
+    public function fieldReviews(): HasMany
+    {
+        return $this->hasMany(ProposalFieldReview::class, 'activity_proposal_id');
     }
 
     public function attachments(): MorphMany

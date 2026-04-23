@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
+use App\Models\ActivityRequestForm;
 use App\Models\Attachment;
 use App\Models\Organization;
 use App\Models\OrganizationOfficer;
@@ -333,7 +334,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     public function showSubmittedActivityProposal(Request $request, ActivityProposal $proposal): View
     {
         $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
-        $proposal->load(['calendar', 'calendarEntry', 'academicTerm']);
+        $proposal->load(['calendar', 'calendarEntry', 'academicTerm', 'organization']);
 
         $sp = $this->submissionStatusPresentation($proposal->status, true);
         $fileLinks = [];
@@ -356,10 +357,84 @@ class OrganizationSubmittedDocumentsController extends Controller
             ];
         }
 
-        $school = $proposal->school_code ? (self::SCHOOL_LABELS[$proposal->school_code] ?? $proposal->school_code) : '—';
-        $proposalTime = $proposal->proposed_start_time
-            ? trim($proposal->proposed_start_time.($proposal->proposed_end_time ? ' - '.$proposal->proposed_end_time : ''))
-            : ($proposal->proposed_time ?? '—');
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $school = $this->proposalSchoolLabel($proposal);
+        $proposalTime = $this->proposalTimeRangeLabel($proposal);
+        $proposalDates = trim(collect([
+            optional($proposal->proposed_start_date)->format('M j, Y'),
+            optional($proposal->proposed_end_date)->format('M j, Y'),
+        ])->filter()->implode(' → ')) ?: '—';
+        $nature = $this->requestFormOptionLabels(
+            is_array($requestForm?->nature_of_activity) ? $requestForm->nature_of_activity : [],
+            [
+                'co_curricular' => 'Co-Curricular',
+                'non_curricular' => 'Non-Curricular',
+                'community_extension' => 'Community Extension',
+                'others' => 'Others',
+            ],
+            $requestForm?->nature_other
+        );
+        $types = $this->requestFormOptionLabels(
+            is_array($requestForm?->activity_types) ? $requestForm->activity_types : [],
+            [
+                'seminar_workshop' => 'Seminar / Workshop',
+                'general_assembly' => 'General Assembly',
+                'orientation' => 'Orientation',
+                'competition' => 'Competition',
+                'recruitment_audition' => 'Recruitment / Audition',
+                'donation_drive_fundraising' => 'Donation Drive / Fundraising Activity',
+                'outreach_donation' => 'Outreach (Donation)',
+                'fundraising_activity' => 'Fundraising Activity',
+                'off_campus_activity' => 'Off-campus Activity',
+                'others' => 'Others',
+            ],
+            $requestForm?->activity_type_other
+        );
+        $targetSdg = $requestForm?->target_sdg
+            ?? $proposal->target_sdg
+            ?? $proposal->calendarEntry?->target_sdg
+            ?? $proposal->calendarEntry?->sdg
+            ?? '—';
+        $linkedCalendarLabel = $proposal->calendar
+            ? trim(($proposal->calendar->academic_year ?? '—').' · '.$this->activityCalendarTermLabel($proposal->calendar->semester))
+            : '—';
+        $calendarRowLabel = $proposal->calendarEntry
+            ? trim(($proposal->calendarEntry->activity_name ?? '—').' · '.(optional($proposal->calendarEntry->activity_date)->format('M j, Y') ?? ''))
+            : '—';
+        $isCalendarLinkedProposal = $proposal->activity_calendar_entry_id !== null;
+        $step1Rows = [
+            ['label' => 'Proposal option', 'value' => $proposal->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar'],
+            ['label' => 'RSO name', 'value' => $requestForm?->rso_name ?: ($proposal->organization?->organization_name ?? '—')],
+            ['label' => 'Partner entities', 'value' => $requestForm?->partner_entities ?: '—'],
+            ['label' => 'Nature of activity', 'value' => $nature],
+            ['label' => 'Type of activity', 'value' => $types],
+            ['label' => 'Target SDG', 'value' => $targetSdg ?: '—'],
+            ['label' => 'Step 1 proposed budget', 'value' => $requestForm?->proposed_budget !== null ? number_format((float) $requestForm->proposed_budget, 2) : '—'],
+            ['label' => 'Step 1 budget source', 'value' => $requestForm?->budget_source ?: '—'],
+        ];
+        if ($isCalendarLinkedProposal) {
+            array_splice($step1Rows, 2, 0, [
+                ['label' => 'Linked activity calendar', 'value' => $linkedCalendarLabel],
+                ['label' => 'Calendar activity row', 'value' => $calendarRowLabel],
+            ]);
+        }
+        $step2Rows = [
+            ['label' => 'Activity title', 'value' => $proposal->activity_title ?? '—'],
+            ['label' => 'Organization (form)', 'value' => $proposal->organization?->organization_name ?? '—'],
+            ['label' => 'Academic year', 'value' => $proposal->academicTerm?->academic_year ?? $proposal->calendar?->academic_year ?? '—'],
+            ['label' => 'Department', 'value' => $school],
+            ['label' => 'Program', 'value' => $proposal->program ?: ($proposal->organization?->college_department ?? '—')],
+            ['label' => 'Proposed dates', 'value' => $proposalDates],
+            ['label' => 'Proposed time', 'value' => $proposalTime],
+            ['label' => 'Venue', 'value' => $proposal->venue ?? '—'],
+            ['label' => 'Overall goal', 'value' => $proposal->overall_goal ?: '—'],
+            ['label' => 'Specific objectives', 'value' => $proposal->specific_objectives ?: '—'],
+            ['label' => 'Criteria / mechanics', 'value' => $proposal->criteria_mechanics ?: '—'],
+            ['label' => 'Program flow', 'value' => $proposal->program_flow ?: '—'],
+            ['label' => 'Proposed budget (total)', 'value' => $proposal->estimated_budget !== null ? number_format((float) $proposal->estimated_budget, 2) : '—'],
+            ['label' => 'Source of funding', 'value' => $proposal->source_of_funding ?: '—'],
+            ['label' => 'Submitted', 'value' => optional($proposal->submission_date)->format('M j, Y') ?? '—'],
+        ];
 
         $nav = $this->detailBackNavigation($request);
 
@@ -370,29 +445,14 @@ class OrganizationSubmittedDocumentsController extends Controller
             'subtitle' => $proposal->activity_title ?? 'Submitted proposal',
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
-            'metaRows' => [
-                ['label' => 'Activity title', 'value' => $proposal->activity_title ?? '—'],
-                ['label' => 'Organization (form)', 'value' => $proposal->form_organization_name ?? '—'],
-                ['label' => 'Academic year', 'value' => $proposal->academicTerm?->academic_year ?? $proposal->academic_year ?? '—'],
-                ['label' => 'School', 'value' => $school],
-                ['label' => 'Department / program', 'value' => $proposal->department_program ?? '—'],
-                ['label' => 'Proposed dates', 'value' => trim(collect([
-                    optional($proposal->proposed_start_date)->format('M j, Y'),
-                    optional($proposal->proposed_end_date)->format('M j, Y'),
-                ])->filter()->implode(' → ')) ?: '—'],
-                ['label' => 'Time', 'value' => $proposalTime],
-                ['label' => 'Venue', 'value' => $proposal->venue ?? '—'],
-                ['label' => 'Submitted', 'value' => optional($proposal->submission_date)->format('M j, Y') ?? '—'],
-                ['label' => 'Linked activity calendar', 'value' => $proposal->calendar
-                    ? (($proposal->calendar->academic_year ?? '').' · '.$this->activityCalendarTermLabel($proposal->calendar->semester))
-                    : '—'],
-                ['label' => 'Calendar activity row', 'value' => $proposal->calendarEntry
-                    ? trim(($proposal->calendarEntry->activity_name ?? '—').' · '.(optional($proposal->calendarEntry->activity_date)->format('M j, Y') ?? ''))
-                    : '—'],
+            'metaRows' => $step2Rows,
+            'metaSections' => [
+                ['title' => 'Step 1: Activity Request Form', 'rows' => $step1Rows],
+                ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
             ],
             'remarkHighlight' => $this->truncatePreview($proposal->overall_goal, 220),
             'fileLinks' => $fileLinks,
-            'workflowLinks' => $this->activityProposalWorkflowLinks($proposal),
+            'workflowLinks' => $this->activityProposalWorkflowLinks($request, $proposal),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Activity proposal',
             'progressStages' => SubmissionRoutingProgress::stagesForActivityProposal($proposal),
@@ -899,13 +959,21 @@ class OrganizationSubmittedDocumentsController extends Controller
     /**
      * @return list<array{label: string, href: string, variant: string}>
      */
-    private function activityProposalWorkflowLinks(ActivityProposal $proposal): array
+    private function activityProposalWorkflowLinks(Request $request, ActivityProposal $proposal): array
     {
         $links = [];
         if (strtoupper((string) ($proposal->status ?? '')) === 'REVISION') {
-            $links[] = ['label' => 'Address revision (proposal form)', 'href' => route('organizations.activity-proposal-submission'), 'variant' => 'primary'];
+            $links[] = [
+                'label' => 'Address revision (proposal form)',
+                'href' => $this->withSuperAdminOrgQuery($request, route('organizations.activity-proposal-submission')),
+                'variant' => 'primary',
+            ];
         }
-        $links[] = ['label' => 'Submit another proposal', 'href' => route('organizations.activity-proposal-submission'), 'variant' => 'secondary'];
+        $links[] = [
+            'label' => 'Submit another proposal',
+            'href' => $this->withSuperAdminOrgQuery($request, route('organizations.activity-proposal-request')),
+            'variant' => 'secondary',
+        ];
 
         return $links;
     }
@@ -1298,6 +1366,92 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return 'neutral';
+    }
+
+    private function proposalTimeRangeLabel(ActivityProposal $proposal): string
+    {
+        $start = $this->formatTimeValue($proposal->proposed_start_time);
+        $end = $this->formatTimeValue($proposal->proposed_end_time);
+        if ($start && $end) {
+            return $start.' - '.$end;
+        }
+
+        return $start ?: '—';
+    }
+
+    private function formatTimeValue(?string $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $trimmed = trim($value);
+        $normalized = strlen($trimmed) >= 5 ? substr($trimmed, 0, 5) : $trimmed;
+        $dt = \DateTime::createFromFormat('H:i', $normalized);
+
+        return $dt ? $dt->format('g:i A') : $trimmed;
+    }
+
+    private function proposalSchoolLabel(ActivityProposal $proposal): string
+    {
+        $code = (string) ($proposal->school_code ?? $proposal->organization?->college_school ?? '');
+        if ($code !== '' && array_key_exists($code, self::SCHOOL_LABELS)) {
+            return self::SCHOOL_LABELS[$code];
+        }
+
+        return $code !== '' ? $code : '—';
+    }
+
+    private function relatedRequestFormForProposal(ActivityProposal $proposal): ?ActivityRequestForm
+    {
+        $query = ActivityRequestForm::query()
+            ->where('organization_id', $proposal->organization_id)
+            ->where('submitted_by', $proposal->submitted_by)
+            ->whereNotNull('promoted_at');
+
+        if ($proposal->activity_calendar_entry_id) {
+            $hit = (clone $query)
+                ->where('activity_calendar_entry_id', $proposal->activity_calendar_entry_id)
+                ->latest('promoted_at')
+                ->latest('id')
+                ->first();
+            if ($hit) {
+                return $hit;
+            }
+        }
+
+        return $query
+            ->where('activity_title', (string) ($proposal->activity_title ?? ''))
+            ->latest('promoted_at')
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * @param  array<int, string>  $values
+     * @param  array<string, string>  $labelMap
+     */
+    private function requestFormOptionLabels(array $values, array $labelMap, ?string $otherText = null): string
+    {
+        if ($values === []) {
+            return '—';
+        }
+
+        $labels = collect($values)
+            ->map(function (string $key) use ($labelMap): string {
+                return $labelMap[$key] ?? ucfirst(str_replace('_', ' ', $key));
+            })
+            ->values()
+            ->all();
+
+        if (in_array('Others', $labels, true) && is_string($otherText) && trim($otherText) !== '') {
+            $labels = array_map(
+                static fn (string $label): string => $label === 'Others' ? 'Others: '.trim($otherText) : $label,
+                $labels
+            );
+        }
+
+        return implode(', ', $labels);
     }
 
     /**
