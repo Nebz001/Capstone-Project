@@ -88,8 +88,12 @@ class DummyUserAccountsSeeder extends Seeder
             ],
         ];
 
+        $seededUsers = [];
+
         foreach ($users as $user) {
-            User::updateOrCreate(
+            $isOrganizationOfficer = $user['role_key'] === 'organization_officer';
+
+            $seededUsers[$user['email']] = User::updateOrCreate(
                 ['email' => $user['email']],
                 [
                     'first_name' => $user['first_name'],
@@ -99,11 +103,29 @@ class DummyUserAccountsSeeder extends Seeder
                     'role_id' => $rolesByKey[$user['role_key']],
                     'account_status' => $user['account_status'],
                     'officer_validation_status' => $user['officer_validation_status'],
-                    'officer_validation_notes' => null,
-                    'officer_validated_at' => $user['role_key'] === 'organization_officer' ? now() : null,
+                    'officer_validation_notes' => $isOrganizationOfficer
+                        ? 'Validated seeded organization officer for testing.'
+                        : null,
+                    'officer_validated_at' => $isOrganizationOfficer ? now() : null,
                     'officer_validated_by' => null,
                 ]
             );
+        }
+
+        // Link seeded organization officers to a seeded SDAO approver as validator.
+        $officerValidatorId = $seededUsers['carljustin.magpantay@nu-lipa.edu.ph']->id
+            ?? User::query()->where('role_id', $rolesByKey['sdao_approver'])->value('id');
+
+        if ($officerValidatorId) {
+            User::query()
+                ->whereIn('email', [
+                    'tanbm@students.nu-lipa.edu.ph',
+                    'alcantarakd@students.nu-lipa.edu.ph',
+                ])
+                ->update([
+                    'officer_validated_by' => (int) $officerValidatorId,
+                    'officer_validation_notes' => 'Validated by seeded SDAO approver for testing.',
+                ]);
         }
     }
 
@@ -117,4 +139,3 @@ class DummyUserAccountsSeeder extends Seeder
         return (int) $roleId;
     }
 }
-

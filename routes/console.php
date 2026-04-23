@@ -1,6 +1,12 @@
 <?php
 
+use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
+use App\Models\ActivityReport;
+use App\Models\ActivityRequestForm;
+use App\Models\Attachment;
+use App\Models\OrganizationRegistration;
+use App\Models\OrganizationRenewal;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Inspiring;
@@ -161,6 +167,7 @@ Artisan::command('users:backfill-role-id {--dry-run : Preview changes without up
                         'suggested_role' => '-',
                         'reason' => (string) $reason,
                     ];
+
                     continue;
                 }
 
@@ -175,12 +182,14 @@ Artisan::command('users:backfill-role-id {--dry-run : Preview changes without up
                         'suggested_role' => $suggestedRole,
                         'reason' => 'Suggested role is missing in roles table',
                     ];
+
                     continue;
                 }
 
                 if ((int) ($user->role_id ?? 0) === (int) $targetRoleId) {
                     $stats['mapped']++;
                     $stats['already_mapped']++;
+
                     continue;
                 }
 
@@ -194,6 +203,7 @@ Artisan::command('users:backfill-role-id {--dry-run : Preview changes without up
                         'suggested_role' => $suggestedRole,
                         'reason' => 'Existing role_id differs from inferred mapping; skipped to avoid overwrite',
                     ];
+
                     continue;
                 }
 
@@ -518,6 +528,7 @@ Artisan::command('submissions:migrate-legacy {--dry-run : Preview migration with
                         ];
                         $stats['skipped']++;
                         $stats['manual_review']++;
+
                         continue;
                     }
 
@@ -538,6 +549,7 @@ Artisan::command('submissions:migrate-legacy {--dry-run : Preview migration with
                         $stats['submissions_created']++;
                     } else {
                         $stats['submissions_created']++;
+
                         continue;
                     }
 
@@ -933,6 +945,7 @@ Artisan::command('proposals:migrate-budget-items {--dry-run : Preview migration 
                     ->exists();
                 if ($alreadyMigrated) {
                     $stats['proposals_skipped_existing']++;
+
                     continue;
                 }
 
@@ -944,6 +957,7 @@ Artisan::command('proposals:migrate-budget-items {--dry-run : Preview migration 
                         'row' => '-',
                         'reason' => 'budget_breakdown_items is not valid JSON array',
                     ];
+
                     continue;
                 }
 
@@ -956,6 +970,7 @@ Artisan::command('proposals:migrate-budget-items {--dry-run : Preview migration 
                             'row' => (string) ($idx + 1),
                             'reason' => 'Row is not an object',
                         ];
+
                         continue;
                     }
 
@@ -980,6 +995,7 @@ Artisan::command('proposals:migrate-budget-items {--dry-run : Preview migration 
                             'row' => (string) ($idx + 1),
                             'reason' => 'Missing required item_description/material or numeric unit_cost/total_cost',
                         ];
+
                         continue;
                     }
 
@@ -1044,31 +1060,31 @@ Artisan::command('attachments:migrate-legacy-files {--dry-run : Preview migratio
     $sources = [
         [
             'table' => 'organization_registrations',
-            'attachable_type' => \App\Models\OrganizationRegistration::class,
+            'attachable_type' => OrganizationRegistration::class,
             'id_col' => 'id',
             'uploaded_by_cols' => ['submitted_by', 'user_id'],
             'scalar_paths' => [
                 'registration_document' => 'registration_document',
             ],
             'json_paths' => [
-                'requirement_files' => 'registration_requirement_file',
+                'requirement_files' => Attachment::TYPE_REGISTRATION_REQUIREMENT,
             ],
         ],
         [
             'table' => 'organization_renewals',
-            'attachable_type' => \App\Models\OrganizationRenewal::class,
+            'attachable_type' => OrganizationRenewal::class,
             'id_col' => 'id',
             'uploaded_by_cols' => ['submitted_by', 'user_id'],
             'scalar_paths' => [
                 'renewal_document' => 'renewal_document',
             ],
             'json_paths' => [
-                'requirement_files' => 'renewal_requirement_file',
+                'requirement_files' => Attachment::TYPE_RENEWAL_REQUIREMENT,
             ],
         ],
         [
             'table' => 'activity_calendars',
-            'attachable_type' => \App\Models\ActivityCalendar::class,
+            'attachable_type' => ActivityCalendar::class,
             'id_col' => 'id',
             'uploaded_by_cols' => ['submitted_by', 'user_id'],
             'scalar_paths' => [
@@ -1078,7 +1094,7 @@ Artisan::command('attachments:migrate-legacy-files {--dry-run : Preview migratio
         ],
         [
             'table' => 'activity_request_forms',
-            'attachable_type' => \App\Models\ActivityRequestForm::class,
+            'attachable_type' => ActivityRequestForm::class,
             'id_col' => 'id',
             'uploaded_by_cols' => ['submitted_by', 'user_id'],
             'scalar_paths' => [
@@ -1090,7 +1106,7 @@ Artisan::command('attachments:migrate-legacy-files {--dry-run : Preview migratio
         ],
         [
             'table' => 'activity_proposals',
-            'attachable_type' => \App\Models\ActivityProposal::class,
+            'attachable_type' => ActivityProposal::class,
             'id_col' => 'id',
             'uploaded_by_cols' => ['submitted_by', 'user_id'],
             'scalar_paths' => [
@@ -1102,7 +1118,7 @@ Artisan::command('attachments:migrate-legacy-files {--dry-run : Preview migratio
         ],
         [
             'table' => 'activity_reports',
-            'attachable_type' => \App\Models\ActivityReport::class,
+            'attachable_type' => ActivityReport::class,
             'id_col' => 'id',
             'uploaded_by_cols' => ['submitted_by', 'user_id'],
             'scalar_paths' => [
@@ -1248,6 +1264,7 @@ Artisan::command('attachments:migrate-legacy-files {--dry-run : Preview migratio
                         $rawPath = (string) ($row->{$column} ?? '');
                         if (! $isValidPath($rawPath)) {
                             $stats['paths_skipped_invalid_or_null']++;
+
                             continue;
                         }
 
@@ -1273,6 +1290,7 @@ Artisan::command('attachments:migrate-legacy-files {--dry-run : Preview migratio
                                 'column' => $column,
                                 'reason' => 'JSON column is not a valid array',
                             ];
+
                             continue;
                         }
 
@@ -1287,6 +1305,7 @@ Artisan::command('attachments:migrate-legacy-files {--dry-run : Preview migratio
                         foreach ($paths as $path) {
                             if (! $isValidPath($path)) {
                                 $stats['paths_skipped_invalid_or_null']++;
+
                                 continue;
                             }
 
@@ -1419,11 +1438,12 @@ Artisan::command('approval:backfill-universal-workflows {--dry-run : Preview bac
         ): void {
             foreach ($rows as $row) {
                 $stats['records_scanned']++;
-                $approvableType = \App\Models\OrganizationRegistration::class;
+                $approvableType = OrganizationRegistration::class;
                 $approvableId = (int) $row->id;
 
                 if ($hasExistingUniversalRows($approvableType, $approvableId)) {
                     $stats['records_skipped_existing']++;
+
                     continue;
                 }
 
@@ -1494,11 +1514,12 @@ Artisan::command('approval:backfill-universal-workflows {--dry-run : Preview bac
         ): void {
             foreach ($rows as $row) {
                 $stats['records_scanned']++;
-                $approvableType = \App\Models\OrganizationRenewal::class;
+                $approvableType = OrganizationRenewal::class;
                 $approvableId = (int) $row->id;
 
                 if ($hasExistingUniversalRows($approvableType, $approvableId)) {
                     $stats['records_skipped_existing']++;
+
                     continue;
                 }
 
@@ -1589,11 +1610,12 @@ Artisan::command('approval:backfill-universal-workflows {--dry-run : Preview bac
         ): void {
             foreach ($rows as $proposal) {
                 $stats['records_scanned']++;
-                $approvableType = \App\Models\ActivityProposal::class;
+                $approvableType = ActivityProposal::class;
                 $approvableId = (int) $proposal->id;
 
                 if ($hasExistingUniversalRows($approvableType, $approvableId)) {
                     $stats['records_skipped_existing']++;
+
                     continue;
                 }
 
@@ -1621,6 +1643,7 @@ Artisan::command('approval:backfill-universal-workflows {--dry-run : Preview bac
                         'record' => 'activity_proposals#'.$approvableId,
                         'reason' => 'No approval_workflows rows found; workflow history not backfilled to avoid guessing',
                     ];
+
                     continue;
                 }
 
@@ -1647,6 +1670,7 @@ Artisan::command('approval:backfill-universal-workflows {--dry-run : Preview bac
                             'record' => 'activity_proposals#'.$approvableId,
                             'reason' => "Could not map office '{$wf->office_name}' to redesigned role; skipped step level {$wf->approval_level}",
                         ];
+
                         continue;
                     }
 
@@ -1704,8 +1728,8 @@ Artisan::command('approval:backfill-universal-workflows {--dry-run : Preview bac
 
     // 4) Calendars + reports: one-step conservative scaffolding only
     $simpleSources = [
-        ['table' => 'activity_calendars', 'type' => \App\Models\ActivityCalendar::class, 'status_col' => 'calendar_status', 'actor_cols' => ['submitted_by', 'user_id'], 'submitted_date_col' => 'submission_date'],
-        ['table' => 'activity_reports', 'type' => \App\Models\ActivityReport::class, 'status_col' => 'report_status', 'actor_cols' => ['submitted_by', 'user_id'], 'submitted_date_col' => 'report_submission_date'],
+        ['table' => 'activity_calendars', 'type' => ActivityCalendar::class, 'status_col' => 'calendar_status', 'actor_cols' => ['submitted_by', 'user_id'], 'submitted_date_col' => 'submission_date'],
+        ['table' => 'activity_reports', 'type' => ActivityReport::class, 'status_col' => 'report_status', 'actor_cols' => ['submitted_by', 'user_id'], 'submitted_date_col' => 'report_submission_date'],
     ];
 
     foreach ($simpleSources as $src) {
@@ -1731,6 +1755,7 @@ Artisan::command('approval:backfill-universal-workflows {--dry-run : Preview bac
 
                 if ($hasExistingUniversalRows($approvableType, $approvableId)) {
                     $stats['records_skipped_existing']++;
+
                     continue;
                 }
 

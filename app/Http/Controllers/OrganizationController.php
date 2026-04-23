@@ -2,18 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AcademicTerm;
 use App\Models\ActivityCalendar;
 use App\Models\ActivityCalendarEntry;
 use App\Models\ActivityProposal;
-use App\Models\ActivityRequestForm;
 use App\Models\ActivityReport;
+use App\Models\ActivityRequestForm;
 use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
 use App\Models\Attachment;
-use App\Models\OrganizationSubmission;
 use App\Models\Organization;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationProfileRevision;
+use App\Models\OrganizationSubmission;
 use App\Models\ProposalBudgetItem;
 use App\Models\Role;
 use App\Models\SubmissionRequirement;
@@ -1489,8 +1490,7 @@ class OrganizationController extends Controller
         Organization $organization,
         bool $forAdminPortal = false,
         ?ActivityRequestForm $requestForm = null
-    )
-    {
+    ) {
         /** @var User $user */
         $user = $request->user();
 
@@ -2598,14 +2598,14 @@ class OrganizationController extends Controller
 
     private function resolveOrCreateAcademicTermId(string $academicYear): int
     {
-        $term = \App\Models\AcademicTerm::query()
+        $term = AcademicTerm::query()
             ->where('academic_year', $academicYear)
             ->where('is_active', true)
             ->orderBy('id')
             ->first();
 
         if (! $term) {
-            $term = \App\Models\AcademicTerm::query()
+            $term = AcademicTerm::query()
                 ->where('academic_year', $academicYear)
                 ->orderBy('id')
                 ->first();
@@ -2620,7 +2620,7 @@ class OrganizationController extends Controller
             $startYear = (int) $m[1];
         }
 
-        return (int) \App\Models\AcademicTerm::query()->create([
+        return (int) AcademicTerm::query()->create([
             'academic_year' => $academicYear,
             'semester' => 'first',
             'starts_at' => sprintf('%d-06-01', $startYear),
@@ -2670,7 +2670,7 @@ class OrganizationController extends Controller
                 [
                     'attachable_type' => OrganizationSubmission::class,
                     'attachable_id' => $submission->id,
-                    'file_type' => Attachment::fileTypeForSubmissionRequirement($submission->type).':'.$requirementKey,
+                    'file_type' => Attachment::fileTypeForSubmissionRequirementKey($submission->type, $requirementKey),
                     'stored_path' => $storedPath,
                 ],
                 [
