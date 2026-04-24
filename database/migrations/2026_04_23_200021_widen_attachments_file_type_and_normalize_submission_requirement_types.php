@@ -8,8 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (DB::getDriverName() === 'mysql') {
+        $driver = DB::getDriverName();
+        if ($driver === 'mysql' || $driver === 'mariadb') {
             DB::statement('ALTER TABLE `attachments` MODIFY `file_type` VARCHAR(120) NOT NULL');
+        } elseif ($driver === 'pgsql') {
+            DB::statement('ALTER TABLE attachments ALTER COLUMN file_type TYPE VARCHAR(120)');
+            DB::statement('ALTER TABLE attachments ALTER COLUMN file_type SET NOT NULL');
         }
 
         $this->replaceFileTypePrefix('registration_requirement_file:', 'registration_requirement:');

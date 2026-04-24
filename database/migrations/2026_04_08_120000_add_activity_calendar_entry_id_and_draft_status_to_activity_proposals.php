@@ -20,16 +20,22 @@ return new class extends Migration
         });
 
         $driver = Schema::getConnection()->getDriverName();
-        if ($driver === 'mysql') {
+        if ($driver === 'mysql' || $driver === 'mariadb') {
             DB::statement("ALTER TABLE activity_proposals MODIFY COLUMN proposal_status ENUM('DRAFT','PENDING','UNDER_REVIEW','APPROVED','REJECTED','REVISION') NOT NULL DEFAULT 'PENDING'");
+        } elseif ($driver === 'pgsql') {
+            DB::statement('ALTER TABLE activity_proposals DROP CONSTRAINT IF EXISTS activity_proposals_proposal_status_check');
+            DB::statement("ALTER TABLE activity_proposals ADD CONSTRAINT activity_proposals_proposal_status_check CHECK (proposal_status IN ('DRAFT','PENDING','UNDER_REVIEW','APPROVED','REJECTED','REVISION'))");
         }
     }
 
     public function down(): void
     {
         $driver = Schema::getConnection()->getDriverName();
-        if ($driver === 'mysql') {
+        if ($driver === 'mysql' || $driver === 'mariadb') {
             DB::statement("ALTER TABLE activity_proposals MODIFY COLUMN proposal_status ENUM('PENDING','UNDER_REVIEW','APPROVED','REJECTED','REVISION') NOT NULL DEFAULT 'PENDING'");
+        } elseif ($driver === 'pgsql') {
+            DB::statement('ALTER TABLE activity_proposals DROP CONSTRAINT IF EXISTS activity_proposals_proposal_status_check');
+            DB::statement("ALTER TABLE activity_proposals ADD CONSTRAINT activity_proposals_proposal_status_check CHECK (proposal_status IN ('PENDING','UNDER_REVIEW','APPROVED','REJECTED','REVISION'))");
         }
 
         Schema::table('activity_proposals', function (Blueprint $table) {
