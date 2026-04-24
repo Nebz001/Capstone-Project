@@ -144,10 +144,10 @@
         <section
           @class([
             'scroll-mt-6',
-            'pt-12 sm:pt-16 lg:pt-24' => ! $loop->first,
+            'border-t border-slate-200/80 pt-6 sm:pt-7' => ! $loop->first,
           ])
         >
-          <div class="mb-5 flex flex-wrap items-baseline justify-between gap-x-10 gap-y-2.5 sm:mb-6">
+          <div class="mb-3.5 flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 sm:mb-4">
             <h2 class="text-lg font-bold tracking-tight text-slate-900">{{ $group['type_label'] }}</h2>
             <span class="shrink-0 text-sm font-medium tabular-nums text-slate-500">{{ $group['rows']->count() }} record{{ $group['rows']->count() === 1 ? '' : 's' }}</span>
           </div>
