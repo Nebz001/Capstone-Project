@@ -23,7 +23,7 @@
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
-    <header class="mb-8">
+    <header class="mb-6">
         <a href="{{ route('organizations.submit-report') }}{{ $saQ }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
             <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -74,17 +74,17 @@
             <x-feedback.blocked-message variant="error" class="mb-6" :message="$blockedMessage" />
         @endif
     @else
-        <x-ui.card class="mb-6" padding="p-0">
+        <x-ui.card class="mb-5" padding="p-0">
             <x-ui.card-section-header
                 title="Activity Reporting Status"
                 subtitle="After activity reports are only available for completed approved activities."
                 content-padding="px-6"
             />
-            <div class="px-6 pb-6">
+            <div class="px-6 pb-5">
                 @if ($dueReminders->isNotEmpty())
-                    <div class="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                         <p class="font-semibold">Reporting reminders</p>
-                        <ul class="mt-2 space-y-1">
+                        <ul class="mt-1.5 space-y-1">
                             @foreach ($dueReminders as $reminder)
                                 <li>
                                     <span class="font-medium">{{ $reminder['activity_title'] }}</span>
@@ -99,20 +99,20 @@
                     </div>
                 @endif
 
-                <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                <div class="overflow-x-auto rounded-xl border border-slate-200">
                     <table class="min-w-full divide-y divide-slate-200 text-sm">
                         <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                             <tr>
-                                <th class="px-4 py-3 text-left">Activity</th>
-                                <th class="px-4 py-3 text-left">Proposal Status</th>
-                                <th class="px-4 py-3 text-left">Activity Status</th>
-                                <th class="px-4 py-3 text-left">Report Eligibility</th>
+                                <th class="px-4 py-2.5 text-left">Activity</th>
+                                <th class="px-4 py-2.5 text-left">Proposal Status</th>
+                                <th class="px-4 py-2.5 text-left">Activity Status</th>
+                                <th class="px-4 py-2.5 text-left">Report Eligibility</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
                             @foreach ($activities as $activity)
                                 <tr>
-                                    <td class="px-4 py-3 text-slate-800">
+                                    <td class="px-4 py-2.5 text-slate-800">
                                         <p class="font-semibold">{{ $activity['activity_title'] }}</p>
                                         <p class="text-xs text-slate-500">
                                             {{ optional($activity['start_date'])->format('M j, Y') ?? 'Date N/A' }}
@@ -121,9 +121,9 @@
                                             @endif
                                         </p>
                                     </td>
-                                    <td class="px-4 py-3 text-slate-700">{{ $activity['proposal_status_label'] }}</td>
-                                    <td class="px-4 py-3 text-slate-700">{{ $activity['lifecycle_label'] }}</td>
-                                    <td class="px-4 py-3 text-slate-700">
+                                    <td class="px-4 py-2.5 text-slate-700">{{ $activity['proposal_status_label'] }}</td>
+                                    <td class="px-4 py-2.5 text-slate-700">{{ $activity['lifecycle_label'] }}</td>
+                                    <td class="px-4 py-2.5 text-slate-700">
                                         @if ($activity['can_submit'])
                                             <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">Allowed</span>
                                         @elseif ($activity['has_report'])

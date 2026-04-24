@@ -44,7 +44,7 @@
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   @if ($showPageIntro)
-    <header class="mb-8">
+    <header class="mb-6">
       <a href="{{ $backRoute ?? route('organizations.activity-submission') }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
         <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -80,7 +80,7 @@
 
   @unless ($isAdminSubmission)
     <x-ui.card padding="p-0" class="mb-6">
-      <div class="px-6 py-5">
+      <div class="px-6 py-4.5">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-stretch">
           <a
             href="{{ route('organizations.activity-proposal-request', ['request_id' => (int) request('request_id'), 'proposal_source' => $proposalSource]) }}"
@@ -190,10 +190,10 @@
         </form>
 
         @if ($calendarEntry)
-          <div class="mt-5 rounded-xl border border-sky-200 bg-sky-50 px-5 py-5 text-sm text-sky-950 shadow-sm sm:px-6">
+          <div class="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-950 shadow-sm sm:px-5">
             <p class="text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Selected activity summary</p>
             <p class="mt-2 text-lg font-bold leading-snug text-sky-950 sm:text-xl">{{ $calendarEntry->activity_name }}</p>
-            <dl class="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 text-sky-900/90 sm:grid-cols-2">
+            <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sky-900/90 sm:grid-cols-2">
               <div>
                 <dt class="text-[11px] font-medium uppercase tracking-wide text-sky-700/75">Date</dt>
                 <dd class="mt-1 text-sm font-semibold text-sky-950">{{ optional($calendarEntry->activity_date)->format('M j, Y') ?? '—' }}</dd>

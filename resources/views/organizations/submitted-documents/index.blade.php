@@ -20,7 +20,7 @@
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
-  <header class="mb-8">
+  <header class="mb-6">
     <a href="{{ route('organizations.manage') }}{{ $saQ }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -40,16 +40,16 @@
   @endif
 
   @if (isset($blockedMessage) && $blockedMessage)
-    <x-feedback.blocked-message variant="error" class="mb-8" :message="$blockedMessage" />
+    <x-feedback.blocked-message variant="error" class="mb-6" :message="$blockedMessage" />
   @elseif (! $organization && auth()->user()->isSuperAdmin())
-    <x-ui.card padding="p-0" class="mb-8">
-      <div class="px-6 py-12 text-center text-sm text-slate-600">
+    <x-ui.card padding="p-0" class="mb-6">
+      <div class="px-6 py-10 text-center text-sm text-slate-600">
         Choose an organization above to load this RSO&rsquo;s submitted documents.
       </div>
     </x-ui.card>
   @else
 
-  <x-ui.card padding="p-0" class="mb-8">
+  <x-ui.card padding="p-0" class="mb-6">
     <x-ui.card-section-header
       title="Filter & sort"
       subtitle="Narrow the list by type, status, or academic year. Results are grouped by submission type."
@@ -111,7 +111,7 @@
 
   @if (! $hasAnyRecords)
     <x-ui.card padding="p-0">
-      <div class="px-6 py-16 text-center">
+      <div class="px-6 py-12 text-center">
         <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
           <svg class="h-7 w-7" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12H9m1.5 0H7.5m3 0h3m6.75 0h1.5m-9 0v-9M9 12v9" />

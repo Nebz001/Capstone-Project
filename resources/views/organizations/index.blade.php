@@ -12,7 +12,7 @@
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
     {{-- ── Page Header ──────────────────────────────────────────────── --}}
-    <header class="mb-8">
+    <header class="mb-6">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">
@@ -79,17 +79,17 @@
     </section>
 
     {{-- ── Two-column Grid ──────────────────────────────────────────── --}}
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-[7fr_3fr] lg:items-start">
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-[7fr_3fr] lg:items-start">
 
         {{-- ══════════════════════════════════════════════════════════ --}}
         {{-- LEFT  — Organization Activity Calendar (main focus)       --}}
         {{-- ══════════════════════════════════════════════════════════ --}}
         <div>
 
-            <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-300/40">
+            <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-300/35">
 
                 {{-- Card header --}}
-                <div class="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex flex-col gap-2.5 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-base font-bold text-slate-900">
                             Organization Activity Calendar
@@ -105,7 +105,7 @@
                 </div>
 
                 {{-- Legend (pending vs finalized / scheduled only) --}}
-                <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-100 px-6 py-3">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 px-5 py-3">
                     <span class="flex items-center gap-2 text-xs text-slate-600">
                         <span class="inline-block h-3 w-3 rounded border-l-[3px] border-amber-400 bg-amber-100" aria-hidden="true"></span>
                         Pending for Approval
@@ -117,7 +117,7 @@
                 </div>
 
                 {{-- FullCalendar mount --}}
-                <div class="px-5 py-4 sm:px-6">
+                <div class="px-4 py-4 sm:px-5">
                     <div id="activity-calendar"></div>
                 </div>
 
@@ -131,12 +131,12 @@
         {{-- ══════════════════════════════════════════════════════════ --}}
         {{-- RIGHT — Quick actions & organization modules              --}}
         {{-- ══════════════════════════════════════════════════════════ --}}
-        <div class="flex flex-col gap-6">
+        <div class="flex flex-col gap-4">
 
             {{-- ── Manage Organization ─────────────────────────────── --}}
             <a
                 href="{{ route('organizations.manage') }}{{ $saQ }}"
-                class="group flex items-start gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
+                class="group flex items-start gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">
                     <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
@@ -162,7 +162,7 @@
             {{-- ── Activity Submission (accent / main action) ──────── --}}
             <a
                 href="{{ route('organizations.activity-submission') }}{{ $saQ }}"
-                class="group flex items-start gap-5 rounded-3xl border border-[#E7C663]/60 bg-gradient-to-br from-[#FFF8DF] via-[#FFFBF0] to-[#FFFEF8] p-6 shadow-xl shadow-amber-200/50 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
+                class="group flex items-start gap-4 rounded-3xl border border-[#E7C663]/60 bg-gradient-to-br from-[#FFF8DF] via-[#FFFBF0] to-[#FFFEF8] p-5 shadow-xl shadow-amber-200/50 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#F5C400]/25 text-[#8A6500] transition group-hover:bg-[#F5C400]/35">
                     <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
@@ -193,7 +193,7 @@
             {{-- ── Submit Report ────────────────────────────────────── --}}
             <a
                 href="{{ route('organizations.submit-report') }}{{ $saQ }}"
-                class="group flex items-start gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
+                class="group flex items-start gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">
                     <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
