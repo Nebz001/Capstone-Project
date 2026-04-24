@@ -24,17 +24,19 @@
 
   <x-layout.page-shell>
     <div class="mx-auto w-full max-w-3xl">
-      <x-ui.card>
-        <x-ui.section-header
-          title="Login Details"
-          subtitle="Sign in with your school account credentials."
-          helper='Fields marked with <span class="text-red-600">*</span> are required.'
-          :helper-html="true"
-        />
+      <x-ui.card padding="p-0" class="overflow-hidden">
+        <div class="px-6 py-5">
+          <x-ui.section-header
+            title="Login Details"
+            subtitle="Sign in with your school account credentials."
+            helper='Fields marked with <span class="text-red-600">*</span> are required.'
+            :helper-html="true"
+            class="pb-3 pt-0"
+          />
 
-        <form id="student-login-form" method="POST" action="{{ route('login') }}" class="mt-5 space-y-5 sm:mt-6">
+        <form id="student-login-form" method="POST" action="{{ route('login') }}" class="mt-4 space-y-4 sm:mt-5">
           @csrf
-          <section class="space-y-4">
+          <section class="space-y-3.5">
             <div>
               <x-forms.label for="email" required>School Email</x-forms.label>
               <x-forms.input
@@ -46,7 +48,7 @@
                 value="{{ old('email') }}"
                 placeholder="sample@students.nu-lipa.edu.ph"
               />
-              <x-forms.helper>Use your official NU Lipa student email.</x-forms.helper>
+              <x-forms.helper class="mt-1.5!">Use your official NU Lipa student email.</x-forms.helper>
               @error('email')
                 <x-forms.error>{{ $message }}</x-forms.error>
               @enderror
@@ -84,14 +86,14 @@
                   </svg>
                 </button>
               </div>
-              <x-forms.helper>Use the password linked to your school account.</x-forms.helper>
+              <x-forms.helper class="mt-1.5!">Use the password linked to your school account.</x-forms.helper>
               @error('password')
                 <x-forms.error>{{ $message }}</x-forms.error>
               @enderror
             </div>
           </section>
 
-          <section class="space-y-3 border-t border-slate-100 pt-5">
+          <section class="space-y-2.5 border-t border-slate-100 pt-4">
             <label class="inline-flex items-center gap-3 text-sm text-slate-600" for="remember">
               <input
                 id="remember"
@@ -102,7 +104,7 @@
               <span>Remember me</span>
             </label>
 
-            <div class="pt-1">
+            <div class="pt-0.5">
               <x-ui.button type="submit" :full-width="true">Login</x-ui.button>
             </div>
 
@@ -112,6 +114,7 @@
             </p>
           </section>
         </form>
+        </div>
       </x-ui.card>
     </div>
   </x-layout.page-shell>
