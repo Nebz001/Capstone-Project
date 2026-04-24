@@ -176,11 +176,25 @@
       @else
         <ul class="space-y-2">
           @foreach ($fileLinks as $link)
-            <li>
-              <a href="{{ $link['url'] }}" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-[#003E9F] hover:text-[#00327F]">
-                {{ $link['label'] }}
-                <span class="text-slate-400" aria-hidden="true">↗</span>
-              </a>
+            <li class="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 sm:px-4">
+              <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0 flex items-start gap-2.5">
+                  <span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#003E9F]/10 text-[#003E9F]">
+                    <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 0H5.625C5.004 2.25 4.5 2.754 4.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                    </svg>
+                  </span>
+                  <p class="wrap-break-word text-sm font-semibold leading-relaxed text-slate-800">{{ $link['label'] }}</p>
+                </div>
+                <a
+                  href="{{ $link['url'] }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F] sm:w-auto sm:min-w-29"
+                >
+                  View file
+                </a>
+              </div>
             </li>
           @endforeach
         </ul>
