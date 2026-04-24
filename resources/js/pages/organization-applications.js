@@ -32,11 +32,12 @@ const setAttachVisualState = (item, hasFile, fileName) => {
         );
         btn.classList.toggle("text-slate-400", !hasFile || !fileName);
     }
-    if (badge) {
-        badge.classList.toggle("hidden", !hasFile || !fileName);
-    }
     if (nameEl) {
         nameEl.textContent = fileName || "";
+    }
+    if (badge) {
+        // Hide the text badge when a file name is shown beside the icon; show only if no name string.
+        badge.classList.toggle("hidden", !hasFile || Boolean(fileName));
     }
 };
 

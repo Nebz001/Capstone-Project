@@ -67,7 +67,7 @@
       method="POST"
       action="{{ route($registerStoreRoute ?? 'organizations.register.store') }}"
       enctype="multipart/form-data"
-      class="space-y-6"
+      class="space-y-4"
       data-org-form-blocked="{{ $registrationFormBlocked ? 'true' : 'false' }}"
     >
       @csrf
@@ -75,7 +75,7 @@
       <fieldset
         @disabled($registrationFormBlocked)
         @class([
-          'min-w-0 space-y-6 border-0 p-0 m-0',
+          'min-w-0 space-y-4 border-0 p-0 m-0',
           'pointer-events-none opacity-50' => $registrationFormBlocked,
         ])
       >
@@ -87,9 +87,10 @@
         subtitle="Provide the academic year for this registration."
         helper='Fields marked with <span class="text-red-600">*</span> are required.'
         :helper-html="true"
-        content-padding="px-6" />
-      <div class="px-6 py-6">
-        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        content-padding="px-6"
+        header-class="!pb-3 pt-3" />
+      <div class="px-6 py-5">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
           <div>
             <x-forms.label for="academic_year" required>Academic Year</x-forms.label>
             <x-forms.input
@@ -101,7 +102,7 @@
               :value="old('academic_year', $activeAcademicYear)"
               readonly
               required />
-            <x-forms.helper>This is set globally by the Super Admin and applies system-wide.</x-forms.helper>
+            <x-forms.helper class="!mt-1.5">This is set globally by the Super Admin and applies system-wide.</x-forms.helper>
             @error('academic_year') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </div>
         </div>
@@ -113,9 +114,10 @@
       <x-ui.card-section-header
         title="Contact Information"
         subtitle="Enter the primary contact details for your organization."
-        content-padding="px-6" />
-      <div class="px-6 py-6">
-        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        content-padding="px-6"
+        header-class="!pb-3 pt-3" />
+      <div class="px-6 py-5">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
           <div>
             <x-forms.label for="organization_name" required>Organization Name</x-forms.label>
             <x-forms.input
@@ -178,9 +180,10 @@
       <x-ui.card-section-header
         title="Organization Details"
         subtitle="Provide key information about your organization."
-        content-padding="px-6" />
-      <div class="px-6 py-6">
-        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        content-padding="px-6"
+        header-class="!pb-3 pt-3" />
+      <div class="px-6 py-5">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
           <div>
             <x-forms.label for="date_organized" required>Date Organized</x-forms.label>
             <x-forms.input
@@ -195,7 +198,7 @@
             <legend class="text-sm font-medium text-slate-900">
               Type of Organization <span class="text-red-600">*</span>
             </legend>
-            <div class="mt-3 space-y-3">
+            <div class="mt-2 space-y-2">
               <x-forms.choice id="type_co_curricular" name="organization_type" type="radio" value="co_curricular" :checked="$orgType === 'co_curricular'">
                 Co-Curricular Organization
               </x-forms.choice>
@@ -213,7 +216,7 @@
               rows="5"
               placeholder="Briefly describe the mission, goals, and primary activities of the organization."
               required>{{ old('purpose') }}</x-forms.textarea>
-            <x-forms.helper>Keep it clear and academic in tone.</x-forms.helper>
+            <x-forms.helper class="!mt-1.5">Keep it clear and academic in tone.</x-forms.helper>
             @error('purpose') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </div>
           <div class="md:col-span-2">
@@ -254,20 +257,21 @@
       <x-ui.card-section-header
         title="Requirements Attached"
         subtitle="Check each document you are submitting. When a requirement is selected, attach its file using the paperclip. PDF, Word, or image files only."
-        content-padding="px-6" />
-      <div class="px-6 py-6">
-        <div id="requirements-section-validation" class="mb-4 scroll-mt-24">
+        content-padding="px-6"
+        header-class="!pb-3 pt-3" />
+      <div class="px-6 py-5">
+        <div id="requirements-section-validation" class="mb-2 scroll-mt-24">
           @error('requirements')
             <p class="text-xs font-medium text-rose-600" role="alert">{{ $message }}</p>
           @enderror
           <p class="requirements-section-client-error hidden text-xs font-medium text-rose-600" role="alert"></p>
         </div>
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-6">
-          <p class="text-sm font-medium text-slate-900">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+          <p class="text-sm font-semibold text-slate-900">
             New Registration Requirements <span class="text-rose-600" aria-hidden="true">*</span>
             <span class="sr-only">(required)</span>
           </p>
-          <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
+          <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-x-2 sm:gap-y-2">
             <x-organizations.requirement-item
               checkbox-id="req_letter_intent"
               value="letter_of_intent"
@@ -304,59 +308,58 @@
               $oldReqs = is_array($oldReqs) ? $oldReqs : [];
               $othersChecked = in_array('others', $oldReqs, true);
             @endphp
-            <div class="requirement-item sm:col-span-2 rounded-md p-2 hover:bg-white/60" data-requirement-key="others">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
+            <div class="requirement-item sm:col-span-2 rounded-md px-1.5 py-1 hover:bg-white/60" data-requirement-key="others">
+              <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:gap-2">
                 <div class="min-w-0 flex-1">
-                  <div class="flex items-start gap-2">
-                    <div class="min-w-0 flex-1">
-                      <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-                        <x-forms.choice
-                          id="req_others"
-                          name="requirements[]"
-                          type="checkbox"
-                          value="others"
-                          :checked="$othersChecked"
-                          wrapper-class="flex shrink-0 items-start gap-3"
-                          label-class="text-sm text-slate-700"
-                        >
-                          Others
-                        </x-forms.choice>
-                        <x-forms.input
-                          id="req_others_text"
-                          name="requirements_other"
-                          type="text"
-                          variant="underline"
-                          placeholder="Describe the other document"
-                          :value="old('requirements_other')"
-                          class="min-w-0 flex-1 sm:max-w-xl"
-                          aria-label="Other document specification"
-                        />
-                      </div>
-                    </div>
-                    <div class="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
-                      <input
-                        type="file"
-                        id="req_file_req_others"
-                        name="requirement_files[others]"
-                        class="req-file-input sr-only"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                        tabindex="-1"
-                        aria-hidden="true"
-                      />
-                      <button
-                        type="button"
-                        class="req-attach-btn inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/90 hover:text-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label="Attach file: Others"
-                        title="Attach file"
-                      >
-                        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                        </svg>
-                      </button>
-                      <span class="req-attached-badge hidden text-[10px] font-medium leading-none text-emerald-600" aria-hidden="true">Attached</span>
-                      <span class="req-file-name max-w-[5.5rem] truncate text-center text-[10px] leading-tight text-slate-500 sm:max-w-[7rem]" aria-live="polite"></span>
-                    </div>
+                  <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                    <x-forms.choice
+                      id="req_others"
+                      name="requirements[]"
+                      type="checkbox"
+                      value="others"
+                      :checked="$othersChecked"
+                      wrapper-class="flex shrink-0 items-start gap-2"
+                      label-class="text-sm text-slate-700"
+                    >
+                      Others
+                    </x-forms.choice>
+                    <x-forms.input
+                      id="req_others_text"
+                      name="requirements_other"
+                      type="text"
+                      variant="underline"
+                      placeholder="Describe the other document"
+                      :value="old('requirements_other')"
+                      class="min-w-0 w-full sm:max-w-xl"
+                      aria-label="Other document specification"
+                    />
                   </div>
+                </div>
+                <div class="req-attach-toolbar flex w-full min-w-0 max-w-full shrink-0 items-center justify-end gap-1.5 self-end sm:w-auto sm:max-w-[24rem] sm:self-start sm:pt-0.5">
+                  <input
+                    type="file"
+                    id="req_file_req_others"
+                    name="requirement_files[others]"
+                    class="req-file-input sr-only"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                    tabindex="-1"
+                    aria-hidden="true"
+                  />
+                  <span
+                    class="req-file-name min-w-0 flex-1 truncate text-left text-[10px] font-medium text-slate-600 sm:text-xs"
+                    aria-live="polite"
+                  ></span>
+                  <span class="req-attached-badge hidden shrink-0 text-[10px] font-medium leading-none text-emerald-600" aria-hidden="true">Attached</span>
+                  <button
+                    type="button"
+                    class="req-attach-btn inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/90 hover:text-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Attach file: Others"
+                    title="Attach file"
+                  >
+                    <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                  </button>
                 </div>
               </div>
               @error('requirement_files.others')
@@ -374,8 +377,8 @@
 
     {{-- Bottom Actions --}}
     <x-ui.card padding="p-0">
-      <div class="px-6 py-6">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+      <div class="px-6 py-4 sm:py-5">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
           <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto" :disabled="$registrationFormBlocked">Reset Form</x-ui.button>
           <x-ui.button type="submit" class="w-full sm:w-auto" :disabled="$registrationFormBlocked">Submit Registration</x-ui.button>
         </div>

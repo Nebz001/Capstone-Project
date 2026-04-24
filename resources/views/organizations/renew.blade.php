@@ -328,59 +328,58 @@
                             $renewOldReqs = is_array($renewOldReqs) ? $renewOldReqs : [];
                             $renewOthersChecked = in_array('others', $renewOldReqs, true);
                         @endphp
-                        <div class="requirement-item sm:col-span-2 rounded-md p-2 hover:bg-white/60" data-requirement-key="others">
-                            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
+                        <div class="requirement-item sm:col-span-2 rounded-md px-1.5 py-1 hover:bg-white/60" data-requirement-key="others">
+                            <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:gap-2">
                                 <div class="min-w-0 flex-1">
-                                    <div class="flex items-start gap-2">
-                                        <div class="min-w-0 flex-1">
-                                            <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-                                                <x-forms.choice
-                                                    id="renew_req_others"
-                                                    name="requirements[]"
-                                                    type="checkbox"
-                                                    value="others"
-                                                    :checked="$renewOthersChecked"
-                                                    wrapper-class="flex shrink-0 items-start gap-3"
-                                                    label-class="text-sm text-slate-700"
-                                                >
-                                                    Others
-                                                </x-forms.choice>
-                                                <x-forms.input
-                                                    id="renew_req_others_text"
-                                                    name="requirements_other"
-                                                    type="text"
-                                                    variant="underline"
-                                                    placeholder="Describe the other document"
-                                                    :value="old('requirements_other')"
-                                                    class="min-w-0 flex-1 sm:max-w-xl"
-                                                    aria-label="Other document specification"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div class="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
-                                            <input
-                                                type="file"
-                                                id="req_file_renew_req_others"
-                                                name="requirement_files[others]"
-                                                class="req-file-input sr-only"
-                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                                                tabindex="-1"
-                                                aria-hidden="true"
-                                            />
-                                            <button
-                                                type="button"
-                                                class="req-attach-btn inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/90 hover:text-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-40"
-                                                aria-label="Attach file: Others"
-                                                title="Attach file"
-                                            >
-                                                <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                                </svg>
-                                            </button>
-                                            <span class="req-attached-badge hidden text-[10px] font-medium leading-none text-emerald-600" aria-hidden="true">Attached</span>
-                                            <span class="req-file-name max-w-[5.5rem] truncate text-center text-[10px] leading-tight text-slate-500 sm:max-w-[7rem]" aria-live="polite"></span>
-                                        </div>
+                                    <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                                        <x-forms.choice
+                                            id="renew_req_others"
+                                            name="requirements[]"
+                                            type="checkbox"
+                                            value="others"
+                                            :checked="$renewOthersChecked"
+                                            wrapper-class="flex shrink-0 items-start gap-2"
+                                            label-class="text-sm text-slate-700"
+                                        >
+                                            Others
+                                        </x-forms.choice>
+                                        <x-forms.input
+                                            id="renew_req_others_text"
+                                            name="requirements_other"
+                                            type="text"
+                                            variant="underline"
+                                            placeholder="Describe the other document"
+                                            :value="old('requirements_other')"
+                                            class="min-w-0 w-full sm:max-w-xl"
+                                            aria-label="Other document specification"
+                                        />
                                     </div>
+                                </div>
+                                <div class="req-attach-toolbar flex w-full min-w-0 max-w-full shrink-0 items-center justify-end gap-1.5 self-end sm:w-auto sm:max-w-[24rem] sm:self-start sm:pt-0.5">
+                                    <input
+                                        type="file"
+                                        id="req_file_renew_req_others"
+                                        name="requirement_files[others]"
+                                        class="req-file-input sr-only"
+                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                                        tabindex="-1"
+                                        aria-hidden="true"
+                                    />
+                                    <span
+                                        class="req-file-name min-w-0 flex-1 truncate text-left text-[10px] font-medium text-slate-600 sm:text-xs"
+                                        aria-live="polite"
+                                    ></span>
+                                    <span class="req-attached-badge hidden shrink-0 text-[10px] font-medium leading-none text-emerald-600" aria-hidden="true">Attached</span>
+                                    <button
+                                        type="button"
+                                        class="req-attach-btn inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/90 hover:text-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                                        aria-label="Attach file: Others"
+                                        title="Attach file"
+                                    >
+                                        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                             @error('requirement_files.others')
