@@ -124,14 +124,14 @@
     id="activity-calendar-form"
     method="POST"
     action="{{ route($calendarStoreRoute ?? 'organizations.activity-calendar-submission.store') }}"
-    class="space-y-6"
+    class="space-y-4"
     novalidate
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
     data-activity-calendar-form-blocked="{{ $activityCalendarFormBlocked ? 'true' : 'false' }}"
   >
     @csrf
 
-    <fieldset class="min-w-0 space-y-6 border-0 p-0 m-0">
+    <fieldset class="min-w-0 space-y-4 border-0 p-0 m-0">
 
     <x-ui.card padding="p-0">
       <x-ui.card-section-header
@@ -139,10 +139,11 @@
         subtitle="Provide the details for this submission."
         helper='Fields marked with <span class="text-red-600">*</span> are required.'
         :helper-html="true"
-        content-padding="px-6" />
+        content-padding="px-6"
+        header-class="!pb-3 pt-3" />
 
-      <div class="px-6 py-6">
-        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div class="px-6 py-5">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
           <div>
             <x-forms.label for="academic_year" required>Academic Year</x-forms.label>
             <x-forms.input
@@ -193,17 +194,19 @@
       <x-ui.card-section-header
         title="Activity Calendar"
         subtitle="Status and Date Received are for admin use."
-        content-padding="px-6" />
+        content-padding="px-6"
+        header-class="!pb-3 pt-3" />
 
-      <div class="px-6 py-6">
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-6">
+      <div class="px-6 py-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
             <h3 id="activity-entry-title" class="text-sm font-semibold text-slate-900">Enter One Activity</h3>
             <p class="text-xs text-slate-600">Add activities one at a time; they&rsquo;ll appear below.</p>
           </div>
 
-          <div class="mt-5 grid grid-cols-1 gap-5">
-            <div class="grid grid-cols-1 gap-5 md:grid-cols-6">
+          <div class="mt-3 grid grid-cols-1 gap-4">
+            <div class="rounded-xl border border-slate-200 bg-slate-100/70 p-3">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-6">
               <div class="md:col-span-2">
                 <x-forms.label for="activity_date" required>Date</x-forms.label>
                 <x-forms.input id="activity_date" type="date" required />
@@ -238,8 +241,10 @@
                 <x-forms.input id="activity_budget" type="text" required placeholder="e.g., P1,500 or No Expenses" />
               </div>
             </div>
+            </div>
 
-            <div class="grid grid-cols-1 gap-5 md:grid-cols-6">
+            <div class="rounded-xl border border-slate-200 bg-slate-100/70 p-3">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-6">
               <div class="md:col-span-4">
                 <x-forms.label for="activity_name" required>Activity Name</x-forms.label>
                 <x-forms.input id="activity_name" type="text" required placeholder="e.g., Orientation Seminar" />
@@ -249,15 +254,18 @@
                 <x-forms.input id="activity_venue" type="text" required placeholder="e.g., University Auditorium" />
               </div>
             </div>
+            </div>
 
-            <div class="grid grid-cols-1 gap-5 md:grid-cols-6">
+            <div class="rounded-xl border border-slate-200 bg-slate-100/70 p-3">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-6">
               <div class="md:col-span-6">
                 <x-forms.label for="activity_participant_program" required>Participant / Program Assigned</x-forms.label>
                 <x-forms.input id="activity_participant_program" type="text" required placeholder="e.g., 2nd Year CS / Program Committee" />
               </div>
             </div>
+            </div>
 
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p class="text-xs text-slate-600">Status and Date Received will be set by the reviewing office.</p>
               <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                 <x-ui.button id="cancel-edit" type="button" variant="secondary" class="hidden w-full sm:w-auto">Cancel Edit</x-ui.button>
@@ -267,44 +275,44 @@
           </div>
         </div>
 
-        <div class="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm" id="added-activities-section">
-          <div class="border-b border-slate-100 px-5 py-4 sm:px-6">
+        <div class="mt-4 rounded-xl border border-slate-200 bg-white shadow-sm" id="added-activities-section">
+          <div class="border-b border-slate-100 px-4 py-3 sm:px-5">
             <div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
               <h3 class="text-sm font-semibold text-slate-900">Added Activities</h3>
               <p class="text-xs text-slate-600">Preview of activities included in this submission.</p>
             </div>
           </div>
 
-          <div class="px-5 py-5 sm:px-6">
+          <div class="px-4 py-4 sm:px-5">
             <input type="hidden" name="activities_json" id="activities_json" value="[]" />
             <div id="activities-hidden-inputs"></div>
 
-            <div class="overflow-x-hidden rounded-2xl border border-slate-200">
+            <div class="overflow-x-hidden rounded-xl border border-slate-200">
               <table class="w-full table-auto border-collapse text-left text-sm">
                 <thead class="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
                   <tr>
-                    <th scope="col" class="px-5 py-3.5">Date</th>
-                    <th scope="col" class="px-5 py-3.5">Activity Name</th>
-                    <th scope="col" class="px-5 py-3.5">SDG</th>
-                    <th scope="col" class="px-5 py-3.5">Venue</th>
-                    <th scope="col" class="px-5 py-3.5">Participant / Program Assigned</th>
-                    <th scope="col" class="px-5 py-3.5">Budget</th>
-                    <th scope="col" class="px-5 py-3.5">Status</th>
-                    <th scope="col" class="px-5 py-3.5">Date Received</th>
-                    <th scope="col" class="px-5 py-3.5">Actions</th>
+                    <th scope="col" class="px-4 py-3">Date</th>
+                    <th scope="col" class="px-4 py-3">Activity Name</th>
+                    <th scope="col" class="px-4 py-3">SDG</th>
+                    <th scope="col" class="px-4 py-3">Venue</th>
+                    <th scope="col" class="px-4 py-3">Participant / Program Assigned</th>
+                    <th scope="col" class="px-4 py-3">Budget</th>
+                    <th scope="col" class="px-4 py-3">Status</th>
+                    <th scope="col" class="px-4 py-3">Date Received</th>
+                    <th scope="col" class="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="activities-preview-body" class="divide-y divide-slate-200 bg-white">
                   @if ($calLock && $latestCalendar->entries->isNotEmpty())
                     @foreach ($latestCalendar->entries as $entry)
                       <tr class="align-top">
-                        <td class="px-5 py-3.5 text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
-                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->activity_name }}</td>
-                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->sdg }}</td>
-                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->venue }}</td>
-                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->participant_program }}</td>
-                        <td class="px-5 py-3.5 text-slate-900">{{ $entry->budget }}</td>
-                        <td class="px-5 py-3.5">
+                        <td class="px-4 py-3 text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->activity_name }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->sdg }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->venue }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->participant_program }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->budget }}</td>
+                        <td class="px-4 py-3">
                           @php
                             $calSt = strtoupper((string) ($latestCalendar->calendar_status ?? ''));
                             $rowStatusLabel = match ($calSt) {
@@ -317,19 +325,19 @@
                           @endphp
                           <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{{ $rowStatusLabel }}</span>
                         </td>
-                        <td class="px-5 py-3.5 text-sm text-slate-500">For admin use</td>
-                        <td class="px-5 py-3.5 text-sm text-slate-400">—</td>
+                        <td class="px-4 py-3 text-sm text-slate-500">For admin use</td>
+                        <td class="px-4 py-3 text-sm text-slate-400">—</td>
                       </tr>
                     @endforeach
                   @elseif ($calLock)
                     <tr>
-                      <td colspan="9" class="px-5 py-10 text-center text-sm text-slate-600">
+                      <td colspan="9" class="px-4 py-8 text-center text-sm text-slate-600">
                         No activities are stored for this submission.
                       </td>
                     </tr>
                   @else
                     <tr id="activities-empty-state">
-                      <td colspan="9" class="px-5 py-10 text-center text-sm text-slate-600">
+                      <td colspan="9" class="px-4 py-8 text-center text-sm text-slate-600">
                         No activities added yet.
                       </td>
                     </tr>
@@ -346,10 +354,11 @@
       <x-ui.card-section-header
         title="Notes / Reminders"
         subtitle="Please review before submitting."
-        content-padding="px-6" />
-      <div class="px-6 py-6">
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-          <ul class="list-disc space-y-2 pl-5">
+        content-padding="px-6"
+        header-class="!pb-3 pt-3" />
+      <div class="px-6 py-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <ul class="list-disc space-y-1.5 pl-5">
             <li>Ensure all activities are aligned with the organization&rsquo;s plan.</li>
             <li>Budget entries may indicate &ldquo;No Expenses&rdquo; when applicable.</li>
             <li>Status and Date Received will be completed by the reviewing office.</li>
@@ -359,8 +368,8 @@
     </x-ui.card>
 
     <x-ui.card padding="p-0">
-      <div class="px-6 py-6">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+      <div class="px-6 py-4 sm:py-5">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
           <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto">Reset Form</x-ui.button>
           <x-ui.button
             id="submit-activity-calendar"
