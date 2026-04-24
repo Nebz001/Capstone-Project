@@ -71,11 +71,11 @@
             method="POST"
             action="{{ route($renewStoreRoute ?? 'organizations.renew.store') }}"
             enctype="multipart/form-data"
-            class="space-y-6"
+            class="space-y-4"
             data-org-form-blocked="false"
         >
             @csrf
-            <fieldset class="min-w-0 space-y-6 border-0 p-0 m-0">
+            <fieldset class="min-w-0 space-y-4 border-0 p-0 m-0">
 
         {{-- Academic Year --}}
         <x-ui.card padding="p-0">
@@ -85,9 +85,10 @@
                 helper='Fields marked with <span class="text-red-600">*</span> are required.'
                 :helper-html="true"
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6">
-                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div class="px-6 py-5">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
                     <div>
                         <x-forms.label for="academic_year" required>Academic Year</x-forms.label>
                         <x-forms.input
@@ -100,7 +101,7 @@
                             readonly
                             required
                         />
-                        <x-forms.helper>This is set globally by the Super Admin and applies system-wide.</x-forms.helper>
+                        <x-forms.helper class="!mt-1.5">This is set globally by the Super Admin and applies system-wide.</x-forms.helper>
                         @error('academic_year') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
                 </div>
@@ -113,9 +114,10 @@
                 title="Contact Information"
                 subtitle="Enter the primary contact details for your organization."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6">
-                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div class="px-6 py-5">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
                     <div>
                         <x-forms.label for="organization_name" required>Organization Name</x-forms.label>
                         <x-forms.input
@@ -184,9 +186,10 @@
                 title="Organization Details"
                 subtitle="Confirm your organization's information for this renewal."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6">
-                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div class="px-6 py-5">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
                     <div>
                         <x-forms.label for="date_organized" required>Date Originally Organized</x-forms.label>
                         <x-forms.input
@@ -202,7 +205,7 @@
                         <legend class="text-sm font-medium text-slate-900">
                             Type of Organization <span class="text-red-600">*</span>
                         </legend>
-                        <div class="mt-3 space-y-3">
+                        <div class="mt-2 space-y-2">
                             <x-forms.choice id="renew_type_co_curricular" name="organization_type" type="radio" value="co_curricular" :checked="$orgType === 'co_curricular'">
                                 Co-Curricular Organization
                             </x-forms.choice>
@@ -221,7 +224,7 @@
                             placeholder="Briefly describe the mission, goals, and primary activities of the organization."
                             required
                         >{{ old('purpose') }}</x-forms.textarea>
-                        <x-forms.helper>Keep it clear and academic in tone.</x-forms.helper>
+                        <x-forms.helper class="!mt-1.5">Keep it clear and academic in tone.</x-forms.helper>
                         @error('purpose') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
                     <div class="md:col-span-2">
@@ -263,20 +266,21 @@
                 title="Requirements Attached"
                 subtitle="Check each document you are submitting. When a requirement is selected, attach its file using the paperclip. PDF, Word, or image files only."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6">
-                <div id="requirements-section-validation" class="mb-4 scroll-mt-24">
+            <div class="px-6 py-5">
+                <div id="requirements-section-validation" class="mb-2 scroll-mt-24">
                     @error('requirements')
                         <p class="text-xs font-medium text-rose-600" role="alert">{{ $message }}</p>
                     @enderror
                     <p class="requirements-section-client-error hidden text-xs font-medium text-rose-600" role="alert"></p>
                 </div>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-6">
-                    <p class="text-sm font-medium text-slate-900">
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+                    <p class="text-sm font-semibold text-slate-900">
                         Renewal Application Requirements <span class="text-rose-600" aria-hidden="true">*</span>
                         <span class="sr-only">(required)</span>
                     </p>
-                    <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
+                    <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-x-2 sm:gap-y-2">
                         <x-organizations.requirement-item
                             checkbox-id="renew_req_letter_intent"
                             value="letter_of_intent"
@@ -397,8 +401,8 @@
 
         {{-- Bottom Actions --}}
         <x-ui.card padding="p-0">
-            <div class="px-6 py-6">
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <div class="px-6 py-4 sm:py-5">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                     <x-ui.button type="reset" variant="secondary" class="w-full sm:w-auto">Reset Form</x-ui.button>
                     <x-ui.button type="submit" class="w-full sm:w-auto">Submit Renewal</x-ui.button>
                 </div>

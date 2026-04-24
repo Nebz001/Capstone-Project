@@ -103,7 +103,7 @@
     method="POST"
     action="{{ route('organizations.activity-proposal-request.store') }}"
     enctype="multipart/form-data"
-    class="space-y-6"
+    class="space-y-4"
   >
     @csrf
     @if ($requestForm)
@@ -119,13 +119,13 @@
     <fieldset
       @disabled($officerValidationPending)
       @class([
-        'min-w-0 space-y-6 border-0 p-0 m-0',
+        'min-w-0 space-y-4 border-0 p-0 m-0',
         'pointer-events-none opacity-50' => $officerValidationPending,
       ])
     >
       <x-ui.card padding="p-0">
-        <x-ui.card-section-header title="Proposal Option" subtitle="Choose how you want to prepare this proposal." content-padding="px-6" />
-        <div class="px-6 py-6">
+        <x-ui.card-section-header title="Proposal Option" subtitle="Choose how you want to prepare this proposal." content-padding="px-6" header-class="!pb-3 pt-3" />
+        <div class="px-6 py-5">
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label
               data-proposal-option="calendar"
@@ -162,7 +162,7 @@
               <p data-option-helper class="mt-1 text-xs {{ $proposalSource === 'unlisted' ? 'text-[#003E9F]/80' : 'text-slate-600' }}">Use this for unplanned activities not included in the original calendar (Biglaan).</p>
             </label>
           </div>
-          <div id="calendar-link-wrap" class="mt-4 {{ $proposalSource === 'calendar' ? '' : 'hidden' }}">
+          <div id="calendar-link-wrap" class="mt-3 {{ $proposalSource === 'calendar' ? '' : 'hidden' }}">
             <x-forms.label for="activity_calendar_entry_id" required class="{{ $errors->has('activity_calendar_entry_id') ? '!text-rose-700' : '' }}">Select submitted calendar activity to link</x-forms.label>
             <x-forms.select id="activity_calendar_entry_id" name="activity_calendar_entry_id" :required="$proposalSource === 'calendar'" class="{{ $errors->has('activity_calendar_entry_id') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}">
               <option value="" disabled @selected($selectedCalendarEntryId <= 0)>Select activity</option>
@@ -194,9 +194,9 @@
       </x-ui.card>
 
       <x-ui.card padding="p-0">
-        <x-ui.card-section-header title="Basic Information" subtitle="Provide the summary details for this activity request." content-padding="px-6" />
-        <div class="px-6 py-6">
-          <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <x-ui.card-section-header title="Basic Information" subtitle="Provide the summary details for this activity request." content-padding="px-6" header-class="!pb-3 pt-3" />
+        <div class="px-6 py-5">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
             <div>
               <x-forms.label for="rso_name" required class="{{ $errors->has('rso_name') ? '!text-rose-700' : '' }}">Name of RSO</x-forms.label>
               <x-forms.input
@@ -208,7 +208,7 @@
                 required
                 class="{{ $errors->has('rso_name') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }} bg-slate-100 text-slate-700 cursor-not-allowed"
               />
-              <x-forms.helper>This value is auto-filled from your linked officer organization.</x-forms.helper>
+              <x-forms.helper class="mt-1.5!">This value is auto-filled from your linked officer organization.</x-forms.helper>
               @error('rso_name')
                 <x-forms.error>{{ $message }}</x-forms.error>
               @enderror
@@ -229,11 +229,11 @@
       </x-ui.card>
 
       <x-ui.card padding="p-0">
-        <x-ui.card-section-header title="Nature and Type of Activity" subtitle="Select all applicable options." content-padding="px-6" />
-        <div class="px-6 py-6 space-y-6">
+        <x-ui.card-section-header title="Nature and Type of Activity" subtitle="Select all applicable options." content-padding="px-6" header-class="!pb-3 pt-3" />
+        <div class="px-6 py-5 space-y-4">
           <div>
             <p class="text-sm font-semibold {{ $errors->has('nature_of_activity') ? 'text-rose-700' : 'text-slate-900' }}">Nature of Activity <span class="text-rose-600">*</span></p>
-            <div id="nature-options-wrap" class="mt-3 grid grid-cols-1 gap-3 rounded-xl {{ $errors->has('nature_of_activity') ? 'border border-rose-300 bg-rose-50/40 p-3' : '' }} sm:grid-cols-2">
+            <div id="nature-options-wrap" class="mt-2 grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 {{ $errors->has('nature_of_activity') ? 'border-rose-300 bg-rose-50/40' : '' }} sm:grid-cols-2">
               @foreach ($natureOptions as $key)
                 @php
                   $label = match ($key) {
@@ -253,7 +253,7 @@
               <x-forms.error>Please select at least one option.</x-forms.error>
             @enderror
             <p id="nature-required-reminder" class="mt-2 hidden text-xs font-medium text-amber-700">Please fill out this field.</p>
-            <div id="nature-other-wrap" class="mt-3 {{ in_array('others', $selectedNature, true) ? '' : 'hidden' }}">
+            <div id="nature-other-wrap" class="mt-2 {{ in_array('others', $selectedNature, true) ? '' : 'hidden' }}">
               <x-forms.label for="nature_other" class="{{ $errors->has('nature_other') ? '!text-rose-700' : '' }}">Nature of Activity (Others)</x-forms.label>
               <x-forms.input
                 id="nature_other"
@@ -271,7 +271,7 @@
 
           <div>
             <p class="text-sm font-semibold {{ $errors->has('activity_types') ? 'text-rose-700' : 'text-slate-900' }}">Type of Activity <span class="text-rose-600">*</span></p>
-            <div id="type-options-wrap" class="mt-3 grid grid-cols-1 gap-3 rounded-xl {{ $errors->has('activity_types') ? 'border border-rose-300 bg-rose-50/40 p-3' : '' }} sm:grid-cols-2">
+            <div id="type-options-wrap" class="mt-2 grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 {{ $errors->has('activity_types') ? 'border-rose-300 bg-rose-50/40' : '' }} sm:grid-cols-2">
               @foreach ($typeOptions as $key)
                 @php
                   $label = match ($key) {
@@ -297,7 +297,7 @@
               <x-forms.error>Please select at least one option.</x-forms.error>
             @enderror
             <p id="type-required-reminder" class="mt-2 hidden text-xs font-medium text-amber-700">Please fill out this field.</p>
-            <div id="activity-type-other-wrap" class="mt-3 {{ in_array('others', $selectedTypes, true) ? '' : 'hidden' }}">
+            <div id="activity-type-other-wrap" class="mt-2 {{ in_array('others', $selectedTypes, true) ? '' : 'hidden' }}">
               <x-forms.label for="activity_type_other" class="{{ $errors->has('activity_type_other') ? '!text-rose-700' : '' }}">Type of Activity (Others)</x-forms.label>
               <x-forms.input
                 id="activity_type_other"
@@ -316,9 +316,9 @@
       </x-ui.card>
 
       <x-ui.card padding="p-0">
-        <x-ui.card-section-header title="Activity Details" subtitle="Provide key planning details for this request." content-padding="px-6" />
-        <div class="px-6 py-6">
-          <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <x-ui.card-section-header title="Activity Details" subtitle="Provide key planning details for this request." content-padding="px-6" header-class="!pb-3 pt-3" />
+        <div class="px-6 py-5">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
             <div>
               <x-forms.label for="target-sdg-trigger" required class="{{ $errors->has('target_sdg') ? '!text-rose-700' : '' }}">Target SDG</x-forms.label>
               <div id="target-sdg-dropdown" class="relative mt-2">
@@ -357,7 +357,7 @@
                 </div>
               </div>
               <x-forms.input id="target_sdg_required_proxy" type="text" class="sr-only" tabindex="-1" aria-hidden="true" />
-              <x-forms.helper>Click the dropdown and check all SDGs that apply.</x-forms.helper>
+              <x-forms.helper class="mt-1.5!">Click the dropdown and check all SDGs that apply.</x-forms.helper>
               @error('target_sdg')
                 <x-forms.error>Please select at least one option.</x-forms.error>
               @enderror
@@ -409,12 +409,12 @@
       </x-ui.card>
 
       <x-ui.card padding="p-0">
-        <x-ui.card-section-header title="Required Attachments and Checklist" subtitle="All required items must be completed before you can continue to Step 2." content-padding="px-6" />
-        <div class="px-6 py-6 space-y-5">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <x-ui.card-section-header title="Required Attachments and Checklist" subtitle="All required items must be completed before you can continue to Step 2." content-padding="px-6" header-class="!pb-3 pt-3" />
+        <div class="px-6 py-5 space-y-4">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             <p class="text-sm font-semibold text-slate-900">Request Letter <span class="text-rose-600">*</span></p>
             <p class="mt-1 text-xs text-slate-600">The request letter must include rationale, objectives, and program.</p>
-            <div class="mt-3 space-y-2">
+            <div class="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-100/70 p-2.5">
               <x-forms.choice id="request_letter_has_rationale" name="request_letter_has_rationale" type="checkbox" value="1" :checked="old('request_letter_has_rationale') == '1'">
                 Includes Rationale
               </x-forms.choice>
@@ -425,7 +425,7 @@
                 Includes Program
               </x-forms.choice>
             </div>
-            <div class="mt-3">
+            <div class="mt-2">
               <x-forms.label for="request_letter" :required="! $requestForm?->request_letter_path" class="{{ $errors->has('request_letter') ? '!text-rose-700' : '' }}">Upload Request Letter</x-forms.label>
               <x-forms.input id="request_letter" name="request_letter" type="file" :required="! $requestForm?->request_letter_path" class="{{ $errors->has('request_letter') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
               @error('request_letter')
@@ -434,7 +434,7 @@
             </div>
           </div>
 
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             <x-forms.label for="speaker_resume" class="{{ $errors->has('speaker_resume') ? '!text-rose-700' : '' }}">Resume of Speaker (required if Seminar / Workshop is selected)</x-forms.label>
             <x-forms.input id="speaker_resume" name="speaker_resume" type="file" class="{{ $errors->has('speaker_resume') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
             @error('speaker_resume')
@@ -442,7 +442,7 @@
             @enderror
           </div>
 
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             <x-forms.label for="post_survey_form" :required="! $requestForm?->post_survey_form_path" class="{{ $errors->has('post_survey_form') ? '!text-rose-700' : '' }}">Sample Post-Survey Form</x-forms.label>
             <x-forms.input id="post_survey_form" name="post_survey_form" type="file" :required="! $requestForm?->post_survey_form_path" class="{{ $errors->has('post_survey_form') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
             @error('post_survey_form')
@@ -453,7 +453,7 @@
       </x-ui.card>
 
       <x-ui.card padding="p-0">
-        <div class="px-6 py-6">
+        <div class="px-6 py-4 sm:py-5">
           <div class="flex justify-end">
             <x-ui.button type="submit" class="w-full sm:w-auto">Save Step 1 and Continue to Step 2</x-ui.button>
           </div>
