@@ -7,13 +7,6 @@
 @php
   $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
   $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
-  $reportStatusData = $reportStatusData ?? null;
-  $activities = collect($reportStatusData['activities'] ?? []);
-  $eligible = collect($reportStatusData['eligibleProposals'] ?? []);
-  $pendingCount = $activities->where('lifecycle_status', 'pending')->count();
-  $inProgressCount = $activities->where('lifecycle_status', 'in_progress')->count();
-  $completedCount = $activities->where('lifecycle_status', 'completed')->count();
-  $canSubmit = $eligible->isNotEmpty();
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -37,26 +30,6 @@
         </div>
     </header>
 
-    @if ($reportStatusData)
-        <div class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex flex-wrap items-center gap-3 text-xs font-semibold">
-                <span class="rounded-full bg-amber-100 px-3 py-1 text-amber-800">Pending: {{ $pendingCount }}</span>
-                <span class="rounded-full bg-blue-100 px-3 py-1 text-blue-800">In Progress: {{ $inProgressCount }}</span>
-                <span class="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">Completed: {{ $completedCount }}</span>
-            </div>
-            <p class="mt-3 text-sm text-slate-600">
-                @if ($canSubmit)
-                    You have {{ $eligible->count() }} completed approved activit{{ $eligible->count() === 1 ? 'y' : 'ies' }} ready for after activity reporting.
-                @else
-                    No completed approved activity is currently eligible for after activity report submission.
-                @endif
-            </p>
-            <p class="mt-1 text-xs text-slate-500">
-                Reporting is allowed only for completed approved activities and must be submitted within 7 days after the event date.
-            </p>
-        </div>
-    @endif
-
     <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
 
         <a
@@ -74,11 +47,6 @@
             <p class="mt-1.5 flex-1 text-xs leading-relaxed text-slate-500">
                 File a structured after-activity report with documentation, evaluation, and attendance for a completed event.
             </p>
-            @if ($reportStatusData)
-                <p class="mt-2 text-[11px] font-semibold {{ $canSubmit ? 'text-emerald-700' : 'text-amber-700' }}">
-                    {{ $canSubmit ? 'Available now: completed activities detected.' : 'Unavailable: no eligible completed activity yet.' }}
-                </p>
-            @endif
             <span class="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] transition-all duration-150 group-hover:gap-2">
                 Open
                 <svg class="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
