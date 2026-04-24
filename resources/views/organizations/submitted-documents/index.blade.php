@@ -147,45 +147,45 @@
             'pt-12 sm:pt-16 lg:pt-24' => ! $loop->first,
           ])
         >
-          <div class="mb-6 flex flex-wrap items-baseline justify-between gap-x-10 gap-y-3 sm:mb-7">
+          <div class="mb-5 flex flex-wrap items-baseline justify-between gap-x-10 gap-y-2.5 sm:mb-6">
             <h2 class="text-lg font-bold tracking-tight text-slate-900">{{ $group['type_label'] }}</h2>
             <span class="shrink-0 text-sm font-medium tabular-nums text-slate-500">{{ $group['rows']->count() }} record{{ $group['rows']->count() === 1 ? '' : 's' }}</span>
           </div>
 
-          <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div class="overflow-x-auto px-3 py-4 sm:px-5 sm:py-6 lg:px-8 lg:py-7">
+          <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-300/30">
+            <div class="overflow-x-auto bg-slate-50/55 px-3 py-3 sm:px-5 sm:py-4 lg:px-8 lg:py-5">
               <table class="min-w-[58rem] w-full border-separate border-spacing-0 text-left text-sm md:min-w-full">
                 <thead>
-                  <tr class="border-b border-slate-200 bg-slate-50/90">
-                    <th class="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 first:rounded-tl-lg sm:px-5 sm:py-5 lg:pl-6">Submission</th>
-                    <th class="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-5">Submitted</th>
-                    <th class="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-5">Last updated</th>
-                    <th class="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-5">Status</th>
-                    <th class="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-5">AY / term</th>
-                    <th class="min-w-[12rem] px-4 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-[14rem] sm:px-5 sm:py-5">Notes preview</th>
-                    <th class="whitespace-nowrap px-4 py-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 last:rounded-tr-lg sm:px-5 sm:py-5 lg:pr-6">Actions</th>
+                  <tr class="border border-slate-200 bg-slate-100/85">
+                    <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 first:rounded-l-xl sm:px-5 sm:py-4 lg:pl-6">Submission</th>
+                    <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4">Submitted</th>
+                    <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4">Last updated</th>
+                    <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4">Status</th>
+                    <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4">AY / term</th>
+                    <th class="min-w-[12rem] px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-[14rem] sm:px-5 sm:py-4">Notes preview</th>
+                    <th class="whitespace-nowrap px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 last:rounded-r-xl sm:px-5 sm:py-4 lg:pr-6">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody class="overflow-hidden rounded-xl border border-slate-200 bg-white">
                   @foreach ($group['rows'] as $row)
                     <tr class="align-top border-b border-slate-100 last:border-b-0">
-                      <td class="px-4 py-5 sm:px-5 sm:py-6 lg:pl-6 lg:pr-5">
+                      <td class="px-4 py-4.5 sm:px-5 sm:py-5 lg:pl-6 lg:pr-5">
                         <p class="font-medium leading-snug text-slate-900">{{ $row['title'] }}</p>
-                        <p class="mt-1.5 text-xs leading-relaxed text-slate-500">{{ $row['type_label'] }}</p>
+                        <p class="mt-1 text-xs leading-relaxed text-slate-500">{{ $row['type_label'] }}</p>
                       </td>
-                      <td class="whitespace-nowrap px-4 py-5 align-middle text-slate-700 sm:px-5 sm:py-6">{{ $row['submitted_display'] }}</td>
-                      <td class="whitespace-nowrap px-4 py-5 align-middle text-slate-700 sm:px-5 sm:py-6">{{ $row['updated_display'] }}</td>
-                      <td class="px-4 py-5 align-middle sm:px-5 sm:py-6">
+                      <td class="whitespace-nowrap px-4 py-4.5 align-middle text-slate-700 sm:px-5 sm:py-5">{{ $row['submitted_display'] }}</td>
+                      <td class="whitespace-nowrap px-4 py-4.5 align-middle text-slate-700 sm:px-5 sm:py-5">{{ $row['updated_display'] }}</td>
+                      <td class="px-4 py-4.5 align-middle sm:px-5 sm:py-5">
                         <span class="inline-flex shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold leading-none {{ $badgeByVariant[$row['status_variant']] ?? $badgeByVariant['neutral'] }}">
                           {{ $row['status_label'] }}
                         </span>
                       </td>
-                      <td class="px-4 py-5 align-middle text-slate-700 sm:px-5 sm:py-6">{{ $row['academic_context'] ?? '—' }}</td>
-                      <td class="min-w-[12rem] px-4 py-5 align-middle text-xs leading-relaxed text-slate-600 sm:min-w-[14rem] sm:px-5 sm:py-6 lg:pr-6">
+                      <td class="px-4 py-4.5 align-middle text-slate-700 sm:px-5 sm:py-5">{{ $row['academic_context'] ?? '—' }}</td>
+                      <td class="min-w-[12rem] px-4 py-4.5 align-middle text-xs leading-relaxed text-slate-600 sm:min-w-[14rem] sm:px-5 sm:py-5 lg:pr-6">
                         <span class="block max-w-md pr-1 leading-relaxed">{{ $row['remarks_preview'] ?? '—' }}</span>
                       </td>
-                      <td class="px-4 py-5 text-right align-top sm:px-5 sm:py-6 lg:pr-6">
-                        <div class="flex min-w-[9.5rem] flex-col items-end justify-start gap-3">
+                      <td class="px-4 py-4.5 text-right align-top sm:px-5 sm:py-5 lg:pr-6">
+                        <div class="flex min-w-[9.5rem] flex-col items-end justify-start gap-2.5">
                           @foreach ($row['row_actions'] as $action)
                             <a
                               href="{{ $action['href'] }}"

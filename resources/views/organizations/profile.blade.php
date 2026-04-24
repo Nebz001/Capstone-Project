@@ -180,7 +180,7 @@
             <div class="space-y-4">
 
                 <section aria-labelledby="profile-section-status-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-section-status-heading" class="text-base font-bold text-slate-900">Status Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Accreditation status managed by SDAO.</p>
@@ -225,7 +225,7 @@
                 </section>
 
                 <section aria-labelledby="profile-section-registration-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-section-registration-heading" class="text-base font-bold text-slate-900">Registration Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Details from your latest registration or renewal submission.</p>
@@ -256,7 +256,7 @@
                 </section>
 
                 <section aria-labelledby="profile-section-contact-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-section-contact-heading" class="text-base font-bold text-slate-900">Contact Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Contact person on file for your latest application.</p>
@@ -281,7 +281,7 @@
                 </section>
 
                 <section aria-labelledby="profile-section-org-details-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-section-org-details-heading" class="text-base font-bold text-slate-900">Organization Details</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Core information about your organization.</p>
@@ -316,7 +316,7 @@
                 </section>
 
                 <section aria-labelledby="profile-section-adviser-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-section-adviser-heading" class="text-base font-bold text-slate-900">Adviser Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Faculty adviser assigned to this organization.</p>
@@ -351,7 +351,7 @@
                 @endif
 
                 <section aria-labelledby="profile-edit-section-status-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-edit-section-status-heading" class="text-base font-bold text-slate-900">Status Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Read-only — managed by SDAO.</p>
@@ -376,7 +376,7 @@
                 </section>
 
                 <section aria-labelledby="profile-edit-section-org-details-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-edit-section-org-details-heading" class="text-base font-bold text-slate-900">Organization Details</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update your organization’s core information.</p>
@@ -443,7 +443,7 @@
                 </section>
 
                 <section aria-labelledby="profile-edit-section-adviser-heading">
-                    <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
                             <h2 id="profile-edit-section-adviser-heading" class="text-base font-bold text-slate-900">Adviser Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update the faculty adviser for this organization.</p>

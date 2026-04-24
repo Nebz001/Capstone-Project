@@ -14,10 +14,10 @@
   };
 @endphp
 
-<x-ui.card padding="p-6">
+<x-ui.card padding="p-5">
   <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
     @foreach ($details as $label => $value)
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">{{ $label }}</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $value }}</dd>
       </div>
@@ -26,10 +26,10 @@
 
   @isset($calendarEntries)
     @if ($calendarEntries->isNotEmpty())
-      <div class="mt-8 border-t border-slate-100 pt-8">
+      <div class="mt-6 border-t border-slate-100 pt-6">
         <h2 class="text-base font-bold text-slate-900">Submitted activities</h2>
         <p class="mt-1 text-sm text-slate-500">Each row is a saved record linked to this activity calendar.</p>
-        <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
           <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
@@ -61,7 +61,7 @@
 
   @isset($organization)
     @if ($organization)
-      <div class="mt-8 border-t border-slate-100 pt-8">
+      <div class="mt-6 border-t border-slate-100 pt-6">
         <h2 class="text-base font-bold text-slate-900">Organization profile (SDAO)</h2>
         <p class="mt-1 text-sm text-slate-500">
           Request a profile revision when the organization must update registered organization details or adviser information. Officers can edit only while this is active and the organization is not pending review.
@@ -92,7 +92,7 @@
 
   @isset($workflowSteps)
     @if (($workflowSteps?->count() ?? 0) > 0)
-      <div class="mt-8 border-t border-slate-100 pt-8">
+      <div class="mt-6 border-t border-slate-100 pt-6">
         <h2 class="text-base font-bold text-slate-900">Approval Workflow</h2>
         <p class="mt-1 text-sm text-slate-500">Step-based review for this proposal. Every decision is logged for traceability.</p>
 
@@ -103,7 +103,7 @@
           </div>
         @endif
 
-        <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
           <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
@@ -129,7 +129,7 @@
         </div>
 
         @isset($workflowActionRoute)
-          <form method="POST" action="{{ $workflowActionRoute }}" class="mt-6 space-y-4">
+          <form method="POST" action="{{ $workflowActionRoute }}" class="mt-5 space-y-4">
             @csrf
             @method('PATCH')
             <div>

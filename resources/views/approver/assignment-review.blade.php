@@ -28,10 +28,10 @@
   >{{ $status }}</span>
 </div>
 
-<x-ui.card padding="p-6">
+<x-ui.card padding="p-5">
   <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
     @foreach ($details as $label => $value)
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">{{ $label }}</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $value }}</dd>
       </div>
@@ -39,13 +39,13 @@
   </dl>
 
   @if (!empty($detailSections))
-    <div class="mt-8 space-y-8 border-t border-slate-100 pt-8">
+    <div class="mt-6 space-y-6 border-t border-slate-100 pt-6">
       @foreach ($detailSections as $section)
         <section>
           <h2 class="text-base font-bold text-slate-900">{{ $section['title'] }}</h2>
           <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             @foreach (($section['rows'] ?? []) as $row)
-              <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+              <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                 <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">{{ $row['label'] }}</dt>
                 <dd class="mt-2 whitespace-pre-line text-sm font-medium text-slate-900">{{ $row['value'] }}</dd>
                 @if (! empty($row['link_url']))
@@ -93,7 +93,7 @@
   @endif
 
   @if (!empty($proposalFileLinks) && !($isProposalReview ?? false))
-    <div class="mt-8 border-t border-slate-100 pt-8">
+    <div class="mt-6 border-t border-slate-100 pt-6">
       <h2 class="text-base font-bold text-slate-900">Submitted files</h2>
       <p class="mt-1 text-xs text-slate-500">Open or download attached proposal files for review.</p>
       <ul class="mt-4 space-y-2">
@@ -112,7 +112,7 @@
   @if (($calendarEntries?->count() ?? 0) > 0)
     <div class="mt-8 border-t border-slate-100 pt-8">
       <h2 class="text-base font-bold text-slate-900">Submitted activities</h2>
-      <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+      <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
         <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
           <thead class="bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
@@ -141,7 +141,7 @@
     </div>
   @endif
 
-  <div class="mt-8 border-t border-slate-100 pt-8">
+  <div class="mt-6 border-t border-slate-100 pt-6">
     <h2 class="text-base font-bold text-slate-900">Approval workflow</h2>
     @php
       $submittedByLabel = (string) ($details['Submitted By'] ?? 'System');
@@ -250,7 +250,7 @@
       </dl>
     </div>
 
-    <form id="proposal-field-review-form" method="POST" action="{{ $workflowActionRoute }}" class="mt-6 space-y-4">
+    <form id="proposal-field-review-form" method="POST" action="{{ $workflowActionRoute }}" class="mt-5 space-y-4">
       @csrf
       @method('PATCH')
       @if ($isProposalReview ?? false)
@@ -301,7 +301,7 @@
 </x-ui.card>
 @if ($isProposalReview ?? false)
   <div id="field-comment-modal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/40 px-4">
-    <div class="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+    <div class="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xl">
       <p class="text-sm font-bold text-slate-900" id="field-comment-modal-title">Add review comment</p>
       <p class="mt-1 text-xs text-slate-600">Explain what needs to be changed or why this field is rejected.</p>
       <textarea id="field-comment-modal-input" rows="4" class="mt-3 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Enter required comment..."></textarea>
