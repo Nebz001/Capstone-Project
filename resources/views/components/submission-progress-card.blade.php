@@ -53,23 +53,29 @@
     </x-ui.card>
 @else
     @if ($variant === 'embed')
-        <div {{ $attributes->class(['mb-6 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-3 sm:px-4 sm:py-3.5']) }}>
-            <p class="text-center text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                @if ($documentLabel)
-                    {{ $documentLabel }}
-                    <span class="font-normal text-slate-400"> · </span>
+        <div {{ $attributes->class(['mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-300/25']) }}>
+            <div class="px-4 py-3 sm:px-5 sm:py-4">
+                <p class="text-center text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    @if ($documentLabel)
+                        {{ $documentLabel }}
+                        <span class="font-normal text-slate-300"> · </span>
+                    @endif
+                    Approval routing
+                </p>
+                @include('components.partials.submission-stepper-track', [
+                    'steps' => $steps,
+                    'compactStepper' => $compactStepper,
+                    'spreadAcrossWidth' => true,
+                ])
+                @if (! empty($summary))
+                    <div class="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                        <p class="text-xs leading-relaxed text-slate-600">
+                            <span class="font-semibold text-slate-700">What this means:</span>
+                            {{ $summary }}
+                        </p>
+                    </div>
                 @endif
-                <span class="text-slate-400">Approval routing</span>
-            </p>
-            @include('components.partials.submission-stepper-track', ['steps' => $steps, 'compactStepper' => $compactStepper])
-            @if (! empty($summary))
-                <div class="mt-3 rounded-md border border-slate-100 bg-white/80 px-2.5 py-1.5">
-                    <p class="text-[11px] leading-relaxed text-slate-600">
-                        <span class="font-semibold text-slate-700">What this means:</span>
-                        {{ $summary }}
-                    </p>
-                </div>
-            @endif
+            </div>
         </div>
     @else
     <x-ui.card {{ $attributes->class(['overflow-hidden']) }} padding="p-0">
