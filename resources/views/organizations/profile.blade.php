@@ -177,18 +177,25 @@
 
         @if (!$editing)
 
+            @php
+                $readonlyItemClass = 'rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3';
+                $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
+                $readonlyValueClass = 'mt-1.5 text-sm font-bold text-slate-900';
+                $readonlyValueLongClass = 'mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-800';
+            @endphp
+
             <div class="space-y-4">
 
                 <section aria-labelledby="profile-section-status-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
-                            <h2 id="profile-section-status-heading" class="text-base font-bold text-slate-900">Status Information</h2>
-                            <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Accreditation status managed by SDAO.</p>
+                            <h2 id="profile-section-status-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Status Information</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Accreditation status managed by SDAO.</p>
                         </div>
-                        <div class="bg-white px-6 py-5">
-                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Status</p>
+                        <div class="bg-white px-6 py-4.5">
+                            <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Organization Status</p>
                                     <div class="mt-2">
                                         <span class="inline-flex items-center gap-1.5 rounded-full border {{ $color['border'] }} {{ $color['bg'] }} px-3 py-1 text-xs font-semibold {{ $color['text'] }}">
                                             <span class="h-1.5 w-1.5 rounded-full {{ $color['dot'] }}" aria-hidden="true"></span>
@@ -196,22 +203,22 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last Updated</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Last Updated</p>
+                                    <p class="{{ $readonlyValueClass }}">
                                         {{ $organization->updated_at?->format('F j, Y — g:i A') ?? '—' }}
                                     </p>
                                 </div>
                                 @if ($workflowDisplay)
-                                    <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
-                                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Latest application review status</p>
-                                        <p class="mt-2 text-sm font-semibold text-slate-900">{{ $workflowDisplay }}</p>
+                                    <div class="{{ $readonlyItemClass }} sm:col-span-2">
+                                        <p class="{{ $readonlyLabelClass }}">Latest application review status</p>
+                                        <p class="{{ $readonlyValueClass }}">{{ $workflowDisplay }}</p>
                                     </div>
                                 @endif
                                 @if ($organization->profile_revision_notes)
-                                    <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
-                                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">SDAO remarks / revision notes</p>
-                                        <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $organization->profile_revision_notes }}</p>
+                                    <div class="{{ $readonlyItemClass }} sm:col-span-2">
+                                        <p class="{{ $readonlyLabelClass }}">SDAO remarks / revision notes</p>
+                                        <p class="{{ $readonlyValueLongClass }}">{{ $organization->profile_revision_notes }}</p>
                                     </div>
                                 @endif
                             </div>
@@ -227,28 +234,28 @@
                 <section aria-labelledby="profile-section-registration-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
-                            <h2 id="profile-section-registration-heading" class="text-base font-bold text-slate-900">Registration Information</h2>
-                            <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Details from your latest registration or renewal submission.</p>
+                            <h2 id="profile-section-registration-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Registration Information</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Details from your latest registration or renewal submission.</p>
                         </div>
-                        <div class="bg-white px-6 py-5">
-                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Application type</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $applicationTypeLabel ?? '—' }}</p>
+                        <div class="bg-white px-6 py-4.5">
+                            <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Application type</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $applicationTypeLabel ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Academic year</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->academic_year ?? '—' }}</p>
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Academic year</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->academic_year ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission date</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Submission date</p>
+                                    <p class="{{ $readonlyValueClass }}">
                                         {{ $activeApplication?->submission_date?->format('F j, Y') ?? '—' }}
                                     </p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission notes</p>
-                                    <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $applicationNotes ? trim($applicationNotes) : '—' }}</p>
+                                <div class="rounded-xl border border-slate-200 bg-slate-100/85 px-4 py-3 sm:col-span-2">
+                                    <p class="{{ $readonlyLabelClass }}">Submission notes</p>
+                                    <p class="{{ $readonlyValueLongClass }}">{{ $applicationNotes ? trim($applicationNotes) : '—' }}</p>
                                 </div>
                             </div>
                         </div>
@@ -258,22 +265,22 @@
                 <section aria-labelledby="profile-section-contact-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
-                            <h2 id="profile-section-contact-heading" class="text-base font-bold text-slate-900">Contact Information</h2>
-                            <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Contact person on file for your latest application.</p>
+                            <h2 id="profile-section-contact-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Contact Information</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Contact person on file for your latest application.</p>
                         </div>
-                        <div class="bg-white px-6 py-5">
-                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact person</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_person ?? '—' }}</p>
+                        <div class="bg-white px-6 py-4.5">
+                            <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Contact person</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_person ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact number</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_no ?? '—' }}</p>
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Contact number</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_no ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact email</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_email ?? '—' }}</p>
+                                <div class="{{ $readonlyItemClass }} sm:col-span-2">
+                                    <p class="{{ $readonlyLabelClass }}">Contact email</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_email ?? '—' }}</p>
                                 </div>
                             </div>
                         </div>
@@ -283,32 +290,32 @@
                 <section aria-labelledby="profile-section-org-details-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
-                            <h2 id="profile-section-org-details-heading" class="text-base font-bold text-slate-900">Organization Details</h2>
-                            <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Core information about your organization.</p>
+                            <h2 id="profile-section-org-details-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Organization Details</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Core information about your organization.</p>
                         </div>
-                        <div class="bg-white px-6 py-5">
-                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Name</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->organization_name }}</p>
+                        <div class="bg-white px-6 py-4.5">
+                            <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Organization Name</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $organization->organization_name }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Type</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $typeLabels[$organization->organization_type] ?? $organization->organization_type }}</p>
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Organization Type</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $typeLabels[$organization->organization_type] ?? $organization->organization_type }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">College / Department</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->college_department }}</p>
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">College / Department</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $organization->college_department }}</p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Founded Date</p>
-                                    <p class="mt-2 text-sm font-semibold text-slate-900">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Founded Date</p>
+                                    <p class="{{ $readonlyValueClass }}">
                                         {{ $organization->founded_date?->format('F j, Y') ?? '—' }}
                                     </p>
                                 </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Purpose</p>
-                                    <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $organization->purpose ?? '—' }}</p>
+                                <div class="{{ $readonlyItemClass }} sm:col-span-2">
+                                    <p class="{{ $readonlyLabelClass }}">Purpose</p>
+                                    <p class="{{ $readonlyValueLongClass }}">{{ $organization->purpose ?? '—' }}</p>
                                 </div>
                             </div>
                         </div>
@@ -318,13 +325,13 @@
                 <section aria-labelledby="profile-section-adviser-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
-                            <h2 id="profile-section-adviser-heading" class="text-base font-bold text-slate-900">Adviser Information</h2>
-                            <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Faculty adviser assigned to this organization.</p>
+                            <h2 id="profile-section-adviser-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Adviser Information</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Faculty adviser assigned to this organization.</p>
                         </div>
-                        <div class="bg-white px-6 py-5">
-                            <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Adviser Name</p>
-                                <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->adviser_name ?? '—' }}</p>
+                        <div class="bg-white px-6 py-4.5">
+                            <div class="{{ $readonlyItemClass }}">
+                                <p class="{{ $readonlyLabelClass }}">Adviser Name</p>
+                                <p class="{{ $readonlyValueClass }}">{{ $organization->adviser_name ?? '—' }}</p>
                             </div>
                         </div>
                     </x-ui.card>
