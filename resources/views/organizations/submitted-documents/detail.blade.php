@@ -5,36 +5,16 @@
 @section('content')
 
 @php
-  // Module-context enforcement:
-  // When reviewing an already-submitted Activity Calendar / Activity Proposal record,
-  // the Back action must return to the Activity Submission module (not Manage Organization).
-  $enforcedBackRoute = $backRoute ?? null;
-  $progressLabel = $progressDocumentLabel ?? null;
-
-  if (in_array($progressLabel, ['Activity calendar', 'Activity proposal'], true)) {
-    $orgSuffix = '';
-    if (auth()->user()?->isSuperAdmin()) {
-      $orgId = (int) request()->integer('organization_id');
-      if ($orgId > 0) {
-        $orgSuffix = '?organization_id='.$orgId;
-      }
-    }
-
-    $enforcedBackRoute = route('organizations.activity-submission').$orgSuffix;
-  }
+  $resolvedBackRoute = $backRoute ?? route('organizations.submitted-documents');
 @endphp
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
   <header class="mb-6">
-    <a href="{{ $enforcedBackRoute }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
+    <a href="{{ $resolvedBackRoute }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
       <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
       </svg>
-      @if ($enforcedBackRoute !== ($backRoute ?? null))
-        Back to Activity Submission
-      @else
-        {{ $backLabel ?? 'Back to Submitted Documents' }}
-      @endif
+      {{ $backLabel ?? 'Back to Submitted Documents' }}
     </a>
     <div class="mt-3 flex flex-wrap items-start justify-between gap-3">
       <div>

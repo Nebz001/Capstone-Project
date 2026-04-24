@@ -154,7 +154,7 @@
 
           <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-300/30">
             <div class="overflow-x-auto bg-slate-50/55 px-3 py-3 sm:px-5 sm:py-4 lg:px-8 lg:py-5">
-              <table class="min-w-[58rem] w-full border-separate border-spacing-0 text-left text-sm md:min-w-full">
+              <table class="min-w-5xl w-full border-separate border-spacing-0 text-left text-sm md:min-w-full">
                 <thead>
                   <tr class="border border-slate-200 bg-slate-100/85">
                     <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 first:rounded-l-xl sm:px-5 sm:py-4 lg:pl-6">Submission</th>
@@ -162,7 +162,7 @@
                     <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4">Last updated</th>
                     <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4">Status</th>
                     <th class="whitespace-nowrap px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4">AY / term</th>
-                    <th class="min-w-[12rem] px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-[14rem] sm:px-5 sm:py-4">Notes preview</th>
+                    <th class="min-w-56 px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:min-w-72 sm:px-5 sm:py-4">Notes preview</th>
                     <th class="whitespace-nowrap px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 last:rounded-r-xl sm:px-5 sm:py-4 lg:pr-6">Actions</th>
                   </tr>
                 </thead>
@@ -173,16 +173,16 @@
                         <p class="font-medium leading-snug text-slate-900">{{ $row['title'] }}</p>
                         <p class="mt-1 text-xs leading-relaxed text-slate-500">{{ $row['type_label'] }}</p>
                       </td>
-                      <td class="whitespace-nowrap px-4 py-4.5 align-middle text-slate-700 sm:px-5 sm:py-5">{{ $row['submitted_display'] }}</td>
-                      <td class="whitespace-nowrap px-4 py-4.5 align-middle text-slate-700 sm:px-5 sm:py-5">{{ $row['updated_display'] }}</td>
-                      <td class="px-4 py-4.5 align-middle sm:px-5 sm:py-5">
-                        <span class="inline-flex shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold leading-none {{ $badgeByVariant[$row['status_variant']] ?? $badgeByVariant['neutral'] }}">
+                      <td class="whitespace-nowrap px-4 py-4.5 align-top text-slate-700 sm:px-5 sm:py-5">{{ $row['submitted_display'] }}</td>
+                      <td class="whitespace-nowrap px-4 py-4.5 align-top text-slate-700 sm:px-5 sm:py-5">{{ $row['updated_display'] }}</td>
+                      <td class="px-4 py-4.5 align-top sm:px-5 sm:py-5">
+                        <span class="mt-0.5 inline-flex shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold leading-none {{ $badgeByVariant[$row['status_variant']] ?? $badgeByVariant['neutral'] }}">
                           {{ $row['status_label'] }}
                         </span>
                       </td>
-                      <td class="px-4 py-4.5 align-middle text-slate-700 sm:px-5 sm:py-5">{{ $row['academic_context'] ?? '—' }}</td>
-                      <td class="min-w-[12rem] px-4 py-4.5 align-middle text-xs leading-relaxed text-slate-600 sm:min-w-[14rem] sm:px-5 sm:py-5 lg:pr-6">
-                        <span class="block max-w-md pr-1 leading-relaxed">{{ $row['remarks_preview'] ?? '—' }}</span>
+                      <td class="px-4 py-4.5 align-top text-slate-700 sm:px-5 sm:py-5">{{ $row['academic_context'] ?? '—' }}</td>
+                      <td class="min-w-56 px-4 py-4.5 align-top text-sm leading-relaxed text-slate-600 sm:min-w-72 sm:px-5 sm:py-5 lg:pr-6">
+                        <span class="line-clamp-2 block max-w-xl pr-1 leading-relaxed">{{ $row['remarks_preview'] ?? '—' }}</span>
                       </td>
                       <td class="px-4 py-4.5 text-right align-top sm:px-5 sm:py-5 lg:pr-6">
                         <div class="flex min-w-[9.5rem] flex-col items-end justify-start gap-2.5">

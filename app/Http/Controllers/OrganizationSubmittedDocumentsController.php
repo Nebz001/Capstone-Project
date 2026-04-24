@@ -1012,10 +1012,16 @@ class OrganizationSubmittedDocumentsController extends Controller
      */
     private function detailBackNavigation(Request $request): array
     {
+        $source = strtolower((string) $request->query('from', ''));
+        if ($source === 'submitted-documents') {
+            return [
+                'route' => $this->submittedDocumentsListUrl($request),
+                'label' => 'Back to Submitted Documents',
+            ];
+        }
+
         $suffix = $this->superAdminOrganizationQuerySuffix($request);
 
-        // These detail pages (Activity Calendar / Submit Proposal) belong to the
-        // Activity Submission module. Always keep Back navigation inside it.
         return [
             'route' => route('organizations.activity-submission').$suffix,
             'label' => 'Back to Activity Submission',
@@ -1047,6 +1053,13 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $url.$sep.ltrim($suffix, '?');
     }
 
+    private function withQueryParam(string $url, string $key, string $value): string
+    {
+        $sep = str_contains($url, '?') ? '&' : '?';
+
+        return $url.$sep.urlencode($key).'='.urlencode($value);
+    }
+
     private function submittedDocumentsListUrl(Request $request): string
     {
         return $this->withSuperAdminOrgQuery($request, route('organizations.submitted-documents'));
@@ -1055,12 +1068,13 @@ class OrganizationSubmittedDocumentsController extends Controller
     private function buildSubmittedDocumentRows(Organization $organization, Request $request): Collection
     {
         $q = fn (string $url): string => $this->withSuperAdminOrgQuery($request, $url);
+        $qDetail = fn (string $url): string => $this->withQueryParam($q($url), 'from', 'submitted-documents');
         $rows = collect();
 
         foreach (OrganizationSubmission::query()->registrations()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $submission) {
             $sp = $this->submissionStatusPresentation($submission->legacyStatus());
             $nFiles = $submission->attachments()->where('file_type', 'like', Attachment::TYPE_REGISTRATION_REQUIREMENT.':%')->count();
-            $detail = $q(route('organizations.submitted-documents.registrations.show', $submission));
+            $detail = $qDetail(route('organizations.submitted-documents.registrations.show', $submission));
             $rows->push([
                 'type_key' => 'registration',
                 'type_label' => 'Registration',
@@ -1089,7 +1103,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         foreach (OrganizationSubmission::query()->renewals()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $submission) {
             $sp = $this->submissionStatusPresentation($submission->legacyStatus());
             $nFiles = $submission->attachments()->where('file_type', 'like', Attachment::TYPE_RENEWAL_REQUIREMENT.':%')->count();
-            $detail = $q(route('organizations.submitted-documents.renewals.show', $submission));
+            $detail = $qDetail(route('organizations.submitted-documents.renewals.show', $submission));
             $rows->push([
                 'type_key' => 'renewal',
                 'type_label' => 'Renewal',
@@ -1122,7 +1136,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             $hasFile = is_string($cal->calendar_file) && $cal->calendar_file !== '';
             // Keep this record under "Manage Organization -> Submitted Documents"
             // (do not jump back into the Activity Submission workflow module).
-            $detail = $q(route('organizations.submitted-documents.calendars.show', $cal));
+            $detail = $qDetail(route('organizations.submitted-documents.calendars.show', $cal));
             $rows->push([
                 'type_key' => 'activity_calendar',
                 'type_label' => 'Activity Calendar',
@@ -1164,7 +1178,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             }
             // Keep this record under "Manage Organization -> Submitted Documents"
             // so Back navigation remains in the Submitted Documents flow.
-            $detail = $q(route('organizations.submitted-documents.proposals.show', $proposal));
+            $detail = $qDetail(route('organizations.submitted-documents.proposals.show', $proposal));
             $rows->push([
                 'type_key' => 'activity_proposal',
                 'type_label' => 'Activity Proposal',
@@ -1185,9 +1199,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                     $detail,
                     $nAttach > 0,
                     $detail.'#submitted-files',
-                    [
-                        ['label' => 'Submit another proposal', 'href' => $q(route('organizations.activity-proposal-submission'))],
-                    ],
+                    [],
                 ),
             ]);
         }
@@ -1212,7 +1224,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                     + ($report->attendance_sheet_path ? 1 : 0);
             }
             $eventTitle = $report->event_name ?? $report->activity_event_title ?? 'Event';
-            $detail = $q(route('organizations.submitted-documents.reports.show', $report));
+            $detail = $qDetail(route('organizations.submitted-documents.reports.show', $report));
             $rows->push([
                 'type_key' => 'after_activity_report',
                 'type_label' => 'After Activity Report',
