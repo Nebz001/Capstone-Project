@@ -19,7 +19,7 @@
   @endif
 
   <x-ui.card padding="p-0">
-    <div class="space-y-6 p-5 sm:p-7 lg:p-8">
+    <div class="space-y-4 p-4 sm:p-5 lg:p-6">
       <div>
         <x-forms.label for="title" :required="true">Title</x-forms.label>
         <x-forms.input
@@ -45,7 +45,7 @@
         <x-forms.label for="image">Poster image (optional)</x-forms.label>
         <x-forms.helper>JPEG, PNG, WebP, or GIF. Max 4&nbsp;MB.</x-forms.helper>
         @if ($isEdit && $announcement->image_path)
-          <div class="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+          <div class="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
             <img
               src="{{ $announcement->imagePublicUrl() }}"
               alt=""
@@ -65,7 +65,7 @@
         @enderror
       </div>
 
-      <div class="grid gap-6 sm:grid-cols-2">
+      <div class="grid gap-4 sm:grid-cols-2 sm:gap-x-5">
         <div>
           <x-forms.label for="link_url">Link URL (optional)</x-forms.label>
           <x-forms.input
@@ -93,7 +93,7 @@
         </div>
       </div>
 
-      <div class="grid gap-6 sm:grid-cols-2">
+      <div class="grid gap-4 sm:grid-cols-2 sm:gap-x-5">
         <div>
           <x-forms.label for="status" :required="true">Status</x-forms.label>
           <x-forms.select id="status" name="status">
@@ -120,7 +120,7 @@
         </div>
       </div>
 
-      <div class="grid gap-6 sm:grid-cols-2">
+      <div class="grid gap-4 sm:grid-cols-2 sm:gap-x-5">
         <div>
           <x-forms.label for="starts_at">Starts at (optional)</x-forms.label>
           <x-forms.input
@@ -148,7 +148,7 @@
       </div>
     </div>
 
-    <div class="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4 sm:px-7 lg:px-8">
+    <div class="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-4 sm:gap-3 sm:px-5 lg:px-6">
       <a
         href="{{ route('admin.announcements.index') }}"
         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"

@@ -21,10 +21,10 @@
 					:helper-html="true"
 				/>
 
-				<form id="student-register-form" method="POST" action="{{ route('register.submit') }}" class="mt-6 space-y-7 sm:mt-7">
+				<form id="student-register-form" method="POST" action="{{ route('register.submit') }}" class="mt-5 space-y-5 sm:mt-6">
 					@csrf
 
-					<section class="space-y-5">
+					<section class="space-y-4">
 						<h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Student Information</h3>
 
 						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -86,7 +86,7 @@
 
 							<div
 								id="school-id-group"
-								class="mt-3 flex w-full flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:gap-2.5 sm:p-4"
+								class="mt-2 flex w-full flex-wrap items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100/70 p-3 sm:gap-2 sm:p-3.5"
 								role="group"
 								aria-label="School ID digits"
 							>
@@ -121,7 +121,7 @@
 						</div>
 					</section>
 
-					<section class="space-y-5 border-t border-slate-100 pt-6">
+					<section class="space-y-4 border-t border-slate-100 pt-5">
 						<h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Security</h3>
 
 						<div>

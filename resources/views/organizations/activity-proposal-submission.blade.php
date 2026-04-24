@@ -248,7 +248,7 @@
     method="POST"
     action="{{ route($proposalStoreRoute ?? 'organizations.activity-proposal-submission.store') }}"
     enctype="multipart/form-data"
-    class="space-y-6"
+    class="space-y-4"
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
   >
     @csrf
@@ -263,7 +263,7 @@
     <fieldset
       @disabled($officerValidationPending)
       @class([
-        'min-w-0 space-y-6 border-0 p-0 m-0',
+        'min-w-0 space-y-4 border-0 p-0 m-0',
         'pointer-events-none opacity-50' => $officerValidationPending,
       ])
     >
@@ -275,9 +275,10 @@
           helper='Fields marked with <span class="text-red-600">*</span> are required.'
           :helper-html="true"
           content-padding="px-6"
+          header-class="!pb-3 pt-3"
         />
-        <div class="px-6 py-6">
-          <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div class="px-6 py-5">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
             <div class="md:col-span-2">
               <x-forms.label for="organization_logo" :required="! $hasExistingLogo">Organization Logo</x-forms.label>
               <div class="mt-2 w-fit max-w-full">
@@ -352,9 +353,10 @@
           title="Proposal Details"
           subtitle="When and where you plan to hold the activity."
           content-padding="px-6"
+          header-class="!pb-3 pt-3"
         />
-        <div class="px-6 py-6">
-          <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div class="px-6 py-5">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
             <div class="md:col-span-2">
               <x-forms.label for="project_activity_title" required>Project / Activity Title</x-forms.label>
               <x-forms.input
@@ -432,8 +434,9 @@
           title="Objectives"
           subtitle="State the purpose and intended outcomes."
           content-padding="px-6"
+          header-class="!pb-3 pt-3"
         />
-        <div class="px-6 py-6 space-y-6">
+        <div class="px-6 py-5 space-y-4">
           <div>
             <x-forms.label for="overall_goal" required>Overall Goal</x-forms.label>
             <x-forms.textarea id="overall_goal" name="overall_goal" rows="4" required>{{ old('overall_goal', $prefill['overall_goal'] ?? '') }}</x-forms.textarea>
@@ -456,8 +459,9 @@
           title="Activity Description"
           subtitle="How the activity will run."
           content-padding="px-6"
+          header-class="!pb-3 pt-3"
         />
-        <div class="px-6 py-6 space-y-6">
+        <div class="px-6 py-5 space-y-4">
           <div>
             <x-forms.label for="criteria_mechanics" required>Criteria / Mechanics</x-forms.label>
             <x-forms.textarea id="criteria_mechanics" name="criteria_mechanics" rows="4" required>{{ old('criteria_mechanics', $prefill['criteria_mechanics'] ?? '') }}</x-forms.textarea>
@@ -480,15 +484,16 @@
           title="Budget"
           subtitle="Estimated costs and funding."
           content-padding="px-6"
+          header-class="!pb-3 pt-3"
         />
-        <div class="px-6 py-6">
+        <div class="px-6 py-5">
           @error('budget_breakdown')
             <div class="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 shadow-sm" role="alert">
               {{ $message }}
             </div>
           @enderror
           <div id="budget-breakdown-client-error" class="mb-4 hidden rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 shadow-sm" role="alert" aria-live="polite"></div>
-          <div class="grid grid-cols-1 gap-6">
+          <div class="grid grid-cols-1 gap-4">
             <div>
               <x-forms.label for="proposed_budget" required>Proposed Budget (total)</x-forms.label>
               <x-forms.input
@@ -515,7 +520,7 @@
                   {{ $sourceOfFundingValue }}
                 </div>
               @else
-                <div class="mt-2 flex flex-wrap gap-6">
+                <div class="mt-2 flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-slate-100/70 p-3">
                   <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
                     <input
                       type="radio"
@@ -616,8 +621,9 @@
           title="Additional"
           subtitle="Optional supporting document."
           content-padding="px-6"
+          header-class="!pb-3 pt-3"
         />
-        <div class="px-6 py-6">
+        <div class="px-6 py-5">
           <div>
             <x-forms.label for="resume_resource_persons">Resume of Resource Person/s</x-forms.label>
             <div class="mt-2 w-fit max-w-full">
@@ -635,9 +641,9 @@
       </x-ui.card>
 
       <x-ui.card padding="p-0">
-        <div class="px-6 py-6 sm:py-7">
+        <div class="px-6 py-4 sm:py-5">
           {{-- DOM: first type=submit stays "Submit for review" (Enter key). Visual order via flex reverse on sm+. --}}
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3">
             <x-ui.button
               type="reset"
               variant="secondary"

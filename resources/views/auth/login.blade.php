@@ -32,9 +32,9 @@
           :helper-html="true"
         />
 
-        <form id="student-login-form" method="POST" action="{{ route('login') }}" class="mt-6 space-y-7 sm:mt-7">
+        <form id="student-login-form" method="POST" action="{{ route('login') }}" class="mt-5 space-y-5 sm:mt-6">
           @csrf
-          <section class="space-y-5">
+          <section class="space-y-4">
             <div>
               <x-forms.label for="email" required>School Email</x-forms.label>
               <x-forms.input
@@ -91,7 +91,7 @@
             </div>
           </section>
 
-          <section class="space-y-4 border-t border-slate-100 pt-6">
+          <section class="space-y-3 border-t border-slate-100 pt-5">
             <label class="inline-flex items-center gap-3 text-sm text-slate-600" for="remember">
               <input
                 id="remember"

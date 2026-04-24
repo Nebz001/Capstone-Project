@@ -177,7 +177,7 @@
 
         @if (!$editing)
 
-            <div class="space-y-6">
+            <div class="space-y-4">
 
                 <section aria-labelledby="profile-section-status-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden !border-slate-100 !shadow-sm shadow-slate-200/30">
@@ -185,9 +185,9 @@
                             <h2 id="profile-section-status-heading" class="text-base font-bold text-slate-900">Status Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Accreditation status managed by SDAO.</p>
                         </div>
-                        <div class="bg-white px-6 py-6">
-                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                        <div class="bg-white px-6 py-5">
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Status</p>
                                     <div class="mt-2">
                                         <span class="inline-flex items-center gap-1.5 rounded-full border {{ $color['border'] }} {{ $color['bg'] }} px-3 py-1 text-xs font-semibold {{ $color['text'] }}">
@@ -196,20 +196,20 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Last Updated</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">
                                         {{ $organization->updated_at?->format('F j, Y — g:i A') ?? '—' }}
                                     </p>
                                 </div>
                                 @if ($workflowDisplay)
-                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
+                                    <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
                                         <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Latest application review status</p>
                                         <p class="mt-2 text-sm font-semibold text-slate-900">{{ $workflowDisplay }}</p>
                                     </div>
                                 @endif
                                 @if ($organization->profile_revision_notes)
-                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
+                                    <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
                                         <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">SDAO remarks / revision notes</p>
                                         <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $organization->profile_revision_notes }}</p>
                                     </div>
@@ -230,23 +230,23 @@
                             <h2 id="profile-section-registration-heading" class="text-base font-bold text-slate-900">Registration Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Details from your latest registration or renewal submission.</p>
                         </div>
-                        <div class="bg-white px-6 py-6">
-                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                        <div class="bg-white px-6 py-5">
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Application type</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $applicationTypeLabel ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Academic year</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->academic_year ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission date</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">
                                         {{ $activeApplication?->submission_date?->format('F j, Y') ?? '—' }}
                                     </p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission notes</p>
                                     <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $applicationNotes ? trim($applicationNotes) : '—' }}</p>
                                 </div>
@@ -261,17 +261,17 @@
                             <h2 id="profile-section-contact-heading" class="text-base font-bold text-slate-900">Contact Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Contact person on file for your latest application.</p>
                         </div>
-                        <div class="bg-white px-6 py-6">
-                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                        <div class="bg-white px-6 py-5">
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact person</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_person ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact number</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_no ?? '—' }}</p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact email</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $activeApplication?->contact_email ?? '—' }}</p>
                                 </div>
@@ -286,27 +286,27 @@
                             <h2 id="profile-section-org-details-heading" class="text-base font-bold text-slate-900">Organization Details</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Core information about your organization.</p>
                         </div>
-                        <div class="bg-white px-6 py-6">
-                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                        <div class="bg-white px-6 py-5">
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Name</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->organization_name }}</p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Type</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $typeLabels[$organization->organization_type] ?? $organization->organization_type }}</p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">College / Department</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->college_department }}</p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Founded Date</p>
                                     <p class="mt-2 text-sm font-semibold text-slate-900">
                                         {{ $organization->founded_date?->format('F j, Y') ?? '—' }}
                                     </p>
                                 </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6 sm:col-span-2">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:col-span-2">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Purpose</p>
                                     <p class="mt-2 text-sm font-medium leading-relaxed text-slate-900 whitespace-pre-wrap">{{ $organization->purpose ?? '—' }}</p>
                                 </div>
@@ -321,8 +321,8 @@
                             <h2 id="profile-section-adviser-heading" class="text-base font-bold text-slate-900">Adviser Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Faculty adviser assigned to this organization.</p>
                         </div>
-                        <div class="bg-white px-6 py-6">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                        <div class="bg-white px-6 py-5">
+                            <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Adviser Name</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900">{{ $organization->adviser_name ?? '—' }}</p>
                             </div>
@@ -343,7 +343,7 @@
                 </x-feedback.blocked-message>
             @endif
 
-            <form method="POST" action="{{ route('organizations.profile.update') }}" class="space-y-6">
+            <form method="POST" action="{{ route('organizations.profile.update') }}" class="space-y-4">
                 @csrf
                 @method('PUT')
                 @if (auth()->user()->isSuperAdmin() && $organization)
@@ -356,8 +356,8 @@
                             <h2 id="profile-edit-section-status-heading" class="text-base font-bold text-slate-900">Status Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Read-only — managed by SDAO.</p>
                         </div>
-                        <div class="bg-white px-6 py-6">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:p-6">
+                        <div class="bg-white px-6 py-5">
+                            <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Status</p>
                                 <div class="mt-2">
                                     <span class="inline-flex items-center gap-1.5 rounded-full border {{ $color['border'] }} {{ $color['bg'] }} px-3 py-1 text-xs font-semibold {{ $color['text'] }}">
@@ -381,8 +381,8 @@
                             <h2 id="profile-edit-section-org-details-heading" class="text-base font-bold text-slate-900">Organization Details</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update your organization’s core information.</p>
                         </div>
-                    <div class="bg-white px-6 py-6">
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div class="bg-white px-6 py-5">
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-5">
                             <div>
                                 <x-forms.label for="organization_name" required>Organization Name</x-forms.label>
                                 <x-forms.input
@@ -448,8 +448,8 @@
                             <h2 id="profile-edit-section-adviser-heading" class="text-base font-bold text-slate-900">Adviser Information</h2>
                             <p class="mt-0.5 text-xs font-medium leading-snug text-slate-600">Update the faculty adviser for this organization.</p>
                         </div>
-                        <div class="bg-white px-6 py-6">
-                            <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                        <div class="bg-white px-6 py-5">
+                            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
                                 <div>
                                     <x-forms.label for="adviser_name">Adviser Name</x-forms.label>
                                     <x-forms.input
@@ -466,7 +466,7 @@
                     </x-ui.card>
                 </section>
 
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                     <a
                         href="{{ route('organizations.profile', array_filter(['organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null])) }}"
                         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"

@@ -67,7 +67,7 @@
   id="registration-review-form"
   method="POST"
   action="{{ route('admin.registrations.update-status', $submission ?? $registration) }}"
-  class="space-y-6"
+  class="space-y-4"
   data-confirmed="0"
 >
   @csrf
@@ -81,23 +81,23 @@
   @enderror
 
   {{-- Application Information --}}
-  <x-ui.card padding="p-6">
+  <x-ui.card padding="p-5">
     <h2 class="text-base font-bold text-slate-900">Application Information</h2>
     <p class="mt-1 text-sm text-slate-500">Academic year and submission context for this registration.</p>
     <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Academic Year</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->academicTerm?->academic_year ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submission Date</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Submitted By</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
       </div>
@@ -113,23 +113,23 @@
   </x-ui.card>
 
   {{-- Contact Information --}}
-  <x-ui.card padding="p-6">
+  <x-ui.card padding="p-5">
     <h2 class="text-base font-bold text-slate-900">Contact Information</h2>
     <p class="mt-1 text-sm text-slate-500">Primary contact details as submitted on the registration form.</p>
     <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 md:col-span-2">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Organization Name</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact Person</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->contact_person ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Contact No.</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->contact_no ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 md:col-span-2">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Email Address</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $registration->contact_email ?? 'N/A' }}</dd>
       </div>
@@ -145,23 +145,23 @@
   </x-ui.card>
 
   {{-- Organizational Details --}}
-  <x-ui.card padding="p-6">
+  <x-ui.card padding="p-5">
     <h2 class="text-base font-bold text-slate-900">Organizational Details</h2>
     <p class="mt-1 text-sm text-slate-500">Organization profile data at the time of submission (from the linked organization record).</p>
     <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Date Organized</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Type of Organization</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $orgTypeLabel }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 md:col-span-2">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">School</dt>
         <dd class="mt-2 text-sm font-medium text-slate-900">{{ $org?->college_department ?? 'N/A' }}</dd>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 md:col-span-2">
+      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4 md:col-span-2">
         <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">Purpose of Organization</dt>
         <dd class="mt-2 whitespace-pre-wrap text-sm font-medium text-slate-900">{{ $org?->purpose ?? 'N/A' }}</dd>
       </div>
@@ -177,7 +177,7 @@
   </x-ui.card>
 
   {{-- Requirements Attached --}}
-  <x-ui.card padding="p-6">
+  <x-ui.card padding="p-5">
     <h2 class="text-base font-bold text-slate-900">Requirements Attached</h2>
     <p class="mt-1 text-sm text-slate-500">Checklist and uploaded files as declared on the application.</p>
     <ul class="mt-4 space-y-3">
@@ -187,7 +187,7 @@
           $checked = (bool) ($requirement?->is_submitted ?? false);
           $hasFile = $checked && in_array($key, $requirementAttachmentKeys, true);
         @endphp
-        <li class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <li class="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
             <p class="text-sm font-semibold text-slate-900">{{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}</p>
             <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
@@ -220,7 +220,7 @@
   </x-ui.card>
 
   {{-- Review decision --}}
-  <x-ui.card padding="p-6">
+  <x-ui.card padding="p-5">
     <h2 class="text-base font-bold text-slate-900">Finalize review</h2>
     <p class="mt-1 text-sm text-slate-500">
       With <span class="font-semibold text-slate-800">Submit review</span>, the system <span class="font-semibold text-emerald-700">approves</span> only when every section is Verified. If any section is Need revision (with feedback), the registration returns for updates and profile editing is unlocked for the officer.
@@ -229,7 +229,7 @@
 
     <fieldset class="mt-6">
       <legend class="text-xs font-semibold uppercase tracking-wide text-slate-700">Outcome</legend>
-      <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+      <div class="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-100/70 p-3 sm:flex-row sm:flex-wrap sm:gap-3">
         <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-[#003E9F] has-[:checked]:bg-blue-50">
           <input type="radio" name="decision" value="APPROVED" class="sr-only" {{ $defaultDecision === 'APPROVED' ? 'checked' : '' }} />
           <span class="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-blue-100 text-[#003E9F]">

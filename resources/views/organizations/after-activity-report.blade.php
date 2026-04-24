@@ -147,7 +147,7 @@
         method="POST"
         action="{{ route('organizations.after-activity-report.store') }}"
         enctype="multipart/form-data"
-        class="space-y-6"
+        class="space-y-4"
     >
         @csrf
         @if (auth()->user()->isSuperAdmin())
@@ -162,9 +162,10 @@
                 helper='Fields marked with <span class="text-red-600">*</span> are required.'
                 :helper-html="true"
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6">
-                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div class="px-6 py-5">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
                     <div class="md:col-span-2">
                         <x-forms.label for="activity_event_title" required>Name of Activity / Event Title</x-forms.label>
                         <x-forms.input
@@ -176,7 +177,7 @@
                         />
                         @error('activity_event_title') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:col-span-2">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
                         <div>
                             <x-forms.label for="school" required>School</x-forms.label>
                             <x-forms.select id="school" name="school" required>
@@ -223,9 +224,10 @@
                 title="Event Details"
                 subtitle="Event naming, schedule, leadership, and submission metadata."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6">
-                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div class="px-6 py-5">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
                     @if ($eligibleProposals->isNotEmpty())
                         <div class="md:col-span-2">
                             <x-forms.label for="proposal_id" required>Linked completed activity proposal</x-forms.label>
@@ -252,7 +254,7 @@
                         />
                         @error('event_name') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:col-span-2">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
                         <div>
                             <x-forms.label for="event_starts_at" required>Date and Time of Event</x-forms.label>
                             <x-forms.input
@@ -309,8 +311,9 @@
                 title="Report Content"
                 subtitle="Narrative summary and program outline."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6 space-y-6">
+            <div class="px-6 py-5 space-y-4">
                 <div>
                     <x-forms.label for="summary_description" required>Summary / Description of the Activity</x-forms.label>
                     <x-forms.textarea id="summary_description" name="summary_description" rows="5" required>{{ old('summary_description') }}</x-forms.textarea>
@@ -330,8 +333,9 @@
                 title="Photo and Supporting Media"
                 subtitle="Event photos and sample participation documentation."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6 space-y-6">
+            <div class="px-6 py-5 space-y-4">
                 <div>
                     <x-forms.label for="photos">Photos (multiple)</x-forms.label>
                     <input
@@ -367,8 +371,9 @@
                 title="Evaluation"
                 subtitle="Outcomes, reach, and evaluation artifacts."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6 space-y-6">
+            <div class="px-6 py-5 space-y-4">
                 <div>
                     <x-forms.label for="evaluation_report" required>Activity Evaluation Report</x-forms.label>
                     <x-forms.textarea id="evaluation_report" name="evaluation_report" rows="4" required>{{ old('evaluation_report') }}</x-forms.textarea>
@@ -413,8 +418,9 @@
                 title="Attachments"
                 subtitle="Attendance documentation."
                 content-padding="px-6"
+                header-class="!pb-3 pt-3"
             />
-            <div class="px-6 py-6">
+            <div class="px-6 py-5">
                 <div>
                     <x-forms.label for="attendance_sheet" required>Attendance Sheet</x-forms.label>
                     <input
@@ -432,8 +438,8 @@
         </x-ui.card>
 
         <x-ui.card padding="p-0">
-            <div class="px-6 py-6">
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <div class="px-6 py-4 sm:py-5">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                     <a
                         href="{{ route('organizations.submit-report') }}{{ $saQ }}"
                         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"
