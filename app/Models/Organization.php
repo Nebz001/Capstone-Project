@@ -48,6 +48,30 @@ class Organization extends Model
     }
 
     /**
+     * An organization is considered accredited/active when SDAO has approved its latest registration.
+     * Treat ACTIVE as the canonical approved state; `suspended` and `inactive` revoke access to
+     * submission workflows that require an active registration.
+     */
+    public function isApprovedOrganization(): bool
+    {
+        return $this->normalizedOrganizationStatus() === 'ACTIVE';
+    }
+
+    /**
+     * True when the organization has at least one registration submission that SDAO has approved.
+     * Renewal eligibility and activity submissions should key off this, not just `status`,
+     * because `status` may still be `pending` on a freshly created org whose registration has
+     * not yet been approved, and PostgreSQL enum comparisons are case-sensitive.
+     */
+    public function hasApprovedRegistration(): bool
+    {
+        return $this->submissions()
+            ->where('type', OrganizationSubmission::TYPE_REGISTRATION)
+            ->where('status', OrganizationSubmission::STATUS_APPROVED)
+            ->exists();
+    }
+
+    /**
      * SDAO has asked the officer to update organization profile fields (separate from accreditation status).
      */
     public function isProfileRevisionRequested(): bool

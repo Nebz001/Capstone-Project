@@ -810,7 +810,14 @@ class OrganizationController extends Controller
     }
 
     /**
-     * @return array{allowed: bool, message: string, blocked_by_term: bool, blocked_by_existing_renewal: bool}
+     * @return array{
+     *   allowed: bool,
+     *   message: string,
+     *   blocked_by_term: bool,
+     *   blocked_by_existing_renewal: bool,
+     *   blocked_by_no_registration: bool,
+     *   blocked_by_officer_validation: bool
+     * }
      */
     private function renewalAccessForRso(?User $user): array
     {
@@ -819,15 +826,34 @@ class OrganizationController extends Controller
             'message' => 'Renew Organization is currently unavailable because your account is not linked to an active organization.',
             'blocked_by_term' => false,
             'blocked_by_existing_renewal' => false,
+            'blocked_by_no_registration' => false,
+            'blocked_by_officer_validation' => false,
         ];
 
         if (! $user || $user->isSuperAdmin()) {
             return $defaultBlocked;
         }
 
+        if (! $user->isOfficerValidated()) {
+            return array_merge($defaultBlocked, [
+                'message' => 'Your student officer account is pending SDAO validation. You cannot renew your organization until validation is complete.',
+                'blocked_by_officer_validation' => true,
+            ]);
+        }
+
         $organization = $user->currentOrganization();
         if (! $organization) {
             return $defaultBlocked;
+        }
+
+        // Renewal presupposes a previously approved registration record. Without an approved
+        // registration (organizations.status = 'active' and an approved submission of type
+        // 'registration'), the officer should not see or be able to submit a renewal.
+        if (! $organization->hasApprovedRegistration()) {
+            return array_merge($defaultBlocked, [
+                'message' => 'Renew Organization becomes available only after your organization has an approved registration on file. Please wait for SDAO to approve your registration first.',
+                'blocked_by_no_registration' => true,
+            ]);
         }
 
         $activeAcademicYear = $this->activeAcademicYear();
@@ -838,6 +864,8 @@ class OrganizationController extends Controller
                 'message' => 'Renew Organization is only available during 1st Term. Renewal is closed for the current term.',
                 'blocked_by_term' => true,
                 'blocked_by_existing_renewal' => false,
+                'blocked_by_no_registration' => false,
+                'blocked_by_officer_validation' => false,
             ];
         }
 
@@ -853,6 +881,8 @@ class OrganizationController extends Controller
                 'message' => 'Your organization has already submitted a renewal for '.$activeAcademicYear.'. Only one renewal is allowed per academic year.',
                 'blocked_by_term' => false,
                 'blocked_by_existing_renewal' => true,
+                'blocked_by_no_registration' => false,
+                'blocked_by_officer_validation' => false,
             ];
         }
 
@@ -861,6 +891,8 @@ class OrganizationController extends Controller
             'message' => '',
             'blocked_by_term' => false,
             'blocked_by_existing_renewal' => false,
+            'blocked_by_no_registration' => false,
+            'blocked_by_officer_validation' => false,
         ];
     }
 
@@ -1025,13 +1057,15 @@ class OrganizationController extends Controller
 
         $organization = $officerAccess['organization'];
         $officerValidationPending = $officerAccess['officer_validation_pending'];
+        $registrationPending = $officerAccess['registration_pending'];
 
-        if (! $organization) {
+        if (! $organization || ! $officerAccess['organization_approved']) {
             return view('organizations.activity-calendar-submission', [
-                'organization' => null,
+                'organization' => $organization,
                 'latestCalendar' => null,
                 'calendarSubmittedLocked' => false,
                 'officerValidationPending' => $officerValidationPending,
+                'registrationPending' => $registrationPending,
                 'blockedMessage' => $officerAccess['blocked_message'],
                 'isBlocked' => true,
                 'blockedReason' => $officerAccess['blocked_message'],
@@ -1060,6 +1094,7 @@ class OrganizationController extends Controller
             'latestCalendar' => $latestCalendar,
             'calendarSubmittedLocked' => $calendarSubmittedLocked,
             'officerValidationPending' => $officerValidationPending,
+            'registrationPending' => $registrationPending,
             'isBlocked' => $isBlocked,
             'blockedReason' => $blockedReason,
         ]);
@@ -1101,6 +1136,11 @@ class OrganizationController extends Controller
             $organization = $officerAccess['organization'];
             if (! $organization) {
                 return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
+            }
+            if (! $officerAccess['organization_approved']) {
+                return redirect()
+                    ->route('organizations.activity-calendar-submission')
+                    ->with('error', 'Your organization registration is not yet approved by SDAO. You cannot submit an activity calendar until your registration is approved.');
             }
         }
 
@@ -1197,13 +1237,21 @@ class OrganizationController extends Controller
             return redirect()->route('admin.submissions.activity-proposal');
         }
 
-        $organization = $this->resolveOrganizationForWorkflows($request);
-        if (! $organization) {
+        $officerAccess = $this->officerSubmissionAccessContext($request);
+        if (! $officerAccess['authorized']) {
+            abort(403, 'Only organization officers can access this feature.');
+        }
+
+        $organization = $officerAccess['organization'];
+        $officerValidationPending = $officerAccess['officer_validation_pending'];
+        $registrationPending = $officerAccess['registration_pending'];
+
+        if (! $organization || ! $officerAccess['organization_approved']) {
             return view('organizations.activity-proposal-request', [
-                'organization' => null,
-                'officerValidationPending' => true,
-                // Reuse the existing blocked-message UI on the feature page.
-                'blockedMessage' => 'Your account is not yet linked to an active organization. You cannot submit proposals until your officer record is activated.',
+                'organization' => $organization,
+                'officerValidationPending' => $officerValidationPending,
+                'registrationPending' => $registrationPending,
+                'blockedMessage' => $officerAccess['blocked_message'],
                 'natureOptions' => self::ACTIVITY_REQUEST_NATURE_OPTIONS,
                 'typeOptions' => self::ACTIVITY_REQUEST_TYPE_OPTIONS,
                 'requestForm' => null,
@@ -1229,7 +1277,8 @@ class OrganizationController extends Controller
 
         return view('organizations.activity-proposal-request', [
             'organization' => $organization,
-            'officerValidationPending' => ! $user->isOfficerValidated(),
+            'officerValidationPending' => $officerValidationPending,
+            'registrationPending' => $registrationPending,
             'natureOptions' => self::ACTIVITY_REQUEST_NATURE_OPTIONS,
             'typeOptions' => self::ACTIVITY_REQUEST_TYPE_OPTIONS,
             'requestForm' => $requestForm,
@@ -1246,15 +1295,26 @@ class OrganizationController extends Controller
             return redirect()->route('admin.submissions.activity-proposal');
         }
 
-        $organization = $this->resolveOrganizationForWorkflows($request);
+        $officerAccess = $this->officerSubmissionAccessContext($request);
+        if (! $officerAccess['authorized']) {
+            abort(403, 'Only organization officers can access this feature.');
+        }
+
+        $organization = $officerAccess['organization'];
         if (! $organization) {
             return $this->redirectWhenNoOrganizationForWorkflow($request, 'organizations.profile');
         }
 
-        if (! $user->isOfficerValidated()) {
+        if ($officerAccess['officer_validation_pending']) {
             return redirect()
                 ->route('organizations.activity-proposal-request')
                 ->with('error', 'Your student officer account is pending SDAO validation.');
+        }
+
+        if (! $officerAccess['organization_approved']) {
+            return redirect()
+                ->route('organizations.activity-proposal-request')
+                ->with('error', 'Your organization registration is not yet approved by SDAO. You cannot submit an activity proposal until your registration is approved.');
         }
 
         // Always bind RSO name to the logged-in officer's linked organization.
@@ -1443,11 +1503,13 @@ class OrganizationController extends Controller
 
         $organization = $officerAccess['organization'];
         $officerValidationPending = $officerAccess['officer_validation_pending'];
+        $registrationPending = $officerAccess['registration_pending'];
 
-        if (! $organization) {
+        if (! $organization || ! $officerAccess['organization_approved']) {
             return view('organizations.activity-proposal-submission', [
-                'organization' => null,
+                'organization' => $organization,
                 'officerValidationPending' => $officerValidationPending,
+                'registrationPending' => $registrationPending,
                 'blockedMessage' => $officerAccess['blocked_message'],
                 'isBlocked' => true,
                 'blockedReason' => $officerAccess['blocked_message'],
@@ -1608,6 +1670,11 @@ class OrganizationController extends Controller
                 return redirect()
                     ->route('organizations.activity-proposal-submission')
                     ->with('error', 'Your student officer account is pending SDAO validation.');
+            }
+            if ($officerAccess['organization'] && ! $officerAccess['organization_approved']) {
+                return redirect()
+                    ->route('organizations.activity-proposal-submission')
+                    ->with('error', 'Your organization registration is not yet approved by SDAO. You cannot submit an activity proposal until your registration is approved.');
             }
 
             $organization = $officerAccess['organization'];
@@ -2528,10 +2595,18 @@ class OrganizationController extends Controller
      * - true 403 only when user is not in officer flow at all
      * - officer business-rule blocks are surfaced as page-level messages
      *
+     * Activity calendar and activity proposal submissions additionally require the
+     * officer's organization to have an SDAO-approved registration. We compute that
+     * here so routes, controllers, and blade templates share a single source of truth
+     * and no caller accidentally relies on the `pending` organization status alone
+     * (which is case-sensitive under PostgreSQL).
+     *
      * @return array{
      *   authorized: bool,
      *   officer_validation_pending: bool,
      *   organization: ?Organization,
+     *   organization_approved: bool,
+     *   registration_pending: bool,
      *   blocked_message: ?string
      * }
      */
@@ -2544,6 +2619,8 @@ class OrganizationController extends Controller
                 'authorized' => false,
                 'officer_validation_pending' => false,
                 'organization' => null,
+                'organization_approved' => false,
+                'registration_pending' => false,
                 'blocked_message' => null,
             ];
         }
@@ -2557,24 +2634,33 @@ class OrganizationController extends Controller
                 'authorized' => false,
                 'officer_validation_pending' => false,
                 'organization' => null,
+                'organization_approved' => false,
+                'registration_pending' => false,
                 'blocked_message' => null,
             ];
         }
 
         $officerValidationPending = ! $user->isOfficerValidated();
         $organization = $this->resolveOrganizationForWorkflows($request);
+        $organizationApproved = (bool) $organization
+            && ($organization->isApprovedOrganization() || $organization->hasApprovedRegistration());
+        $registrationPending = (bool) $organization && ! $organizationApproved;
 
         $blockedMessage = null;
-        if (! $organization) {
-            $blockedMessage = $officerValidationPending
-                ? 'Your student officer account is pending SDAO validation. You cannot submit or edit forms until validation is complete.'
-                : 'Your account is not yet linked to an active organization. You cannot submit or edit forms until your officer record is activated.';
+        if ($officerValidationPending) {
+            $blockedMessage = 'Your student officer account is pending SDAO validation. You cannot submit or edit forms until validation is complete.';
+        } elseif (! $organization) {
+            $blockedMessage = 'Your account is not yet linked to an active organization. You cannot submit or edit forms until your officer record is activated.';
+        } elseif (! $organizationApproved) {
+            $blockedMessage = 'Your organization registration is not yet approved by SDAO. Activity submissions become available once your registration is approved.';
         }
 
         return [
             'authorized' => true,
             'officer_validation_pending' => $officerValidationPending,
             'organization' => $organization,
+            'organization_approved' => $organizationApproved,
+            'registration_pending' => $registrationPending,
             'blocked_message' => $blockedMessage,
         ];
     }

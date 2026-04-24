@@ -7,6 +7,9 @@
 @php
   $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
   $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
+  $renewalAccess = $renewalAccess ?? ['allowed' => false, 'message' => ''];
+  $renewalAllowed = (bool) ($renewalAccess['allowed'] ?? false);
+  $renewalBlockedMessage = (string) ($renewalAccess['message'] ?? '');
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -60,7 +63,10 @@
     {{-- Renew Organization --}}
     <a
       href="{{ route('organizations.renew') }}{{ $saQ }}"
-      class="group flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15">
+      class="group flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
+      data-renewal-access="{{ $renewalAllowed ? 'allowed' : 'blocked' }}"
+      title="{{ ! $renewalAllowed ? ($renewalBlockedMessage ?: 'Renew Organization is currently unavailable.') : '' }}"
+    >
       <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">
         <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
@@ -70,7 +76,7 @@
         Renew Organization
       </h3>
       <p class="mt-1.5 flex-1 text-xs leading-relaxed text-slate-500">
-        Submit a renewal application for the current academic year to maintain active status.
+        {{ ! $renewalAllowed && $renewalBlockedMessage !== '' ? $renewalBlockedMessage : 'Submit a renewal application for the current academic year to maintain active status.' }}
       </p>
       <span class="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] transition-all duration-150 group-hover:gap-2">
         Open
