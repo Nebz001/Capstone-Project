@@ -6,6 +6,9 @@
 
 @php
   $resolvedBackRoute = $backRoute ?? route('organizations.submitted-documents');
+  $readonlyItemClass = 'rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3';
+  $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
+  $readonlyValueClass = 'mt-1.5 whitespace-pre-line text-sm font-bold text-slate-900';
 @endphp
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
@@ -44,18 +47,22 @@
   @endif
 
   <x-ui.card padding="p-0" class="mb-5">
-    <x-ui.card-section-header title="Submission details" content-padding="px-6" />
+    <x-ui.card-section-header
+      title="Submission details"
+      subtitle="Read-only details from your submitted record."
+      content-padding="px-6"
+    />
     <div class="border-t border-slate-100 px-6 py-4.5">
       @if (! empty($metaSections ?? []))
-        <div class="space-y-4">
+        <div class="space-y-3.5">
           @foreach ($metaSections as $section)
             <section>
-              <h3 class="mb-2.5 text-sm font-semibold text-slate-900">{{ $section['title'] ?? 'Details' }}</h3>
+              <h3 class="mb-2 text-sm font-semibold text-slate-900">{{ $section['title'] ?? 'Details' }}</h3>
               <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 @foreach (($section['rows'] ?? []) as $row)
-                  <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $row['label'] }}</dt>
-                    <dd class="mt-1 whitespace-pre-line text-sm text-slate-800">{{ $row['value'] }}</dd>
+                  <div class="{{ $readonlyItemClass }}">
+                    <dt class="{{ $readonlyLabelClass }}">{{ $row['label'] }}</dt>
+                    <dd class="{{ $readonlyValueClass }}">{{ $row['value'] }}</dd>
                   </div>
                 @endforeach
               </dl>
@@ -65,9 +72,9 @@
       @else
         <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
           @foreach ($metaRows as $row)
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $row['label'] }}</dt>
-              <dd class="mt-1 whitespace-pre-line text-sm text-slate-800">{{ $row['value'] }}</dd>
+            <div class="{{ $readonlyItemClass }}">
+              <dt class="{{ $readonlyLabelClass }}">{{ $row['label'] }}</dt>
+              <dd class="{{ $readonlyValueClass }}">{{ $row['value'] }}</dd>
             </div>
           @endforeach
         </dl>
