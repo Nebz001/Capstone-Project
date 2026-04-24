@@ -243,75 +243,175 @@
     </aside>
 
     <div class="flex min-h-screen flex-col">
-      <header class="border-b border-slate-200 bg-white">
-        <div class="mx-auto flex w-full max-w-screen-2xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-          <div>
-            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#003E9F]">
-              @if ($isSuperAdmin)
-                Student Development and Activities Office Super Admin Portal
-              @elseif ($isRoleApprover)
-                Student Development and Activities Office Approver Portal
-              @else
-                Student Development and Activities Office Admin Portal
-              @endif
+      <header class="border-b border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+        <div class="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-bold tracking-[0.02em] text-[#003E9F] sm:text-[15px]">
+              Student Development and Activities Office
             </p>
-            <p class="text-xs text-slate-500">{{ now()->format('l, F j, Y') }}</p>
+            <p class="mt-0.5 text-xs text-slate-500">{{ now()->format('l, F j, Y') }}</p>
             @if (! $isSuperAdmin && ! $isRoleApprover)
               <x-active-term-status variant="admin" />
               <x-academic-year-status variant="admin" />
             @endif
           </div>
-          <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          <div class="flex flex-wrap items-center gap-2.5 lg:justify-end">
             @if ($isSuperAdmin)
               @php
                 $headerActiveSemester = \App\Models\SystemSetting::activeSemester();
                 $headerActiveAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
+                $headerTermLabel = match ($headerActiveSemester) {
+                  'term_1' => '1st Term',
+                  'term_2' => '2nd Term',
+                  'term_3' => '3rd Term',
+                  default => 'Term',
+                };
+                $headerStartYear = now()->year;
+                if (is_string($headerActiveAcademicYear) && preg_match('/^(\d{4})-(\d{4})$/', $headerActiveAcademicYear, $m)) {
+                  $headerStartYear = (int) $m[1];
+                }
+                $headerAcademicYearOptions = collect(range(0, 4))
+                  ->map(fn ($offset) => ($headerStartYear - $offset).'-'.($headerStartYear - $offset + 1))
+                  ->prepend($headerActiveAcademicYear)
+                  ->filter(fn ($v) => is_string($v) && $v !== '')
+                  ->unique()
+                  ->values();
               @endphp
-              <form
-                method="POST"
-                action="{{ route('admin.settings.active-term') }}"
-                class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm"
-                id="admin-active-term-form"
-              >
-                @csrf
-                @method('PATCH')
-                <label for="admin-active-term" class="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Active term</label>
-                <select
-                  id="admin-active-term"
-                  name="active_semester"
-                  class="min-w-[8.5rem] cursor-pointer rounded-lg border border-slate-300 bg-white py-1.5 pl-2.5 pr-8 text-xs font-semibold text-slate-800 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-                  onchange="this.form.submit()"
-                  title="Official active term for the current academic year (system-wide)"
+              <div class="relative">
+                <button
+                  type="button"
+                  id="admin-global-settings-trigger"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-controls="admin-global-settings-menu"
+                  class="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 text-left shadow-sm transition hover:border-[#F5C400]/55 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
                 >
-                  <option value="term_1" @selected($headerActiveSemester === 'term_1')>1st Term</option>
-                  <option value="term_2" @selected($headerActiveSemester === 'term_2')>2nd Term</option>
-                  <option value="term_3" @selected($headerActiveSemester === 'term_3')>3rd Term</option>
-                </select>
-              </form>
-              <form
-                method="POST"
-                action="{{ route('admin.settings.academic-year') }}"
-                class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm"
-                id="admin-academic-year-form"
-              >
-                @csrf
-                @method('PATCH')
-                <label for="admin-academic-year" class="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Academic year</label>
-                <input
-                  id="admin-academic-year"
-                  name="active_academic_year"
-                  type="text"
-                  pattern="^\d{4}-\d{4}$"
-                  class="min-w-[8.5rem] rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/20"
-                  value="{{ $headerActiveAcademicYear }}"
-                  title="Official academic year in YYYY-YYYY format (e.g., 2025-2026)"
-                  onchange="this.form.submit()"
-                />
-              </form>
+                  <svg class="h-4 w-4 shrink-0 text-[#003E9F]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75Z" />
+                  </svg>
+                  <span class="leading-tight">
+                    <span class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Active term / Year</span>
+                    <span id="admin-global-settings-summary" class="block text-xs font-semibold text-slate-800">{{ $headerTermLabel }} · {{ $headerActiveAcademicYear }}</span>
+                  </span>
+                  <svg id="admin-global-settings-chevron" class="ml-1 h-4 w-4 shrink-0 text-slate-500 transition-transform duration-150" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                <div
+                  id="admin-global-settings-menu"
+                  class="absolute right-0 top-[calc(100%+0.5rem)] z-40 hidden w-80 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg shadow-slate-300/30"
+                  data-term-route="{{ route('admin.settings.active-term') }}"
+                  data-year-route="{{ route('admin.settings.academic-year') }}"
+                >
+                  <div class="mb-2 flex items-center justify-between">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Global Settings</p>
+                    <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                      <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+                      Active
+                    </span>
+                  </div>
+                  <div class="space-y-2.5">
+                    <div class="flex items-center justify-between gap-2">
+                      <label for="admin-global-term" class="text-xs font-medium text-slate-700">Term</label>
+                      <select id="admin-global-term" class="min-w-34 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-800 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/15">
+                        <option value="term_1" @selected($headerActiveSemester === 'term_1')>1st Term</option>
+                        <option value="term_2" @selected($headerActiveSemester === 'term_2')>2nd Term</option>
+                        <option value="term_3" @selected($headerActiveSemester === 'term_3')>3rd Term</option>
+                      </select>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                      <label for="admin-global-year" class="text-xs font-medium text-slate-700">Academic Year</label>
+                      <div class="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-slate-50 px-1.5">
+                        <button
+                          type="button"
+                          id="admin-year-decrement"
+                          class="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-600 transition hover:bg-white hover:text-[#003E9F]"
+                          aria-label="Previous academic year"
+                        >
+                          &#8249;
+                        </button>
+                        <button
+                          type="button"
+                          id="admin-year-display"
+                          class="mx-1 min-w-[6.75rem] rounded-md px-1.5 py-0.5 text-center text-xs font-semibold text-slate-800 transition hover:bg-white"
+                          title="Edit start year"
+                        >
+                          {{ $headerActiveAcademicYear }}
+                        </button>
+                        <input
+                          id="admin-year-edit"
+                          type="text"
+                          inputmode="numeric"
+                          pattern="^\d{4}$"
+                          class="mx-1 hidden w-[4.75rem] rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-center text-xs font-semibold text-slate-800 focus:border-[#003E9F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/15"
+                        />
+                        <button
+                          type="button"
+                          id="admin-year-increment"
+                          class="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-600 transition hover:bg-white hover:text-[#003E9F]"
+                          aria-label="Next academic year"
+                        >
+                          &#8250;
+                        </button>
+                        <input id="admin-global-year" type="hidden" value="{{ $headerActiveAcademicYear }}" />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="admin-global-settings-apply"
+                      class="inline-flex w-full items-center justify-center rounded-xl bg-[#003E9F] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#00327F] focus:outline-none focus:ring-2 focus:ring-[#003E9F]/25"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
             @endif
-            <span class="hidden text-sm font-medium text-slate-700 sm:block">{{ auth()->user()?->full_name }}</span>
-            <div class="flex h-9 w-9 items-center justify-center rounded-full bg-[#003E9F]/10 text-sm font-bold text-[#003E9F]">
-              {{ strtoupper(substr(auth()->user()?->first_name ?? 'A', 0, 1)) }}
+            <div class="relative">
+              <button
+                type="button"
+                id="admin-profile-trigger"
+                class="flex h-9 w-9 items-center justify-center rounded-full bg-[#003E9F]/10 text-sm font-bold text-[#003E9F] transition hover:bg-[#003E9F]/15 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="admin-profile-menu"
+                title="Open account menu"
+              >
+                {{ strtoupper(substr(auth()->user()?->first_name ?? 'A', 0, 1)) }}
+              </button>
+              <div
+                id="admin-profile-menu"
+                class="absolute right-0 top-[calc(100%+0.5rem)] z-40 hidden w-72 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xl shadow-slate-300/40"
+                role="menu"
+                aria-labelledby="admin-profile-trigger"
+              >
+                <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Account</p>
+                <div class="mt-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                  <p class="text-sm font-semibold text-slate-900">{{ $authUser?->full_name ?? '—' }}</p>
+                  <p class="mt-1 text-xs text-slate-600">{{ $authUser?->email ?? '—' }}</p>
+                  <div class="mt-2 grid grid-cols-1 gap-2 text-xs text-slate-600">
+                    <p><span class="font-semibold text-slate-700">Role:</span>
+                      @if ($isSuperAdmin)
+                        Super Admin
+                      @elseif ($isRoleApprover)
+                        {{ $authUser?->role?->display_name ?? 'Approver' }}
+                      @else
+                        Admin
+                      @endif
+                    </p>
+                    @if (filled(data_get($authUser, 'status')))
+                      <p><span class="font-semibold text-slate-700">Status:</span> {{ data_get($authUser, 'status') }}</p>
+                    @endif
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="admin-profile-logout"
+                  class="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-rose-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+                >
+                  Log out
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -381,6 +481,23 @@
       });
 
       const trigger = document.getElementById('admin-logout-trigger');
+      const globalSettingsTrigger = document.getElementById('admin-global-settings-trigger');
+      const globalSettingsMenu = document.getElementById('admin-global-settings-menu');
+      const globalSettingsChevron = document.getElementById('admin-global-settings-chevron');
+      const globalSettingsApply = document.getElementById('admin-global-settings-apply');
+      const globalTermSelect = document.getElementById('admin-global-term');
+      const globalYearInput = document.getElementById('admin-global-year');
+      const yearDecrementBtn = document.getElementById('admin-year-decrement');
+      const yearIncrementBtn = document.getElementById('admin-year-increment');
+      const yearDisplayBtn = document.getElementById('admin-year-display');
+      const yearEditInput = document.getElementById('admin-year-edit');
+      const globalSummary = document.getElementById('admin-global-settings-summary');
+      const toastEl = document.getElementById('toast');
+      const toastMessageEl = document.getElementById('toast-message');
+      const toastDotEl = document.getElementById('toast-dot');
+      const profileTrigger = document.getElementById('admin-profile-trigger');
+      const profileMenu = document.getElementById('admin-profile-menu');
+      const profileLogout = document.getElementById('admin-profile-logout');
       const modal = document.getElementById('admin-logout-modal');
       const cancel = document.getElementById('admin-logout-cancel');
       const confirmBtn = document.getElementById('admin-logout-confirm');
@@ -392,19 +509,224 @@
         modal.classList.add('hidden');
         modal.classList.remove('flex');
       };
+      const showNavbarToast = (message, variant = 'success') => {
+        if (!toastEl || !toastMessageEl || !toastDotEl) return;
+        const isError = variant === 'error';
+        toastMessageEl.textContent = message;
+        toastEl.classList.remove('border-emerald-200', 'border-rose-200');
+        toastDotEl.classList.remove('bg-emerald-500', 'bg-rose-500');
+        toastEl.classList.add(isError ? 'border-rose-200' : 'border-emerald-200');
+        toastDotEl.classList.add(isError ? 'bg-rose-500' : 'bg-emerald-500');
+        toastEl.classList.remove('invisible', 'opacity-0', 'translate-y-2');
+        toastEl.classList.add('opacity-100', 'translate-y-0');
+        window.setTimeout(() => {
+          toastEl.classList.remove('opacity-100', 'translate-y-0');
+          toastEl.classList.add('opacity-0', 'translate-y-2');
+          window.setTimeout(() => toastEl.classList.add('invisible'), 220);
+        }, 2600);
+      };
+      const closeProfileMenu = () => {
+        if (!profileMenu || !profileTrigger) return;
+        profileMenu.classList.add('hidden');
+        profileTrigger.setAttribute('aria-expanded', 'false');
+      };
+      const closeGlobalSettingsMenu = () => {
+        if (!globalSettingsMenu || !globalSettingsTrigger) return;
+        globalSettingsMenu.classList.add('hidden');
+        globalSettingsTrigger.setAttribute('aria-expanded', 'false');
+        globalSettingsTrigger.classList.remove('bg-slate-50');
+        if (globalSettingsChevron) {
+          globalSettingsChevron.classList.remove('rotate-180');
+        }
+      };
+      const openGlobalSettingsMenu = () => {
+        if (!globalSettingsMenu || !globalSettingsTrigger) return;
+        globalSettingsMenu.classList.remove('hidden');
+        globalSettingsTrigger.setAttribute('aria-expanded', 'true');
+        globalSettingsTrigger.classList.add('bg-slate-50');
+        if (globalSettingsChevron) {
+          globalSettingsChevron.classList.add('rotate-180');
+        }
+      };
+      const openProfileMenu = () => {
+        if (!profileMenu || !profileTrigger) return;
+        profileMenu.classList.remove('hidden');
+        profileTrigger.setAttribute('aria-expanded', 'true');
+      };
 
       trigger.addEventListener('click', () => {
+        closeGlobalSettingsMenu();
+        closeProfileMenu();
         modal.classList.remove('hidden');
         modal.classList.add('flex');
       });
+
+      if (globalSettingsTrigger && globalSettingsMenu) {
+        globalSettingsTrigger.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const isOpen = !globalSettingsMenu.classList.contains('hidden');
+          if (isOpen) {
+            closeGlobalSettingsMenu();
+          } else {
+            closeProfileMenu();
+            openGlobalSettingsMenu();
+          }
+        });
+        globalSettingsMenu.addEventListener('click', (event) => event.stopPropagation());
+      }
+      if (globalSettingsApply && globalSettingsMenu && globalTermSelect && globalYearInput) {
+        globalSettingsApply.addEventListener('click', async () => {
+          const termRoute = globalSettingsMenu.getAttribute('data-term-route');
+          const yearRoute = globalSettingsMenu.getAttribute('data-year-route');
+          const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+          if (!termRoute || !yearRoute || !csrf) return;
+
+          const termVal = globalTermSelect.value;
+          const yearVal = globalYearInput.value;
+          const originalApplyLabel = globalSettingsApply.textContent;
+          globalSettingsApply.disabled = true;
+          globalSettingsApply.textContent = 'Applying...';
+          globalSettingsApply.classList.add('opacity-80', 'cursor-not-allowed');
+          const send = async (url, key, value) => {
+            const body = new URLSearchParams();
+            body.set('_token', csrf);
+            body.set('_method', 'PATCH');
+            body.set(key, value);
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest',
+              },
+              body: body.toString(),
+              credentials: 'same-origin',
+            });
+            if (!response.ok) {
+              throw new Error('Failed to apply setting');
+            }
+          };
+
+          try {
+            await send(termRoute, 'active_semester', termVal);
+            await send(yearRoute, 'active_academic_year', yearVal);
+            const termLabel = termVal === 'term_1' ? '1st Term' : termVal === 'term_2' ? '2nd Term' : '3rd Term';
+            if (globalSummary) {
+              globalSummary.textContent = `${termLabel} · ${yearVal}`;
+            }
+            closeGlobalSettingsMenu();
+            showNavbarToast('Active term and academic year updated successfully.', 'success');
+          } catch (error) {
+            console.error(error);
+            showNavbarToast('Failed to update active term and academic year. Please try again.', 'error');
+          } finally {
+            globalSettingsApply.disabled = false;
+            globalSettingsApply.textContent = originalApplyLabel || 'Apply';
+            globalSettingsApply.classList.remove('opacity-80', 'cursor-not-allowed');
+          }
+        });
+      }
+      const parseStartYear = (value) => {
+        const match = /^(\d{4})-(\d{4})$/.exec(String(value || '').trim());
+        if (!match) return null;
+        const start = Number(match[1]);
+        const end = Number(match[2]);
+        if (!Number.isInteger(start) || !Number.isInteger(end) || end !== start + 1) return null;
+        return start;
+      };
+      const isValidStartYear = (year) => Number.isInteger(year) && year >= 1900 && year <= 2100;
+      let currentStartYear = parseStartYear(globalYearInput?.value) ?? new Date().getFullYear();
+      const renderAcademicYear = () => {
+        if (!globalYearInput || !yearDisplayBtn) return;
+        const endYear = currentStartYear + 1;
+        const display = `${currentStartYear}\u2013${endYear}`;
+        globalYearInput.value = `${currentStartYear}-${endYear}`;
+        yearDisplayBtn.textContent = display;
+      };
+      const finishYearEdit = (commit) => {
+        if (!yearEditInput || !yearDisplayBtn) return;
+        if (commit) {
+          const nextYear = Number(yearEditInput.value);
+          if (isValidStartYear(nextYear)) {
+            currentStartYear = nextYear;
+          }
+        }
+        yearEditInput.classList.add('hidden');
+        yearDisplayBtn.classList.remove('hidden');
+        renderAcademicYear();
+      };
+      if (globalYearInput && yearDisplayBtn) {
+        renderAcademicYear();
+      }
+      if (yearDecrementBtn) {
+        yearDecrementBtn.addEventListener('click', () => {
+          currentStartYear -= 1;
+          renderAcademicYear();
+        });
+      }
+      if (yearIncrementBtn) {
+        yearIncrementBtn.addEventListener('click', () => {
+          currentStartYear += 1;
+          renderAcademicYear();
+        });
+      }
+      if (yearDisplayBtn && yearEditInput) {
+        yearDisplayBtn.addEventListener('click', () => {
+          yearDisplayBtn.classList.add('hidden');
+          yearEditInput.classList.remove('hidden');
+          yearEditInput.value = String(currentStartYear);
+          yearEditInput.focus();
+          yearEditInput.select();
+        });
+        yearEditInput.addEventListener('blur', () => finishYearEdit(true));
+        yearEditInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            finishYearEdit(true);
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            finishYearEdit(false);
+          }
+        });
+      }
+
+      if (profileTrigger && profileMenu) {
+        profileTrigger.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const isOpen = !profileMenu.classList.contains('hidden');
+          if (isOpen) {
+            closeProfileMenu();
+          } else {
+            closeGlobalSettingsMenu();
+            openProfileMenu();
+          }
+        });
+
+        profileMenu.addEventListener('click', (event) => event.stopPropagation());
+      }
+      if (profileLogout) {
+        profileLogout.addEventListener('click', () => {
+          closeGlobalSettingsMenu();
+          closeProfileMenu();
+          modal.classList.remove('hidden');
+          modal.classList.add('flex');
+        });
+      }
 
       cancel.addEventListener('click', close);
       modal.addEventListener('click', (event) => {
         if (event.target === modal) close();
       });
+      document.addEventListener('click', () => {
+        closeProfileMenu();
+        closeGlobalSettingsMenu();
+      });
 
       document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') close();
+        if (event.key === 'Escape') {
+          close();
+          closeGlobalSettingsMenu();
+          closeProfileMenu();
+        }
       });
 
       confirmBtn.addEventListener('click', () => form.submit());
