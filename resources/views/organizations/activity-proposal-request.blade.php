@@ -13,6 +13,10 @@
   $natureOptions = $natureOptions ?? [];
   $typeOptions = $typeOptions ?? [];
   $requestForm = $requestForm ?? null;
+  $requestAttachmentLinks = is_array($requestAttachmentLinks ?? null) ? $requestAttachmentLinks : [];
+  $requestLetterLink = $requestAttachmentLinks['request_letter'] ?? null;
+  $speakerResumeLink = $requestAttachmentLinks['speaker_resume'] ?? null;
+  $postSurveyLink = $requestAttachmentLinks['post_survey_form'] ?? null;
   $calendarEntries = $calendarEntries ?? collect();
   $selectedTypes = old('activity_types', $requestForm?->activity_types ?? []);
   $selectedTypes = is_array($selectedTypes) ? $selectedTypes : [];
@@ -178,8 +182,8 @@
                   data-title="{{ $entry->activity_name }}"
                   data-date="{{ optional($entry->activity_date)->toDateString() }}"
                   data-venue="{{ $entry->venue }}"
-                  data-sdg="{{ $entry->sdg }}"
-                  data-budget="{{ $entry->budget }}"
+                  data-sdg="{{ $entry->target_sdg }}"
+                  data-budget="{{ $entry->estimated_budget }}"
                 >
                   {{ optional($entry->activity_date)->format('M j, Y') ?? 'No date' }} — {{ $entry->activity_name }}{{ $entryUnavailable ? ' (Already has submitted proposal)' : '' }}
                 </option>
@@ -357,7 +361,8 @@
                 </div>
               </div>
               <x-forms.input id="target_sdg_required_proxy" type="text" class="sr-only" tabindex="-1" aria-hidden="true" />
-              <x-forms.helper class="mt-1.5!">Click the dropdown and check all SDGs that apply.</x-forms.helper>
+              <x-forms.helper id="target-sdg-helper-manual" class="mt-1.5! {{ $proposalSource === 'calendar' ? 'hidden' : '' }}">Click the dropdown and check all SDGs that apply.</x-forms.helper>
+              <x-forms.helper id="target-sdg-helper-locked" class="mt-1.5! {{ $proposalSource === 'calendar' ? '' : 'hidden' }}">Target SDGs are automatically filled from the selected activity calendar entry.</x-forms.helper>
               @error('target_sdg')
                 <x-forms.error>Please select at least one option.</x-forms.error>
               @enderror
@@ -415,19 +420,27 @@
             <p class="text-sm font-semibold text-slate-900">Request Letter <span class="text-rose-600">*</span></p>
             <p class="mt-1 text-xs text-slate-600">The request letter must include rationale, objectives, and program.</p>
             <div class="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-100/70 p-2.5">
-              <x-forms.choice id="request_letter_has_rationale" name="request_letter_has_rationale" type="checkbox" value="1" :checked="old('request_letter_has_rationale') == '1'">
+              <x-forms.choice id="request_letter_has_rationale" name="request_letter_has_rationale" type="checkbox" value="1" :checked="old('request_letter_has_rationale', $requestForm?->request_letter_has_rationale ? '1' : '') == '1'">
                 Includes Rationale
               </x-forms.choice>
-              <x-forms.choice id="request_letter_has_objectives" name="request_letter_has_objectives" type="checkbox" value="1" :checked="old('request_letter_has_objectives') == '1'">
+              <x-forms.choice id="request_letter_has_objectives" name="request_letter_has_objectives" type="checkbox" value="1" :checked="old('request_letter_has_objectives', $requestForm?->request_letter_has_objectives ? '1' : '') == '1'">
                 Includes Objectives
               </x-forms.choice>
-              <x-forms.choice id="request_letter_has_program" name="request_letter_has_program" type="checkbox" value="1" :checked="old('request_letter_has_program') == '1'">
+              <x-forms.choice id="request_letter_has_program" name="request_letter_has_program" type="checkbox" value="1" :checked="old('request_letter_has_program', $requestForm?->request_letter_has_program ? '1' : '') == '1'">
                 Includes Program
               </x-forms.choice>
             </div>
             <div class="mt-2">
-              <x-forms.label for="request_letter" :required="! $requestForm?->request_letter_path" class="{{ $errors->has('request_letter') ? '!text-rose-700' : '' }}">Upload Request Letter</x-forms.label>
-              <x-forms.input id="request_letter" name="request_letter" type="file" :required="! $requestForm?->request_letter_path" class="{{ $errors->has('request_letter') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+              @if ($requestLetterLink)
+                <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <p class="font-semibold">Uploaded file: {{ $requestLetterLink['name'] }}</p>
+                  <a href="{{ $requestLetterLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View uploaded file</a>
+                </div>
+              @endif
+              <x-forms.label for="request_letter" :required="! $requestLetterLink" class="{{ $errors->has('request_letter') ? '!text-rose-700' : '' }}">
+                {{ $requestLetterLink ? 'Replace Request Letter (optional)' : 'Upload Request Letter' }}
+              </x-forms.label>
+              <x-forms.input id="request_letter" name="request_letter" type="file" :required="! $requestLetterLink" class="{{ $errors->has('request_letter') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
               @error('request_letter')
                 <x-forms.error>{{ $message }}</x-forms.error>
               @enderror
@@ -435,7 +448,15 @@
           </div>
 
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-            <x-forms.label for="speaker_resume" class="{{ $errors->has('speaker_resume') ? '!text-rose-700' : '' }}">Resume of Speaker (required if Seminar / Workshop is selected)</x-forms.label>
+            @if ($speakerResumeLink)
+              <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                <p class="font-semibold">Uploaded file: {{ $speakerResumeLink['name'] }}</p>
+                <a href="{{ $speakerResumeLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View uploaded file</a>
+              </div>
+            @endif
+            <x-forms.label for="speaker_resume" class="{{ $errors->has('speaker_resume') ? '!text-rose-700' : '' }}">
+              {{ $speakerResumeLink ? 'Replace Resume of Speaker (optional)' : 'Resume of Speaker (required if Seminar / Workshop is selected)' }}
+            </x-forms.label>
             <x-forms.input id="speaker_resume" name="speaker_resume" type="file" class="{{ $errors->has('speaker_resume') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
             @error('speaker_resume')
               <x-forms.error>{{ $message }}</x-forms.error>
@@ -443,8 +464,16 @@
           </div>
 
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-            <x-forms.label for="post_survey_form" :required="! $requestForm?->post_survey_form_path" class="{{ $errors->has('post_survey_form') ? '!text-rose-700' : '' }}">Sample Post-Survey Form</x-forms.label>
-            <x-forms.input id="post_survey_form" name="post_survey_form" type="file" :required="! $requestForm?->post_survey_form_path" class="{{ $errors->has('post_survey_form') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
+            @if ($postSurveyLink)
+              <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                <p class="font-semibold">Uploaded file: {{ $postSurveyLink['name'] }}</p>
+                <a href="{{ $postSurveyLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View uploaded file</a>
+              </div>
+            @endif
+            <x-forms.label for="post_survey_form" :required="! $postSurveyLink" class="{{ $errors->has('post_survey_form') ? '!text-rose-700' : '' }}">
+              {{ $postSurveyLink ? 'Replace Sample Post-Survey Form (optional)' : 'Sample Post-Survey Form' }}
+            </x-forms.label>
+            <x-forms.input id="post_survey_form" name="post_survey_form" type="file" :required="! $postSurveyLink" class="{{ $errors->has('post_survey_form') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}" />
             @error('post_survey_form')
               <x-forms.error>{{ $message }}</x-forms.error>
             @enderror
@@ -495,6 +524,8 @@
     const natureRequiredReminder = document.getElementById('nature-required-reminder');
     const typeRequiredReminder = document.getElementById('type-required-reminder');
     const sdgRequiredReminder = document.getElementById('sdg-required-reminder');
+    const sdgHelperManual = document.getElementById('target-sdg-helper-manual');
+    const sdgHelperLocked = document.getElementById('target-sdg-helper-locked');
     const natureCheckboxes = Array.from(document.querySelectorAll('input[name="nature_of_activity[]"]'));
     const typeCheckboxes = Array.from(document.querySelectorAll('input[name="activity_types[]"]'));
     const budgetInput = document.getElementById('proposed_budget');
@@ -517,6 +548,23 @@
         if (!isCalendar) {
           calendarSelect.value = '';
         }
+      }
+      if (sdgTrigger) {
+        sdgTrigger.disabled = isCalendar;
+        sdgTrigger.classList.toggle('bg-slate-100', isCalendar);
+        sdgTrigger.classList.toggle('text-slate-700', isCalendar);
+        sdgTrigger.classList.toggle('cursor-not-allowed', isCalendar);
+      }
+      if (sdgCheckboxes.length > 0) {
+        sdgCheckboxes.forEach((checkbox) => {
+          checkbox.disabled = isCalendar;
+        });
+      }
+      if (sdgHelperManual) {
+        sdgHelperManual.classList.toggle('hidden', isCalendar);
+      }
+      if (sdgHelperLocked) {
+        sdgHelperLocked.classList.toggle('hidden', !isCalendar);
       }
 
       proposalSourceCards.forEach((card) => {
@@ -614,7 +662,23 @@
     };
 
     proposalSourceRadios.forEach((radio) => {
-      radio.addEventListener('change', syncProposalSourceUi);
+      radio.addEventListener('change', () => {
+        const isCalendar = selectedProposalSource() === 'calendar';
+        if (!isCalendar) {
+          if (titleInput) titleInput.value = '';
+          if (dateInput) dateInput.value = '';
+          if (venueInput) venueInput.value = '';
+          if (budgetInput) budgetInput.value = '';
+          setSelectedSdgs('');
+          if (sdgMenu) {
+            sdgMenu.classList.add('hidden');
+          }
+          if (sdgTrigger) {
+            sdgTrigger.setAttribute('aria-expanded', 'false');
+          }
+        }
+        syncProposalSourceUi();
+      });
     });
     if (calendarSelect) {
       calendarSelect.addEventListener('change', autofillFromCalendarSelection);

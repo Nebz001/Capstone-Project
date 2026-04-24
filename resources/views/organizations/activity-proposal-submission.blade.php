@@ -137,80 +137,12 @@
     </x-ui.card>
   @endif
 
-  @if ($organization && $proposalSource === 'calendar' && $proposalCalendar && $proposalCalendarEntries->isNotEmpty())
-    <x-ui.card padding="p-0" class="mb-6">
-      <x-ui.card-section-header
-        title="Select activity from submitted calendar"
-        subtitle="Choose one submitted activity. The proposal form below will load and save details for that selected row only."
-        content-padding="px-6"
-      />
-      <div class="border-t border-slate-100 px-6 py-5">
-        <form method="GET" action="{{ route($proposalGetRoute) }}" class="max-w-4xl">
-          @if (! $isAdminSubmission)
-            <input type="hidden" name="request_id" value="{{ (int) request('request_id') }}" />
-          @endif
-          @if ($isAdminSubmission && $organization)
-            <input type="hidden" name="lookup_organization_name" value="{{ request('lookup_organization_name', $organization->organization_name) }}" />
-          @endif
-          <div>
-            <x-forms.label for="calendar_entry_picker" required>Submitted calendar activity</x-forms.label>
-            <x-forms.select id="calendar_entry_picker" name="calendar_entry" required onchange="this.form.submit()">
-              <option value="" disabled @selected(! $calendarEntry)>Select an activity to load proposal fields</option>
-              @foreach ($proposalCalendarEntries as $entry)
-                @php
-                  $entryStatus = strtoupper((string) ($entry->proposal?->proposal_status ?? ''));
-                  $entryStatusLabel = match ($entryStatus) {
-                    'DRAFT' => 'Draft',
-                    'PENDING' => 'Submitted',
-                    'UNDER_REVIEW' => 'Under review',
-                    'REVISION' => 'For revision',
-                    'APPROVED' => 'Approved',
-                    'REJECTED' => 'Rejected',
-                    default => $entry->proposal ? 'No status' : 'No proposal yet',
-                  };
-                @endphp
-                <option value="{{ $entry->id }}" @selected((int) old('activity_calendar_entry_id', $calendarEntry?->id) === (int) $entry->id)>
-                  {{ optional($entry->activity_date)->format('M j, Y') ?? 'No date' }} — {{ $entry->activity_name }} ({{ $entryStatusLabel }})
-                </option>
-              @endforeach
-            </x-forms.select>
-            <x-forms.helper>
-              @php
-                $calendarTermLabel = match ((string) ($proposalCalendar->semester ?? '')) {
-                  'term_1' => 'Term 1',
-                  'term_2' => 'Term 2',
-                  'term_3' => 'Term 3',
-                  default => 'Term —',
-                };
-              @endphp
-              Calendar: {{ ($proposalCalendar->academic_year ?? '—') }} · {{ $calendarTermLabel }}.
-              Switch activities anytime to work on proposals one by one.
-            </x-forms.helper>
-          </div>
-        </form>
-
-        @if ($calendarEntry)
-          <div class="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-950 shadow-sm sm:px-5">
-            <p class="text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Selected activity summary</p>
-            <p class="mt-2 text-lg font-bold leading-snug text-sky-950 sm:text-xl">{{ $calendarEntry->activity_name }}</p>
-            <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sky-900/90 sm:grid-cols-2">
-              <div>
-                <dt class="text-[11px] font-medium uppercase tracking-wide text-sky-700/75">Date</dt>
-                <dd class="mt-1 text-sm font-semibold text-sky-950">{{ optional($calendarEntry->activity_date)->format('M j, Y') ?? '—' }}</dd>
-              </div>
-              <div>
-                <dt class="text-[11px] font-medium uppercase tracking-wide text-sky-700/75">Venue</dt>
-                <dd class="mt-1 text-sm font-semibold text-sky-950">{{ $calendarEntry->venue ?: '—' }}</dd>
-              </div>
-              <div class="sm:col-span-2">
-                <dt class="text-[11px] font-medium uppercase tracking-wide text-sky-700/75">SDG</dt>
-                <dd class="mt-1 text-sm font-semibold text-sky-950">{{ $calendarEntry->sdg ?: '—' }}</dd>
-              </div>
-            </dl>
-          </div>
-        @endif
-      </div>
-    </x-ui.card>
+  @if (! $isAdminSubmission && $organization && $proposalSource === 'calendar' && $calendarEntry)
+    <x-feedback.blocked-message
+      variant="info"
+      class="mb-6"
+      message="This proposal is linked to the activity selected in Step 1. To change the linked activity, go back to Step 1."
+    />
   @endif
 
   @if ($organization && $proposalSource === 'calendar' && (! $proposalCalendar || $proposalCalendarEntries->isEmpty()))

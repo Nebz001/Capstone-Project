@@ -14,6 +14,8 @@
     'primaryAction' => null,
     'secondaryAction' => null,
     'tertiaryLinks' => [],
+    'selector' => null,
+    'helperNote' => null,
     'headingId' => 'submission-progress-heading',
     'stepCount' => null,
 ])
@@ -162,6 +164,37 @@
                         @endif
                     @endforeach
                 </div>
+            @endif
+
+            @if (is_array($selector) && ! empty($selector['options']) && is_array($selector['options']))
+                <div class="mt-3 flex justify-end">
+                    <form method="GET" action="{{ $selector['action'] ?? '' }}" class="w-full max-w-sm">
+                        @foreach (($selector['hidden'] ?? []) as $hiddenKey => $hiddenValue)
+                            @if ($hiddenValue !== null && $hiddenValue !== '')
+                                <input type="hidden" name="{{ $hiddenKey }}" value="{{ $hiddenValue }}">
+                            @endif
+                        @endforeach
+                        <label for="dashboard-proposal-selector" class="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            {{ $selector['label'] ?? 'Choose proposal' }}
+                        </label>
+                        <select
+                            id="dashboard-proposal-selector"
+                            name="{{ $selector['name'] ?? 'proposal_id' }}"
+                            onchange="this.form.submit()"
+                            class="block w-full appearance-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 pr-9 text-xs text-slate-900 shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-4 focus:ring-sky-500/15"
+                        >
+                            @foreach ($selector['options'] as $option)
+                                <option value="{{ $option['id'] }}" @selected((int) ($selector['selected'] ?? 0) === (int) $option['id'])>
+                                    {{ $option['label'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </form>
+                </div>
+            @endif
+
+            @if (is_string($helperNote) && trim($helperNote) !== '')
+                <p class="mt-2 text-xs text-slate-500">{{ $helperNote }}</p>
             @endif
         </div>
     </x-ui.card>

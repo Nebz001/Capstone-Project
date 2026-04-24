@@ -95,7 +95,7 @@
               <tr>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">Date</th>
                 <th class="px-4 py-3 sm:px-5">Activity</th>
-                <th class="whitespace-nowrap px-4 py-3 sm:px-5">SDG</th>
+                <th class="whitespace-nowrap px-4 py-3 sm:px-5">SDGs</th>
                 <th class="px-4 py-3 sm:px-5">Venue</th>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">Proposal</th>
               </tr>
@@ -109,11 +109,11 @@
                   <td class="whitespace-nowrap px-4 py-3.5 text-slate-800 sm:px-5">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
                   <td class="px-4 py-3.5 text-slate-800 sm:px-5">
                     <span class="font-medium">{{ $entry->activity_name }}</span>
-                    @if ($entry->participant_program)
-                      <p class="mt-1 line-clamp-2 text-xs text-slate-500">{{ $entry->participant_program }}</p>
+                    @if ($entry->target_participants)
+                      <p class="mt-1 line-clamp-2 text-xs text-slate-500">{{ $entry->target_participants }}</p>
                     @endif
                   </td>
-                  <td class="whitespace-nowrap px-4 py-3.5 text-slate-800 sm:px-5">{{ $entry->sdg }}</td>
+                  <td class="whitespace-nowrap px-4 py-3.5 text-slate-800 sm:px-5">{{ $entry->target_sdg ?? '—' }}</td>
                   <td class="px-4 py-3.5 text-slate-800 sm:px-5">{{ $entry->venue }}</td>
                   <td class="whitespace-nowrap px-4 py-3.5 sm:px-5">
                     @if (! $prop)

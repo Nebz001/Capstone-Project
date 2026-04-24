@@ -45,6 +45,20 @@
         $pdEmpty = ! empty($pd['empty']);
         $pdProposal = $pd['proposal'] ?? null;
         $proposalTertiary = [['href' => route('organizations.activity-proposal-request').$saQ, 'label' => 'New proposal']];
+        $selectorOptions = is_array($pd['selector_options'] ?? null) ? $pd['selector_options'] : [];
+        $selectorHidden = collect(request()->query())
+            ->except(['proposal_id'])
+            ->all();
+        $proposalSelector = count($selectorOptions) > 1
+            ? [
+                'action' => route('organizations.index'),
+                'label' => 'Choose proposal',
+                'name' => 'proposal_id',
+                'options' => $selectorOptions,
+                'selected' => (int) ($pd['selected_proposal_id'] ?? 0),
+                'hidden' => $selectorHidden,
+            ]
+            : null;
     @endphp
 
     <section class="mb-6" @if (! $pdEmpty) aria-labelledby="dashboard-proposal-heading" @endif>
@@ -73,6 +87,8 @@
                 :primary-action="$pd['primary_action'] ?? null"
                 :secondary-action="$pd['secondary_action'] ?? null"
                 :tertiary-links="$proposalTertiary"
+                :selector="$proposalSelector"
+                :helper-note="$pd['default_note'] ?? null"
                 heading-id="dashboard-proposal-heading"
             />
         @endif

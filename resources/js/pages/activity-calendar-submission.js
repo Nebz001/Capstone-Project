@@ -65,7 +65,14 @@ export const initActivityCalendarSubmissionPage = () => {
 	const entry = {
 		date: document.getElementById('activity_date'),
 		name: document.getElementById('activity_name'),
-		sdg: document.getElementById('activity_sdg'),
+		sdgDropdown: document.getElementById('activity-sdg-dropdown'),
+		sdgTrigger: document.getElementById('activity-sdg-trigger'),
+		sdgMenu: document.getElementById('activity-sdg-menu'),
+		sdgTriggerText: document.getElementById('activity-sdg-trigger-text'),
+		sdgSelectedWrap: document.getElementById('activity-sdg-selected-wrap'),
+		sdgSelectedList: document.getElementById('activity-sdg-selected-list'),
+		sdgOptions: Array.from(document.querySelectorAll('.activity-sdg-option')),
+		sdgReminder: document.getElementById('activity-sdg-required-reminder'),
 		venue: document.getElementById('activity_venue'),
 		participantProgram: document.getElementById('activity_participant_program'),
 		budget: document.getElementById('activity_budget'),
@@ -79,7 +86,8 @@ export const initActivityCalendarSubmissionPage = () => {
 
 	if (!addButton || !cancelEditButton || !entryTitle || !submitButton) return;
 	if (!previewBody || !emptyState || !addedSection || !hiddenJson || !hiddenInputs) return;
-	if (!entry.date || !entry.name || !entry.sdg || !entry.venue || !entry.participantProgram || !entry.budget) return;
+	if (!entry.date || !entry.name || entry.sdgOptions.length === 0 || !entry.venue || !entry.participantProgram || !entry.budget) return;
+	if (!entry.sdgDropdown || !entry.sdgTrigger || !entry.sdgMenu || !entry.sdgTriggerText || !entry.sdgSelectedWrap || !entry.sdgSelectedList) return;
 
 	const activities = [];
 	let editingIndex = null;
@@ -92,7 +100,12 @@ export const initActivityCalendarSubmissionPage = () => {
 				return [
 					`<input type="hidden" name="${prefix}[date]" value="${escapeHtml(activity.date)}" />`,
 					`<input type="hidden" name="${prefix}[name]" value="${escapeHtml(activity.name)}" />`,
-					`<input type="hidden" name="${prefix}[sdg]" value="${escapeHtml(activity.sdg)}" />`,
+					...(Array.isArray(activity.sdgs)
+						? activity.sdgs.map(
+								(sdg, sdgIndex) =>
+									`<input type="hidden" name="${prefix}[sdg][${sdgIndex}]" value="${escapeHtml(sdg)}" />`,
+						  )
+						: []),
 					`<input type="hidden" name="${prefix}[venue]" value="${escapeHtml(activity.venue)}" />`,
 					`<input type="hidden" name="${prefix}[participant_program]" value="${escapeHtml(activity.participantProgram)}" />`,
 					`<input type="hidden" name="${prefix}[budget]" value="${escapeHtml(activity.budget)}" />`,
@@ -120,7 +133,7 @@ export const initActivityCalendarSubmissionPage = () => {
 			row.innerHTML = `
 				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.date || '—')}</td>
 				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.name || '—')}</td>
-				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.sdg || '—')}</td>
+				<td class="px-5 py-3.5 text-slate-900">${escapeHtml((activity.sdgs || []).join(', ') || '—')}</td>
 				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.venue || '—')}</td>
 				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.participantProgram || '—')}</td>
 				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.budget || '—')}</td>
@@ -156,10 +169,51 @@ export const initActivityCalendarSubmissionPage = () => {
 		cancelEditButton.classList.remove('hidden');
 	};
 
+	const selectedSdgs = () =>
+		entry.sdgOptions.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value.trim());
+
+	const closeSdgDropdown = () => {
+		entry.sdgMenu.classList.add('hidden');
+		entry.sdgTrigger.setAttribute('aria-expanded', 'false');
+	};
+
+	const openSdgDropdown = () => {
+		entry.sdgMenu.classList.remove('hidden');
+		entry.sdgTrigger.setAttribute('aria-expanded', 'true');
+	};
+
+	const updateSdgSelectionUi = () => {
+		const selected = selectedSdgs();
+		entry.sdgTriggerText.textContent = selected.length > 0 ? selected.join(', ') : 'Select one or more SDGs';
+		entry.sdgTriggerText.classList.toggle('text-slate-500', selected.length === 0);
+		entry.sdgTriggerText.classList.toggle('text-slate-900', selected.length > 0);
+
+		if (selected.length === 0) {
+			entry.sdgSelectedWrap.classList.add('hidden');
+			entry.sdgSelectedList.innerHTML = '';
+			return;
+		}
+
+		entry.sdgSelectedWrap.classList.remove('hidden');
+		entry.sdgSelectedList.innerHTML = selected
+			.map(
+				(sdg) =>
+					`<span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">${escapeHtml(sdg)}</span>`,
+			)
+			.join('');
+	};
+
 	const resetEntry = () => {
 		entry.date.value = '';
 		entry.name.value = '';
-		entry.sdg.value = '';
+		entry.sdgOptions.forEach((checkbox) => {
+			checkbox.checked = false;
+		});
+		updateSdgSelectionUi();
+		closeSdgDropdown();
+		if (entry.sdgReminder) {
+			entry.sdgReminder.classList.add('hidden');
+		}
 		entry.venue.value = '';
 		entry.participantProgram.value = '';
 		entry.budget.value = '';
@@ -168,7 +222,14 @@ export const initActivityCalendarSubmissionPage = () => {
 	const loadEntry = (activity) => {
 		entry.date.value = activity.date ?? '';
 		entry.name.value = activity.name ?? '';
-		entry.sdg.value = activity.sdg ?? '';
+		const selected = Array.isArray(activity.sdgs) ? activity.sdgs : [];
+		entry.sdgOptions.forEach((checkbox) => {
+			checkbox.checked = selected.includes(checkbox.value);
+		});
+		updateSdgSelectionUi();
+		if (entry.sdgReminder) {
+			entry.sdgReminder.classList.add('hidden');
+		}
 		entry.venue.value = activity.venue ?? '';
 		entry.participantProgram.value = activity.participantProgram ?? '';
 		entry.budget.value = activity.budget ?? '';
@@ -178,7 +239,7 @@ export const initActivityCalendarSubmissionPage = () => {
 		return {
 			date: entry.date.value.trim(),
 			name: entry.name.value.trim(),
-			sdg: entry.sdg.value.trim(),
+			sdgs: selectedSdgs(),
 			venue: entry.venue.value.trim(),
 			participantProgram: entry.participantProgram.value.trim(),
 			budget: entry.budget.value.trim(),
@@ -189,7 +250,6 @@ export const initActivityCalendarSubmissionPage = () => {
 		const fields = [
 			entry.date,
 			entry.name,
-			entry.sdg,
 			entry.venue,
 			entry.participantProgram,
 			entry.budget,
@@ -200,6 +260,16 @@ export const initActivityCalendarSubmissionPage = () => {
 				field.reportValidity();
 				return false;
 			}
+		}
+
+		if (selectedSdgs().length === 0) {
+			if (entry.sdgReminder) {
+				entry.sdgReminder.classList.remove('hidden');
+			}
+			return false;
+		}
+		if (entry.sdgReminder) {
+			entry.sdgReminder.classList.add('hidden');
 		}
 
 		return true;
@@ -238,39 +308,6 @@ export const initActivityCalendarSubmissionPage = () => {
 	const handleSubmitCalendar = (event) => {
 		const submitter = event.submitter;
 		if (submitter && submitter !== submitButton) return;
-
-		const academicYear = document.getElementById('academic_year');
-		const term = document.getElementById('term');
-		const organizationName = document.getElementById('organization_name');
-		const dateSubmitted = document.getElementById('date_submitted');
-
-		const organizationFields = [academicYear, term, organizationName, dateSubmitted].filter(Boolean);
-		for (const field of organizationFields) {
-			if (!(field instanceof HTMLInputElement) && !(field instanceof HTMLSelectElement)) continue;
-
-			if (field instanceof HTMLSelectElement) {
-				if (!field.checkValidity()) {
-					event.preventDefault();
-					field.reportValidity();
-					return;
-				}
-				continue;
-			}
-
-			if (field.value.trim() === '') {
-				event.preventDefault();
-				field.setCustomValidity('Please fill out this field.');
-				field.reportValidity();
-				field.setCustomValidity('');
-				return;
-			}
-
-			if (!field.checkValidity()) {
-				event.preventDefault();
-				field.reportValidity();
-				return;
-			}
-		}
 
 		updateHidden();
 	};
@@ -325,6 +362,32 @@ export const initActivityCalendarSubmissionPage = () => {
 		}
 	});
 
+	entry.sdgTrigger.addEventListener('click', () => {
+		if (entry.sdgMenu.classList.contains('hidden')) {
+			openSdgDropdown();
+			return;
+		}
+		closeSdgDropdown();
+	});
+
+	entry.sdgOptions.forEach((checkbox) => {
+		checkbox.addEventListener('change', () => {
+			updateSdgSelectionUi();
+			if (entry.sdgReminder && selectedSdgs().length > 0) {
+				entry.sdgReminder.classList.add('hidden');
+			}
+		});
+	});
+
+	document.addEventListener('click', (event) => {
+		const target = event.target;
+		if (!(target instanceof Node)) return;
+		if (!entry.sdgDropdown.contains(target)) {
+			closeSdgDropdown();
+		}
+	});
+
 	setModeAdd();
+	updateSdgSelectionUi();
 	render();
 };

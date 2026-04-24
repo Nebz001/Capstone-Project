@@ -19,23 +19,24 @@
   }
   $activityCalendarFormBlocked = $isBlocked;
   $calLock = $calendarSubmittedLocked && ($latestCalendar ?? null);
-  $academicYearVal = old('academic_year', $calLock ? ($latestCalendar->academic_year ?? '') : '');
-  if (! $calLock && $academicYearVal === '') {
-    $academicYearVal = \App\Models\SystemSetting::activeAcademicYear();
-  }
-  $termVal = old('term', $calLock ? ($latestCalendar->semester ?? '') : \App\Models\SystemSetting::activeSemester());
-  $orgNameVal = old(
-      'organization_name',
-      $calLock
-          ? ($latestCalendar->submitted_organization_name ?? '')
-          : (($organization ?? null)?->organization_name ?? '')
-  );
-  $dateSubmittedVal = old(
-      'date_submitted',
-      $calLock && $latestCalendar->submission_date
-          ? $latestCalendar->submission_date->format('Y-m-d')
-          : ''
-  );
+  $academicYearVal = $calLock
+      ? (string) ($latestCalendar->academic_year ?? '')
+      : \App\Models\SystemSetting::activeAcademicYear();
+  $termVal = $calLock
+      ? (string) ($latestCalendar->semester ?? '')
+      : \App\Models\SystemSetting::activeSemester();
+  $termLabelMap = [
+      'term_1' => 'Term 1',
+      'term_2' => 'Term 2',
+      'term_3' => 'Term 3',
+  ];
+  $termLabel = $termLabelMap[$termVal] ?? $termVal;
+  $orgNameVal = $calLock
+      ? (string) ($latestCalendar->submitted_organization_name ?? '')
+      : (string) (($organization ?? null)?->organization_name ?? '');
+  $dateSubmittedVal = $calLock && $latestCalendar->submission_date
+      ? $latestCalendar->submission_date->format('Y-m-d')
+      : now()->toDateString();
   $isAdminSubmission = ($submissionContext ?? '') === 'admin';
   $showPageIntro = $showPageIntro ?? (! $isAdminSubmission && (($layout ?? 'layouts.organization-portal') !== 'layouts.admin'));
 @endphp
@@ -153,17 +154,20 @@
               placeholder="2025-2026"
               :value="$academicYearVal"
               readonly
+              class="bg-slate-100 text-slate-700 cursor-not-allowed"
               required />
           </div>
 
           <div>
             <x-forms.label for="term" required>Term</x-forms.label>
-            <x-forms.select id="term" name="term" required>
-              <option value="" disabled @selected($termVal === '' || $termVal === null)>Select term</option>
-              <option value="term_1" @selected($termVal === 'term_1')>Term 1</option>
-              <option value="term_2" @selected($termVal === 'term_2')>Term 2</option>
-              <option value="term_3" @selected($termVal === 'term_3')>Term 3</option>
-            </x-forms.select>
+            <x-forms.input
+              id="term"
+              name="term"
+              type="text"
+              :value="$termLabel"
+              readonly
+              class="bg-slate-100 text-slate-700 cursor-not-allowed"
+              required />
           </div>
 
           <div>
@@ -174,6 +178,8 @@
               type="text"
               placeholder="e.g., Computer Society"
               :value="$orgNameVal"
+              readonly
+              class="bg-slate-100 text-slate-700 cursor-not-allowed"
               required />
           </div>
 
@@ -184,6 +190,8 @@
               name="date_submitted"
               type="date"
               :value="$dateSubmittedVal"
+              readonly
+              class="bg-slate-100 text-slate-700 cursor-not-allowed"
               required />
           </div>
         </div>
@@ -213,27 +221,38 @@
               </div>
 
               <div class="md:col-span-2">
-                <x-forms.label for="activity_sdg" required>SDG</x-forms.label>
-                <x-forms.select id="activity_sdg" required>
-                  <option value="" selected>Select SDG</option>
-                  <option value="SDG 1">SDG 1</option>
-                  <option value="SDG 2">SDG 2</option>
-                  <option value="SDG 3">SDG 3</option>
-                  <option value="SDG 4">SDG 4</option>
-                  <option value="SDG 5">SDG 5</option>
-                  <option value="SDG 6">SDG 6</option>
-                  <option value="SDG 7">SDG 7</option>
-                  <option value="SDG 8">SDG 8</option>
-                  <option value="SDG 9">SDG 9</option>
-                  <option value="SDG 10">SDG 10</option>
-                  <option value="SDG 11">SDG 11</option>
-                  <option value="SDG 12">SDG 12</option>
-                  <option value="SDG 13">SDG 13</option>
-                  <option value="SDG 14">SDG 14</option>
-                  <option value="SDG 15">SDG 15</option>
-                  <option value="SDG 16">SDG 16</option>
-                  <option value="SDG 17">SDG 17</option>
-                </x-forms.select>
+                <x-forms.label for="activity-sdg-trigger" required>SDG</x-forms.label>
+                <div id="activity-sdg-dropdown" class="relative mt-2">
+                  <button
+                    type="button"
+                    id="activity-sdg-trigger"
+                    class="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-left text-sm text-slate-900 shadow-sm transition hover:border-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/15"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                  >
+                    <span id="activity-sdg-trigger-text" class="text-slate-500">Select one or more SDGs</span>
+                    <svg class="h-5 w-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  </button>
+                  <div
+                    id="activity-sdg-menu"
+                    class="absolute left-0 right-0 z-20 mt-2 hidden max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
+                    role="menu"
+                  >
+                    @foreach (range(1, 17) as $sdgNum)
+                      <label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                        <input type="checkbox" class="activity-sdg-option h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500/30" value="SDG {{ $sdgNum }}" />
+                        <span>SDG {{ $sdgNum }}</span>
+                      </label>
+                    @endforeach
+                  </div>
+                </div>
+                <div id="activity-sdg-selected-wrap" class="mt-2 hidden">
+                  <div id="activity-sdg-selected-list" class="flex flex-wrap gap-2"></div>
+                </div>
+                <x-forms.helper class="!mt-1.5">Select one or more SDGs for this activity.</x-forms.helper>
+                <p id="activity-sdg-required-reminder" class="mt-1 hidden text-xs font-medium text-amber-700">Please select at least one SDG.</p>
               </div>
 
               <div class="md:col-span-2">
@@ -293,7 +312,7 @@
                   <tr>
                     <th scope="col" class="px-4 py-3">Date</th>
                     <th scope="col" class="px-4 py-3">Activity Name</th>
-                    <th scope="col" class="px-4 py-3">SDG</th>
+                    <th scope="col" class="px-4 py-3">SDGs</th>
                     <th scope="col" class="px-4 py-3">Venue</th>
                     <th scope="col" class="px-4 py-3">Participant / Program Assigned</th>
                     <th scope="col" class="px-4 py-3">Budget</th>
@@ -308,10 +327,10 @@
                       <tr class="align-top">
                         <td class="px-4 py-3 text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
                         <td class="px-4 py-3 text-slate-900">{{ $entry->activity_name }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->sdg }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->target_sdg ?? '—' }}</td>
                         <td class="px-4 py-3 text-slate-900">{{ $entry->venue }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->participant_program }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->budget }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->target_participants ?? '—' }}</td>
+                        <td class="px-4 py-3 text-slate-900">{{ $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2) : '—' }}</td>
                         <td class="px-4 py-3">
                           @php
                             $calSt = strtoupper((string) ($latestCalendar->calendar_status ?? ''));

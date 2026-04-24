@@ -14,6 +14,9 @@ class ActivityRequestForm extends Model
         'activity_calendar_entry_id',
         'promoted_to_proposal_id',
         'promoted_at',
+        'request_letter_has_rationale',
+        'request_letter_has_objectives',
+        'request_letter_has_program',
         'activity_title',
         'partner_entities',
         'nature_of_activity',
@@ -35,6 +38,9 @@ class ActivityRequestForm extends Model
             'activity_date' => 'date',
             'proposed_budget' => 'decimal:2',
             'promoted_at' => 'datetime',
+            'request_letter_has_rationale' => 'boolean',
+            'request_letter_has_objectives' => 'boolean',
+            'request_letter_has_program' => 'boolean',
         ];
     }
 

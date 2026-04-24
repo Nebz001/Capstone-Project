@@ -28,6 +28,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -248,8 +249,14 @@ class OrganizationController extends Controller
             $organization = $user->currentOrganization();
             if ($organization) {
                 $calendarEvents = $this->buildOrganizationDashboardCalendarEvents($organization);
-                $featuredProposal = $this->resolveDashboardFeaturedProposal($organization);
+                $selectedProposalId = (int) $request->integer('proposal_id');
+                [$featuredProposal, $usedDefaultOldestActive] = $this->resolveDashboardFeaturedProposal($organization, $selectedProposalId);
                 $proposalDashboard = $this->buildProposalDashboardProgress($featuredProposal);
+                $proposalDashboard['selector_options'] = $this->dashboardProposalSelectorOptions($organization);
+                $proposalDashboard['selected_proposal_id'] = $featuredProposal?->id;
+                $proposalDashboard['default_note'] = $usedDefaultOldestActive
+                    ? 'Default view: oldest proposal still in the approval process.'
+                    : null;
             }
         }
 
@@ -302,16 +309,61 @@ class OrganizationController extends Controller
     /**
      * Latest proposal the officer should monitor: prefer the most recently updated non-draft, else most recent draft.
      */
-    private function resolveDashboardFeaturedProposal(Organization $organization): ?ActivityProposal
+    /**
+     * @return array{0: ?ActivityProposal, 1: bool}
+     */
+    private function resolveDashboardFeaturedProposal(Organization $organization, int $selectedProposalId = 0): array
     {
-        $base = ActivityProposal::query()->where('organization_id', $organization->id);
+        $base = ActivityProposal::query()
+            ->where('organization_id', $organization->id)
+            ->whereNotIn('status', ['draft']);
 
-        $nonDraft = (clone $base)
-            ->whereNotIn('status', ['draft'])
-            ->orderByDesc('updated_at')
+        if ($selectedProposalId > 0) {
+            $selected = (clone $base)
+                ->whereKey($selectedProposalId)
+                ->first();
+            if ($selected) {
+                return [$selected, false];
+            }
+        }
+
+        $oldestActive = (clone $base)
+            ->whereIn('status', ['pending', 'under_review', 'revision', 'revision_required'])
+            ->orderBy('submission_date')
+            ->orderBy('id')
+            ->first();
+        if ($oldestActive) {
+            return [$oldestActive, true];
+        }
+
+        $fallback = (clone $base)
+            ->orderBy('submission_date')
+            ->orderBy('id')
             ->first();
 
-        return $nonDraft ?? (clone $base)->orderByDesc('updated_at')->first();
+        return [$fallback, false];
+    }
+
+    /**
+     * @return list<array{id:int,label:string}>
+     */
+    private function dashboardProposalSelectorOptions(Organization $organization): array
+    {
+        $proposals = ActivityProposal::query()
+            ->where('organization_id', $organization->id)
+            ->whereNotIn('status', ['draft'])
+            ->orderBy('submission_date')
+            ->orderBy('id')
+            ->get();
+
+        return $proposals->map(function (ActivityProposal $proposal): array {
+            $status = $this->activityProposalStatusPresentation($proposal->status)['label'];
+
+            return [
+                'id' => (int) $proposal->id,
+                'label' => sprintf('%s — %s', (string) $proposal->activity_title, $status),
+            ];
+        })->values()->all();
     }
 
     /**
@@ -1160,54 +1212,54 @@ class OrganizationController extends Controller
                 ->with('error', 'This activity calendar has already been submitted and can no longer be edited.');
         }
 
-        if (! $request->filled('term')) {
-            $request->merge(['term' => SystemSetting::activeSemester()]);
-        }
-        $request->merge(['academic_year' => $this->activeAcademicYear()]);
-
         $validated = $request->validate([
-            'academic_year' => ['required', 'string', 'max:50'],
-            'term' => ['required', 'string', Rule::in(['term_1', 'term_2', 'term_3'])],
-            'organization_name' => ['required', 'string', 'max:255'],
-            'date_submitted' => ['required', 'date'],
             'activities' => ['required', 'array'],
             'activities.*.date' => ['required', 'date'],
             'activities.*.name' => ['required', 'string'],
-            'activities.*.sdg' => ['required', 'string'],
+            'activities.*.sdg' => ['required', 'array', 'min:1'],
+            'activities.*.sdg.*' => ['required', 'string', Rule::in(array_map(static fn (int $n) => 'SDG '.$n, range(1, 17)))],
             'activities.*.venue' => ['required', 'string'],
             'activities.*.participant_program' => ['required', 'string'],
             'activities.*.budget' => ['required', 'numeric'],
         ]);
 
+        $trustedAcademicYear = $this->activeAcademicYear();
+        $trustedDateSubmitted = now()->toDateString();
+
         $hasPendingSubmission = ActivityCalendar::query()
             ->where('organization_id', $organization->id)
-            ->where('academic_term_id', $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']))
+            ->where('academic_term_id', $this->resolveOrCreateAcademicTermId($trustedAcademicYear))
             ->where('status', 'pending')
             ->exists();
 
         if ($hasPendingSubmission) {
             return back()
                 ->withErrors([
-                    'academic_year' => 'A pending activity calendar already exists for this academic year and term.',
+                    'activities' => 'A pending activity calendar already exists for the active academic year and term.',
                 ])
                 ->withInput();
         }
 
-        DB::transaction(function () use ($organization, $validated, $user): void {
+        DB::transaction(function () use ($organization, $validated, $user, $trustedAcademicYear, $trustedDateSubmitted): void {
             $calendar = ActivityCalendar::create([
                 'organization_id' => $organization->id,
                 'submitted_by' => $user->id,
-                'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
-                'submission_date' => $validated['date_submitted'],
+                'academic_term_id' => $this->resolveOrCreateAcademicTermId($trustedAcademicYear),
+                'submission_date' => $trustedDateSubmitted,
                 'status' => 'pending',
             ]);
 
             foreach ($validated['activities'] as $row) {
+                $selectedSdgs = array_values(array_unique(array_filter(
+                    array_map(static fn ($value) => trim((string) $value), (array) ($row['sdg'] ?? [])),
+                    static fn ($value) => $value !== ''
+                )));
+
                 ActivityCalendarEntry::query()->create([
                     'activity_calendar_id' => $calendar->id,
                     'activity_date' => $row['date'],
                     'activity_name' => $row['name'],
-                    'target_sdg' => $row['sdg'],
+                    'target_sdg' => implode(', ', $selectedSdgs),
                     'venue' => $row['venue'],
                     'target_participants' => $row['participant_program'],
                     'target_program' => null,
@@ -1255,6 +1307,7 @@ class OrganizationController extends Controller
                 'natureOptions' => self::ACTIVITY_REQUEST_NATURE_OPTIONS,
                 'typeOptions' => self::ACTIVITY_REQUEST_TYPE_OPTIONS,
                 'requestForm' => null,
+                'requestAttachmentLinks' => [],
                 'hasCalendarActivities' => false,
                 'calendarEntries' => collect(),
             ]);
@@ -1282,6 +1335,7 @@ class OrganizationController extends Controller
             'natureOptions' => self::ACTIVITY_REQUEST_NATURE_OPTIONS,
             'typeOptions' => self::ACTIVITY_REQUEST_TYPE_OPTIONS,
             'requestForm' => $requestForm,
+            'requestAttachmentLinks' => $this->activityRequestAttachmentLinks($requestForm),
             'hasCalendarActivities' => $hasCalendarActivities,
             'calendarEntries' => $calendarEntries,
         ]);
@@ -1323,6 +1377,9 @@ class OrganizationController extends Controller
         ]);
 
         $editableRequest = $this->resolveEditableActivityRequestForm($request, $organization);
+        $existingRequestLetterPath = $this->attachmentPath($editableRequest, Attachment::TYPE_REQUEST_LETTER);
+        $existingSpeakerResumePath = $this->attachmentPath($editableRequest, Attachment::TYPE_REQUEST_SPEAKER_RESUME);
+        $existingPostSurveyPath = $this->attachmentPath($editableRequest, Attachment::TYPE_REQUEST_POST_SURVEY);
         $targetSdgOptions = array_map(static fn ($n) => 'SDG '.$n, range(1, 17));
 
         $validated = $request->validate([
@@ -1352,28 +1409,37 @@ class OrganizationController extends Controller
                 'string',
                 'max:255',
             ],
-            'target_sdg' => ['required', 'array', 'min:1'],
+            'target_sdg' => [
+                Rule::requiredIf(fn () => (string) $request->input('proposal_source') !== 'calendar'),
+                'nullable',
+                'array',
+                'min:1',
+            ],
             'target_sdg.*' => ['string', Rule::in($targetSdgOptions)],
             'proposed_budget' => ['required', 'numeric', 'min:0'],
             'budget_source' => ['required', 'string', Rule::in(['RSO Fund', 'RSO Savings', 'External'])],
             'activity_date' => ['required', 'date'],
             'venue' => ['required', 'string', 'max:255'],
+            'request_letter_has_rationale' => ['nullable', 'boolean'],
+            'request_letter_has_objectives' => ['nullable', 'boolean'],
+            'request_letter_has_program' => ['nullable', 'boolean'],
             'request_letter' => [
-                Rule::requiredIf(fn () => ! $editableRequest),
+                Rule::requiredIf(fn () => ! $editableRequest || ! $existingRequestLetterPath),
                 'nullable',
                 'file',
                 'mimes:pdf,doc,docx,jpg,jpeg,png,webp',
                 'max:10240',
             ],
             'speaker_resume' => [
-                Rule::requiredIf(fn () => in_array('seminar_workshop', (array) $request->input('activity_types', []), true)),
+                Rule::requiredIf(fn () => in_array('seminar_workshop', (array) $request->input('activity_types', []), true)
+                    && ! $existingSpeakerResumePath),
                 'nullable',
                 'file',
                 'mimes:pdf,doc,docx',
                 'max:10240',
             ],
             'post_survey_form' => [
-                Rule::requiredIf(fn () => ! $editableRequest),
+                Rule::requiredIf(fn () => ! $editableRequest || ! $existingPostSurveyPath),
                 'nullable',
                 'file',
                 'mimes:pdf,doc,docx,jpg,jpeg,png,webp',
@@ -1398,6 +1464,20 @@ class OrganizationController extends Controller
                     ->withInput()
                     ->withErrors([
                         'activity_calendar_entry_id' => 'Select a valid activity from your submitted activity calendar.',
+                    ]);
+            }
+        }
+
+        // Calendar-linked requests always inherit SDGs from the selected calendar entry.
+        // Ignore any posted target_sdg[] payload in this case.
+        $resolvedTargetSdg = (string) (implode(', ', (array) ($validated['target_sdg'] ?? [])));
+        if ($selectedCalendarEntry) {
+            $resolvedTargetSdg = trim((string) ($selectedCalendarEntry->target_sdg ?? ''));
+            if ($resolvedTargetSdg === '') {
+                return back()
+                    ->withInput()
+                    ->withErrors([
+                        'activity_calendar_entry_id' => 'The selected calendar activity has no SDGs on record. Update the activity calendar entry SDGs first.',
                     ]);
             }
         }
@@ -1431,7 +1511,7 @@ class OrganizationController extends Controller
             'nature_other' => $validated['nature_other'] ?? null,
             'activity_types' => $validated['activity_types'],
             'activity_type_other' => $validated['activity_type_other'] ?? null,
-            'target_sdg' => implode(', ', $validated['target_sdg']),
+            'target_sdg' => $resolvedTargetSdg,
             'proposed_budget' => $validated['proposed_budget'],
             'budget_source' => $validated['budget_source'],
             'activity_date' => $validated['activity_date'],
@@ -1439,6 +1519,12 @@ class OrganizationController extends Controller
             'promoted_to_proposal_id' => null,
             'promoted_at' => null,
         ];
+
+        if ($this->supportsActivityRequestChecklistColumns()) {
+            $payload['request_letter_has_rationale'] = $request->boolean('request_letter_has_rationale');
+            $payload['request_letter_has_objectives'] = $request->boolean('request_letter_has_objectives');
+            $payload['request_letter_has_program'] = $request->boolean('request_letter_has_program');
+        }
 
         if ($editableRequest) {
             $editableRequest->update($payload);
@@ -1578,10 +1664,17 @@ class OrganizationController extends Controller
         $calendarEntry = null;
         $linkedProposal = null;
         $proposalCalendar = null;
+        $resolvedCalendarEntryId = null;
 
-        if ($request->filled('calendar_entry')) {
+        if (! $forAdminPortal && $requestForm?->activity_calendar_entry_id) {
+            $resolvedCalendarEntryId = (int) $requestForm->activity_calendar_entry_id;
+        } elseif ($forAdminPortal && $request->filled('calendar_entry')) {
+            $resolvedCalendarEntryId = (int) $request->integer('calendar_entry');
+        }
+
+        if ($resolvedCalendarEntryId) {
             $calendarEntry = ActivityCalendarEntry::query()
-                ->whereKey($request->integer('calendar_entry'))
+                ->whereKey($resolvedCalendarEntryId)
                 ->whereHas('activityCalendar', function ($q) use ($organization): void {
                     $q->where('organization_id', $organization->id);
                 })
@@ -1693,6 +1786,22 @@ class OrganizationController extends Controller
         }
 
         $proposalSourceInput = (string) $request->input('proposal_source', 'calendar');
+        if (! $isAdminProposal) {
+            $lockedCalendarEntryId = (int) ($requestForm->activity_calendar_entry_id ?? 0);
+            if ($lockedCalendarEntryId > 0) {
+                $proposalSourceInput = 'calendar';
+                $request->merge([
+                    'proposal_source' => 'calendar',
+                    'activity_calendar_entry_id' => $lockedCalendarEntryId,
+                ]);
+            } else {
+                $proposalSourceInput = 'unlisted';
+                $request->merge([
+                    'proposal_source' => 'unlisted',
+                    'activity_calendar_entry_id' => null,
+                ]);
+            }
+        }
 
         $calendarEntry = null;
         if ($proposalSourceInput === 'calendar' && $request->filled('activity_calendar_entry_id')) {
@@ -2867,6 +2976,59 @@ class OrganizationController extends Controller
         return ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '')
             ? $attachment->stored_path
             : null;
+    }
+
+    /**
+     * @return array<string, array{path: string, name: string, url: string}>
+     */
+    private function activityRequestAttachmentLinks(?ActivityRequestForm $requestForm): array
+    {
+        if (! $requestForm) {
+            return [];
+        }
+
+        $map = [
+            'request_letter' => Attachment::TYPE_REQUEST_LETTER,
+            'speaker_resume' => Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+            'post_survey_form' => Attachment::TYPE_REQUEST_POST_SURVEY,
+        ];
+
+        $links = [];
+        foreach ($map as $key => $fileType) {
+            $attachment = $requestForm->attachments()
+                ->where('file_type', $fileType)
+                ->latest('id')
+                ->first();
+
+            $storedPath = (string) ($attachment->stored_path ?? '');
+            if ($storedPath === '') {
+                continue;
+            }
+
+            $links[$key] = [
+                'path' => $storedPath,
+                'name' => (string) ($attachment->original_name ?: basename($storedPath)),
+                'url' => asset('storage/'.ltrim($storedPath, '/')),
+            ];
+        }
+
+        return $links;
+    }
+
+    private function supportsActivityRequestChecklistColumns(): bool
+    {
+        static $supported;
+
+        if ($supported !== null) {
+            return $supported;
+        }
+
+        $supported = Schema::hasTable('activity_request_forms')
+            && Schema::hasColumn('activity_request_forms', 'request_letter_has_rationale')
+            && Schema::hasColumn('activity_request_forms', 'request_letter_has_objectives')
+            && Schema::hasColumn('activity_request_forms', 'request_letter_has_program');
+
+        return $supported;
     }
 
     /**
