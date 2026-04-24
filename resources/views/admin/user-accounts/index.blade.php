@@ -14,7 +14,8 @@
       default => 'bg-slate-100 text-slate-700 border border-slate-200',
     };
   };
-  $roleBadgeClass = function (string $roleType): string {
+  $roleBadgeClass = function (?string $roleType): string {
+    $roleType = $roleType ?: 'UNASSIGNED';
     return match ($roleType) {
       'ORG_OFFICER' => 'bg-sky-100 text-sky-900 border border-sky-200',
       'APPROVER' => 'bg-violet-100 text-violet-900 border border-violet-200',
@@ -45,6 +46,12 @@
           @php
             $latestOfficer = $account->organizationOfficers->first();
             $isOfficer = $account->role_type === 'ORG_OFFICER';
+            $roleLabel = match ($account->role_type) {
+              'ORG_OFFICER' => 'Organization Officer',
+              'APPROVER' => 'Approver',
+              'ADMIN' => 'Admin',
+              default => 'Unassigned',
+            };
             $context = $isOfficer
               ? ($latestOfficer?->organization?->organization_name ?? 'Not linked')
                 . ($latestOfficer?->position_title ? ' · '.$latestOfficer->position_title : '')
@@ -58,13 +65,13 @@
             <td class="px-5 py-3 font-medium text-slate-800 sm:px-6">{{ $account->full_name }}</td>
             <td class="px-5 py-3 sm:px-6">
               <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $roleBadgeClass($account->role_type) }}">
-                {{ $account->roleDisplayLabel() }}
+                {{ $roleLabel }}
               </span>
             </td>
             <td class="px-5 py-3 text-slate-600 sm:px-6">{{ $account->school_id }}</td>
-            <td class="break-words px-5 py-3 text-slate-600 sm:px-6">{{ $account->email }}</td>
+            <td class="wrap-break-word px-5 py-3 text-slate-600 sm:px-6">{{ $account->email }}</td>
             <td class="px-5 py-3 text-slate-600 sm:px-6">{{ $account->account_status }}</td>
-            <td class="break-words px-5 py-3 text-slate-600 sm:px-6">{{ $context }}</td>
+            <td class="wrap-break-word px-5 py-3 text-slate-600 sm:px-6">{{ $context }}</td>
             <td class="px-5 py-3 sm:px-6">
               @if ($isOfficer)
                 <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $validationBadgeClass($account->officer_validation_status) }}">
