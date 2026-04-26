@@ -33,17 +33,18 @@
         No organizations registered yet. New RSOs will appear here after they are approved and created in the system.
       </div>
     @else
-      <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-          <thead class="sticky top-0 z-10 bg-slate-50/95 backdrop-blur">
+      <div class="px-3 py-3 sm:px-5 sm:py-4">
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+        <table class="min-w-208 w-full divide-y divide-slate-200 text-left text-sm">
+          <thead class="sticky top-0 z-10 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500 backdrop-blur">
             <tr>
-              <th scope="col" class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Organization</th>
-              <th scope="col" class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Department / school</th>
-              <th scope="col" class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Type</th>
-              <th scope="col" class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Status</th>
+              <th scope="col" class="whitespace-nowrap px-4 py-3 sm:px-5">Organization</th>
+              <th scope="col" class="whitespace-nowrap px-4 py-3 sm:px-5">Department / school</th>
+              <th scope="col" class="whitespace-nowrap px-4 py-3 sm:px-5">Type</th>
+              <th scope="col" class="whitespace-nowrap px-4 py-3 sm:px-5">Status</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-100">
+          <tbody class="divide-y divide-slate-100 bg-white">
             @foreach ($registeredOrganizations as $org)
               @php
                 $typeLabel = match ($org->organization_type ?? '') {
@@ -60,17 +61,20 @@
                   default => 'bg-slate-100 text-slate-700 border border-slate-200',
                 };
               @endphp
-              <tr class="hover:bg-slate-50/80">
-                <td class="px-5 py-3 font-medium text-slate-900 sm:px-6">{{ $org->organization_name }}</td>
-                <td class="max-w-[14rem] truncate px-5 py-3 text-slate-600 sm:px-6" title="{{ $org->college_department }}">{{ $org->college_department ?: '—' }}</td>
-                <td class="whitespace-nowrap px-5 py-3 text-slate-600 sm:px-6">{{ $typeLabel }}</td>
-                <td class="whitespace-nowrap px-5 py-3 sm:px-6">
+              <tr class="align-top hover:bg-slate-50/80">
+                <td class="px-4 py-3.5 font-semibold text-slate-900 sm:px-5">{{ $org->organization_name }}</td>
+                <td class="max-w-56 px-4 py-3.5 font-medium text-slate-700 sm:px-5" title="{{ $org->college_department }}">
+                  <span class="block truncate">{{ $org->college_department ?: '—' }}</span>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $typeLabel }}</td>
+                <td class="whitespace-nowrap px-4 py-3.5 sm:px-5">
                   <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusBadge }}">{{ ucfirst(strtolower($orgStatus)) }}</span>
                 </td>
               </tr>
             @endforeach
           </tbody>
         </table>
+        </div>
       </div>
     @endif
   </div>

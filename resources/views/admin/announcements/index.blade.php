@@ -13,34 +13,35 @@
 </div>
 
 <x-ui.card padding="p-0" class="overflow-hidden">
-  <div class="overflow-x-auto">
-    <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-      <thead class="bg-slate-50/90">
+  <div class="px-3 py-3 sm:px-5 sm:py-4">
+    <div class="overflow-x-auto rounded-xl border border-slate-200">
+    <table class="min-w-208 w-full divide-y divide-slate-200 text-left text-sm">
+      <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
         <tr>
-          <th class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Title</th>
-          <th class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Status</th>
-          <th class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Schedule</th>
-          <th class="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Order</th>
-          <th class="whitespace-nowrap px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Actions</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Title</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Status</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Schedule</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Order</th>
+          <th class="whitespace-nowrap px-4 py-3 text-right sm:px-5">Actions</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-slate-100 bg-white">
         @forelse ($announcements as $announcement)
-          <tr class="hover:bg-slate-50/80">
-            <td class="px-5 py-3 font-medium text-slate-800 sm:px-6">{{ $announcement->title }}</td>
-            <td class="px-5 py-3 sm:px-6">
+          <tr class="align-top hover:bg-slate-50/80">
+            <td class="px-4 py-3.5 font-semibold text-slate-900 sm:px-5">{{ $announcement->title }}</td>
+            <td class="px-4 py-3.5 sm:px-5">
               <span
                 class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $announcement->status === 'ACTIVE' ? 'border border-emerald-200 bg-emerald-100 text-emerald-800' : 'border border-slate-200 bg-slate-100 text-slate-700' }}"
               >
                 {{ $announcement->status }}
               </span>
             </td>
-            <td class="px-5 py-3 text-xs text-slate-600 sm:px-6">
-              <div>{{ $announcement->starts_at ? $announcement->starts_at->format('M j, Y g:i A') : '—' }}</div>
+            <td class="px-4 py-3.5 text-xs text-slate-600 sm:px-5">
+              <div class="font-medium text-slate-700">{{ $announcement->starts_at ? $announcement->starts_at->format('M j, Y g:i A') : '—' }}</div>
               <div class="text-slate-400">to {{ $announcement->ends_at ? $announcement->ends_at->format('M j, Y g:i A') : 'open' }}</div>
             </td>
-            <td class="px-5 py-3 text-slate-600 sm:px-6">{{ $announcement->sort_order }}</td>
-            <td class="px-5 py-3 text-right sm:px-6">
+            <td class="px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $announcement->sort_order }}</td>
+            <td class="px-4 py-3.5 text-right sm:px-5">
               <div class="flex items-center justify-end gap-2">
                 <a
                   href="{{ route('admin.announcements.edit', $announcement) }}"
@@ -83,6 +84,7 @@
         @endforelse
       </tbody>
     </table>
+    </div>
   </div>
 
   <div class="border-t border-slate-100 px-5 py-3 sm:px-6">

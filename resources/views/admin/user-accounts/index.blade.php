@@ -23,25 +23,36 @@
       default => 'bg-slate-100 text-slate-700 border border-slate-200',
     };
   };
+  $accountStatusBadgeClass = function (?string $status): string {
+    $status = strtoupper((string) ($status ?? 'UNKNOWN'));
+    return match ($status) {
+      'ACTIVE' => 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+      'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
+      'INACTIVE' => 'bg-slate-100 text-slate-700 border border-slate-200',
+      'SUSPENDED' => 'bg-rose-100 text-rose-700 border border-rose-200',
+      default => 'bg-slate-100 text-slate-700 border border-slate-200',
+    };
+  };
 @endphp
 
 <x-ui.card padding="p-0" class="overflow-hidden max-w-full">
-  <div class="max-w-full overflow-x-hidden">
-    <table class="w-full table-auto divide-y divide-slate-200 text-left text-sm">
-      <thead class="bg-slate-50/90">
+  <div class="px-3 py-3 sm:px-5 sm:py-4">
+    <div class="max-w-full overflow-x-auto rounded-xl border border-slate-200">
+    <table class="min-w-304 w-full divide-y divide-slate-200 text-left text-sm">
+      <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
         <tr>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Name</th>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Role</th>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">School ID</th>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Email</th>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Account status</th>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Organization / context</th>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Officer validation</th>
-          <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Registered</th>
-          <th class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">Action</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Name</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Role</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">School ID</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Email</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Account status</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Organization / context</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Officer validation</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Registered</th>
+          <th class="whitespace-nowrap px-4 py-3 text-right sm:px-5">Action</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-slate-100 bg-white">
         @forelse ($accounts as $account)
           @php
             $latestOfficer = $account->organizationOfficers->first();
@@ -61,28 +72,38 @@
                 default => '—',
               };
           @endphp
-          <tr class="hover:bg-slate-50/80">
-            <td class="px-5 py-3 font-medium text-slate-800 sm:px-6">{{ $account->full_name }}</td>
-            <td class="px-5 py-3 sm:px-6">
+          <tr class="align-top hover:bg-slate-50/80">
+            <td class="px-4 py-3.5 sm:px-5">
+              <p class="font-semibold text-slate-900">{{ $account->full_name }}</p>
+            </td>
+            <td class="px-4 py-3.5 sm:px-5">
               <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $roleBadgeClass($account->role_type) }}">
                 {{ $roleLabel }}
               </span>
             </td>
-            <td class="px-5 py-3 text-slate-600 sm:px-6">{{ $account->school_id }}</td>
-            <td class="wrap-break-word px-5 py-3 text-slate-600 sm:px-6">{{ $account->email }}</td>
-            <td class="px-5 py-3 text-slate-600 sm:px-6">{{ $account->account_status }}</td>
-            <td class="wrap-break-word px-5 py-3 text-slate-600 sm:px-6">{{ $context }}</td>
-            <td class="px-5 py-3 sm:px-6">
+            <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $account->school_id }}</td>
+            <td class="px-4 py-3.5 text-slate-700 sm:px-5">
+              <span class="block max-w-xs wrap-break-word font-medium">{{ $account->email }}</span>
+            </td>
+            <td class="px-4 py-3.5 sm:px-5">
+              <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $accountStatusBadgeClass($account->account_status) }}">
+                {{ $account->account_status }}
+              </span>
+            </td>
+            <td class="px-4 py-3.5 sm:px-5">
+              <span class="block max-w-xs wrap-break-word font-medium text-slate-700">{{ $context }}</span>
+            </td>
+            <td class="px-4 py-3.5 sm:px-5">
               @if ($isOfficer)
                 <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $validationBadgeClass($account->officer_validation_status) }}">
                   {{ str_replace('_', ' ', $account->officer_validation_status) }}
                 </span>
               @else
-                <span class="text-sm text-slate-400">—</span>
+                <span class="text-sm font-medium text-slate-400">—</span>
               @endif
             </td>
-            <td class="px-5 py-3 text-slate-600 sm:px-6">{{ optional($account->created_at)->format('M d, Y') ?? 'N/A' }}</td>
-            <td class="px-5 py-3 text-right sm:px-6">
+            <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ optional($account->created_at)->format('M d, Y') ?? 'N/A' }}</td>
+            <td class="px-4 py-3.5 text-right sm:px-5">
               <a href="{{ route('admin.accounts.show', $account) }}" class="inline-flex rounded-xl border border-[#003E9F] px-3.5 py-2 text-xs font-semibold text-[#003E9F] transition hover:bg-[#003E9F] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30">
                 View
               </a>
@@ -104,6 +125,7 @@
         @endforelse
       </tbody>
     </table>
+    </div>
   </div>
 
   <div class="border-t border-slate-100 px-5 py-3 sm:px-6">

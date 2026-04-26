@@ -30,26 +30,26 @@
         <h2 class="text-base font-bold text-slate-900">Submitted activities</h2>
         <p class="mt-1 text-sm text-slate-500">Each row is a saved record linked to this activity calendar.</p>
         <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
-          <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-            <thead class="bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <table class="min-w-3xl w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th class="whitespace-nowrap px-5 py-3">Date</th>
-                <th class="min-w-[10rem] px-5 py-3">Activity</th>
+                <th class="min-w-40 px-5 py-3">Activity</th>
                 <th class="whitespace-nowrap px-5 py-3">SDG</th>
-                <th class="min-w-[8rem] px-5 py-3">Venue</th>
-                <th class="min-w-[12rem] px-5 py-3">Participants / program</th>
+                <th class="min-w-32 px-5 py-3">Venue</th>
+                <th class="min-w-48 px-5 py-3">Participants / program</th>
                 <th class="whitespace-nowrap px-5 py-3">Budget</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
               @foreach ($calendarEntries as $row)
                 <tr class="align-top hover:bg-slate-50/80">
-                  <td class="whitespace-nowrap px-5 py-3 text-slate-800">{{ optional($row->activity_date)->format('M d, Y') ?? '—' }}</td>
-                  <td class="px-5 py-3 text-slate-800">{{ $row->activity_name }}</td>
-                  <td class="whitespace-nowrap px-5 py-3 text-slate-800">{{ $row->sdg }}</td>
-                  <td class="px-5 py-3 text-slate-800">{{ $row->venue }}</td>
-                  <td class="px-5 py-3 text-slate-700">{{ $row->participant_program }}</td>
-                  <td class="whitespace-nowrap px-5 py-3 text-slate-800">{{ $row->budget }}</td>
+                  <td class="whitespace-nowrap px-5 py-3.5 font-medium text-slate-800">{{ optional($row->activity_date)->format('M d, Y') ?? '—' }}</td>
+                  <td class="px-5 py-3.5 font-semibold text-slate-900">{{ $row->activity_name }}</td>
+                  <td class="whitespace-nowrap px-5 py-3.5 font-medium text-slate-800">{{ $row->sdg }}</td>
+                  <td class="px-5 py-3.5 font-medium text-slate-800">{{ $row->venue }}</td>
+                  <td class="px-5 py-3.5 text-slate-700">{{ $row->participant_program }}</td>
+                  <td class="whitespace-nowrap px-5 py-3.5 font-medium text-slate-800">{{ $row->budget }}</td>
                 </tr>
               @endforeach
             </tbody>
@@ -104,8 +104,8 @@
         @endif
 
         <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
-          <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-            <thead class="bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <table class="min-w-2xl w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th class="px-5 py-3">Step</th>
                 <th class="px-5 py-3">Role</th>
@@ -116,12 +116,20 @@
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
               @foreach ($workflowSteps as $step)
-                <tr>
-                  <td class="px-5 py-3">#{{ $step->step_order }}{{ $step->is_current_step ? ' (current)' : '' }}</td>
-                  <td class="px-5 py-3">{{ $step->role?->display_name ?? $step->role?->name ?? '—' }}</td>
-                  <td class="px-5 py-3">{{ strtoupper((string) $step->status) }}</td>
-                  <td class="px-5 py-3">{{ $step->assignedTo?->full_name ?? '—' }}</td>
-                  <td class="px-5 py-3">{{ optional($step->acted_at)->format('M d, Y g:i A') ?? '—' }}</td>
+                <tr class="align-top">
+                  <td class="px-5 py-3.5 font-medium text-slate-800">#{{ $step->step_order }}{{ $step->is_current_step ? ' (current)' : '' }}</td>
+                  <td class="px-5 py-3.5 font-medium text-slate-800">{{ $step->role?->display_name ?? $step->role?->name ?? '—' }}</td>
+                  <td class="px-5 py-3.5">
+                    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ match (strtoupper((string) $step->status)) {
+                      'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
+                      'APPROVED' => 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+                      'REJECTED' => 'bg-rose-100 text-rose-700 border border-rose-200',
+                      'REVISION', 'REVISION_REQUIRED' => 'bg-orange-100 text-orange-700 border border-orange-200',
+                      default => 'bg-slate-100 text-slate-700 border border-slate-200',
+                    } }}">{{ strtoupper((string) $step->status) }}</span>
+                  </td>
+                  <td class="px-5 py-3.5 text-slate-700">{{ $step->assignedTo?->full_name ?? '—' }}</td>
+                  <td class="whitespace-nowrap px-5 py-3.5 font-medium text-slate-700">{{ optional($step->acted_at)->format('M d, Y g:i A') ?? '—' }}</td>
                 </tr>
               @endforeach
             </tbody>
