@@ -268,6 +268,7 @@ class AdminController extends Controller
         $accounts = User::query()
             ->withoutSdaoAdminAccounts()
             ->with([
+                'role',
                 'organizationOfficers' => fn ($query) => $query
                     ->latest('id')
                     ->with('organization'),
@@ -286,6 +287,7 @@ class AdminController extends Controller
         abort_if($user->isSdaoAdmin(), 404);
 
         $user->load([
+            'role',
             'organizationOfficers' => fn ($query) => $query->latest('id')->with('organization'),
             'validatedBy',
         ]);

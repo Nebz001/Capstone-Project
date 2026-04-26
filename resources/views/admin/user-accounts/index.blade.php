@@ -28,6 +28,7 @@
     return match ($status) {
       'ACTIVE' => 'bg-emerald-100 text-emerald-800 border border-emerald-200',
       'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
+      'REJECTED', 'DISABLED' => 'bg-rose-100 text-rose-700 border border-rose-200',
       'INACTIVE' => 'bg-slate-100 text-slate-700 border border-slate-200',
       'SUSPENDED' => 'bg-rose-100 text-rose-700 border border-rose-200',
       default => 'bg-slate-100 text-slate-700 border border-slate-200',
@@ -55,21 +56,17 @@
         @forelse ($accounts as $account)
           @php
             $latestOfficer = $account->organizationOfficers->first();
-            $isOfficer = $account->role_type === 'ORG_OFFICER';
-            $roleLabel = match ($account->role_type) {
-              'ORG_OFFICER' => 'Organization Officer',
-              'APPROVER' => 'Approver',
-              'ADMIN' => 'Admin',
-              default => 'Unassigned',
+            $effectiveRoleType = $account->effectiveRoleType();
+            $isOfficer = $effectiveRoleType === 'ORG_OFFICER';
+            $roleLabel = $account->role?->display_name ?? 'Unassigned';
+            $context = match ($effectiveRoleType) {
+              'ORG_OFFICER' => ($latestOfficer?->organization?->organization_name ?? '—')
+                . ($latestOfficer?->position_title ? ' · '.$latestOfficer->position_title : ''),
+              'APPROVER' => $account->role?->display_name ?? '—',
+              'ADMIN' => 'SDAO',
+              default => '—',
             };
-            $context = $isOfficer
-              ? ($latestOfficer?->organization?->organization_name ?? 'Not linked')
-                . ($latestOfficer?->position_title ? ' · '.$latestOfficer->position_title : '')
-              : match ($account->role_type) {
-                'APPROVER' => 'Signatory / approval workflow',
-                'ADMIN' => '—',
-                default => '—',
-              };
+            $accountStatusLabel = ucwords(strtolower(str_replace('_', ' ', (string) $account->account_status)));
           @endphp
           <tr class="align-top hover:bg-slate-50/80">
             <td class="px-4 py-3.5 sm:px-5">
@@ -79,13 +76,13 @@
               <span class="block max-w-[18rem] wrap-break-word font-medium text-slate-700">{{ $account->email }}</span>
             </td>
             <td class="px-4 py-3.5 sm:px-5">
-              <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $roleBadgeClass($account->role_type) }}">
+              <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $roleBadgeClass($effectiveRoleType) }}">
                 {{ $roleLabel }}
               </span>
             </td>
             <td class="px-4 py-3.5 sm:px-5">
               <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $accountStatusBadgeClass($account->account_status) }}">
-                {{ $account->account_status }}
+                {{ $accountStatusLabel !== '' ? $accountStatusLabel : '—' }}
               </span>
             </td>
             <td class="px-4 py-3.5 sm:px-5">
