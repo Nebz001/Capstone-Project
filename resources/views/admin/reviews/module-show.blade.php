@@ -248,8 +248,8 @@
     });
 
     if (rows.length === 0) {
-      revisionSummaryBox.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900';
-      revisionSummaryHelper.textContent = 'No revision fields. All reviewed fields are ready for finalization.';
+      revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+      revisionSummaryHelper.textContent = 'No revision fields at this time.';
       revisionSummaryList.innerHTML = '<li class="text-sm">No revision notes required.</li>';
       return;
     }
