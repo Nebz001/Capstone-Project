@@ -163,7 +163,6 @@
                     <th class="whitespace-nowrap px-4 py-3 sm:px-5">Last updated</th>
                     <th class="whitespace-nowrap px-4 py-3 sm:px-5">Status</th>
                     <th class="whitespace-nowrap px-4 py-3 sm:px-5">AY / term</th>
-                    <th class="min-w-72 px-4 py-3 sm:min-w-80 sm:px-5">Notes preview</th>
                     <th class="whitespace-nowrap px-4 py-3 text-right sm:px-5 lg:pr-6">Actions</th>
                   </tr>
                 </thead>
@@ -182,9 +181,6 @@
                         </span>
                       </td>
                       <td class="px-4 py-3.5 align-top font-medium text-slate-700 sm:px-5">{{ $row['academic_context'] ?? '—' }}</td>
-                      <td class="min-w-72 px-4 py-3.5 align-top text-sm font-medium leading-relaxed text-slate-700 sm:min-w-80 sm:px-5 lg:pr-6">
-                        <span class="line-clamp-2 block max-w-xl">{{ $row['remarks_preview'] ?? '—' }}</span>
-                      </td>
                       <td class="px-4 py-3.5 text-right align-top sm:px-5 lg:pr-6">
                         <div class="flex min-w-38 flex-col items-end justify-start gap-2">
                           @foreach ($row['row_actions'] as $action)
