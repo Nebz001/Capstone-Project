@@ -498,9 +498,9 @@
                 </button>
               </div>
               <input type="hidden" id="budget_items_payload" name="budget_items_payload" value="{{ $prefillBudgetItems }}" />
-              <div class="max-h-[18.5rem] overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
-                <table class="w-full min-w-[640px] table-fixed text-sm">
-                  <thead class="sticky top-0 z-10 bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <div class="max-h-74 overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                <table class="w-full min-w-[640px] table-fixed divide-y divide-slate-200 text-sm">
+                  <thead class="sticky top-0 z-10 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <tr>
                       <th class="px-3 py-2 text-left">Material</th>
                       <th class="w-28 px-3 py-2 text-left">Quantity</th>
@@ -512,8 +512,8 @@
                   <tbody id="budget-items-body" class="divide-y divide-slate-100"></tbody>
                   <tfoot class="bg-slate-50">
                     <tr>
-                      <td colspan="3" class="px-3 py-2 text-right text-sm font-bold text-slate-700">TOTAL</td>
-                      <td class="px-3 py-2 text-sm font-bold text-slate-900" id="budget-items-total">0.00</td>
+                      <td colspan="3" class="px-3 py-2 text-right text-sm font-semibold text-slate-700">TOTAL</td>
+                      <td class="px-3 py-2 text-sm font-semibold text-slate-900" id="budget-items-total">0.00</td>
                       <td class="px-3 py-2"></td>
                     </tr>
                   </tfoot>
@@ -587,7 +587,7 @@
             <div class="flex w-full flex-col-reverse gap-2.5 sm:ml-auto sm:w-auto sm:flex-row-reverse sm:items-center sm:gap-3">
               <x-ui.button
                 type="submit"
-                class="w-full sm:w-auto sm:min-w-[10.5rem]"
+                class="w-full sm:w-auto sm:min-w-42"
                 name="proposal_action"
                 value="submit"
                 :disabled="$officerValidationPending"
@@ -597,7 +597,7 @@
               <x-ui.button
                 type="submit"
                 variant="secondary"
-                class="w-full sm:w-auto sm:min-w-[10.5rem]"
+                class="w-full sm:w-auto sm:min-w-42"
                 name="proposal_action"
                 value="draft"
                 :disabled="$officerValidationPending"

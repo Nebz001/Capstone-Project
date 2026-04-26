@@ -251,7 +251,7 @@
                 <div id="activity-sdg-selected-wrap" class="mt-2 hidden">
                   <div id="activity-sdg-selected-list" class="flex flex-wrap gap-2"></div>
                 </div>
-                <x-forms.helper class="!mt-1.5">Select one or more SDGs for this activity.</x-forms.helper>
+                <x-forms.helper class="mt-1.5!">Select one or more SDGs for this activity.</x-forms.helper>
                 <p id="activity-sdg-required-reminder" class="mt-1 hidden text-xs font-medium text-amber-700">Please select at least one SDG.</p>
               </div>
 
@@ -306,9 +306,9 @@
             <input type="hidden" name="activities_json" id="activities_json" value="[]" />
             <div id="activities-hidden-inputs"></div>
 
-            <div class="overflow-x-hidden rounded-xl border border-slate-200">
-              <table class="w-full table-auto border-collapse text-left text-sm">
-                <thead class="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+              <table class="min-w-232 w-full divide-y divide-slate-200 text-left text-sm">
+                <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
                     <th scope="col" class="px-4 py-3">Date</th>
                     <th scope="col" class="px-4 py-3">Activity Name</th>
@@ -321,17 +321,17 @@
                     <th scope="col" class="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
-                <tbody id="activities-preview-body" class="divide-y divide-slate-200 bg-white">
+                <tbody id="activities-preview-body" class="divide-y divide-slate-100 bg-white">
                   @if ($calLock && $latestCalendar->entries->isNotEmpty())
                     @foreach ($latestCalendar->entries as $entry)
                       <tr class="align-top">
-                        <td class="px-4 py-3 text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->activity_name }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->target_sdg ?? '—' }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->venue }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->target_participants ?? '—' }}</td>
-                        <td class="px-4 py-3 text-slate-900">{{ $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2) : '—' }}</td>
-                        <td class="px-4 py-3">
+                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
+                        <td class="px-4 py-3.5 text-slate-900"><span class="font-semibold">{{ $entry->activity_name }}</span></td>
+                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->target_sdg ?? '—' }}</td>
+                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->venue }}</td>
+                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->target_participants ?? '—' }}</td>
+                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2) : '—' }}</td>
+                        <td class="px-4 py-3.5">
                           @php
                             $calSt = strtoupper((string) ($latestCalendar->calendar_status ?? ''));
                             $rowStatusLabel = match ($calSt) {
@@ -344,8 +344,8 @@
                           @endphp
                           <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{{ $rowStatusLabel }}</span>
                         </td>
-                        <td class="px-4 py-3 text-sm text-slate-500">For admin use</td>
-                        <td class="px-4 py-3 text-sm text-slate-400">—</td>
+                        <td class="px-4 py-3.5 text-sm font-medium text-slate-600">For admin use</td>
+                        <td class="px-4 py-3.5 text-sm text-slate-400">—</td>
                       </tr>
                     @endforeach
                   @elseif ($calLock)

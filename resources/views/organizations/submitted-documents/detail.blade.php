@@ -90,7 +90,7 @@
         content-padding="px-6" />
       <div class="border-t border-slate-100 px-6 py-4.5">
         <div class="overflow-x-auto rounded-xl border border-slate-200">
-          <table class="min-w-[46rem] w-full divide-y divide-slate-200 text-left text-sm">
+          <table class="min-w-184 w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">Date</th>
@@ -106,15 +106,15 @@
                   $prop = $entry->proposal;
                 @endphp
                 <tr class="align-top">
-                  <td class="whitespace-nowrap px-4 py-3.5 text-slate-800 sm:px-5">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
+                  <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
                   <td class="px-4 py-3.5 text-slate-800 sm:px-5">
-                    <span class="font-medium">{{ $entry->activity_name }}</span>
+                    <span class="font-semibold">{{ $entry->activity_name }}</span>
                     @if ($entry->target_participants)
                       <p class="mt-1 line-clamp-2 text-xs text-slate-500">{{ $entry->target_participants }}</p>
                     @endif
                   </td>
-                  <td class="whitespace-nowrap px-4 py-3.5 text-slate-800 sm:px-5">{{ $entry->target_sdg ?? '—' }}</td>
-                  <td class="px-4 py-3.5 text-slate-800 sm:px-5">{{ $entry->venue }}</td>
+                  <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ $entry->target_sdg ?? '—' }}</td>
+                  <td class="px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ $entry->venue }}</td>
                   <td class="whitespace-nowrap px-4 py-3.5 sm:px-5">
                     @if (! $prop)
                       <span class="inline-flex rounded-full border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">No proposal yet</span>

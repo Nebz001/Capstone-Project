@@ -101,18 +101,18 @@
 
                 <div class="overflow-x-auto rounded-xl border border-slate-200">
                     <table class="min-w-full divide-y divide-slate-200 text-sm">
-                        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                             <tr>
-                                <th class="px-4 py-2.5 text-left">Activity</th>
-                                <th class="px-4 py-2.5 text-left">Proposal Status</th>
-                                <th class="px-4 py-2.5 text-left">Activity Status</th>
-                                <th class="px-4 py-2.5 text-left">Report Eligibility</th>
+                                <th class="px-4 py-3 text-left sm:px-5">Activity</th>
+                                <th class="px-4 py-3 text-left sm:px-5">Proposal Status</th>
+                                <th class="px-4 py-3 text-left sm:px-5">Activity Status</th>
+                                <th class="px-4 py-3 text-left sm:px-5">Report Eligibility</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
                             @foreach ($activities as $activity)
-                                <tr>
-                                    <td class="px-4 py-2.5 text-slate-800">
+                                <tr class="align-top">
+                                    <td class="px-4 py-3.5 text-slate-800 sm:px-5">
                                         <p class="font-semibold">{{ $activity['activity_title'] }}</p>
                                         <p class="text-xs text-slate-500">
                                             {{ optional($activity['start_date'])->format('M j, Y') ?? 'Date N/A' }}
@@ -121,9 +121,9 @@
                                             @endif
                                         </p>
                                     </td>
-                                    <td class="px-4 py-2.5 text-slate-700">{{ $activity['proposal_status_label'] }}</td>
-                                    <td class="px-4 py-2.5 text-slate-700">{{ $activity['lifecycle_label'] }}</td>
-                                    <td class="px-4 py-2.5 text-slate-700">
+                                    <td class="px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $activity['proposal_status_label'] }}</td>
+                                    <td class="px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $activity['lifecycle_label'] }}</td>
+                                    <td class="px-4 py-3.5 text-slate-700 sm:px-5">
                                         @if ($activity['can_submit'])
                                             <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">Allowed</span>
                                         @elseif ($activity['has_report'])
