@@ -63,11 +63,35 @@
           </div>
           <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             @foreach (($section['rows'] ?? []) as $row)
-              <div class="field-review-card rounded-xl border border-slate-200 bg-slate-50/90 p-4">
+              <div class="field-review-card rounded-xl border border-slate-200 bg-slate-50/90 p-4 {{ !empty($row['table']) || ($row['wide'] ?? false) ? 'md:col-span-2' : '' }}">
                 <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">{{ $row['label'] }}</dt>
                 <div class="mt-1.5 field-review-top-row flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0 flex-1">
                     <dd class="whitespace-pre-line text-sm font-medium text-slate-900">{{ $row['value'] }}</dd>
+                    @if (! empty($row['table']) && is_array($row['table']))
+                      <div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                        <table class="min-w-full divide-y divide-slate-200 text-xs">
+                          <thead class="bg-slate-50 text-slate-500">
+                            <tr>
+                              <th class="px-3 py-2 text-left font-semibold uppercase tracking-wide">Material</th>
+                              <th class="px-3 py-2 text-left font-semibold uppercase tracking-wide">Quantity</th>
+                              <th class="px-3 py-2 text-left font-semibold uppercase tracking-wide">Unit Price</th>
+                              <th class="px-3 py-2 text-left font-semibold uppercase tracking-wide">Price</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-100 text-slate-700">
+                            @foreach ($row['table'] as $tableRow)
+                              <tr>
+                                <td class="px-3 py-2">{{ $tableRow['material'] ?? '—' }}</td>
+                                <td class="px-3 py-2">{{ $tableRow['quantity'] ?? '—' }}</td>
+                                <td class="px-3 py-2">{{ $tableRow['unit_price'] ?? '—' }}</td>
+                                <td class="px-3 py-2">{{ $tableRow['price'] ?? '—' }}</td>
+                              </tr>
+                            @endforeach
+                          </tbody>
+                        </table>
+                      </div>
+                    @endif
                     @if (! empty($row['link_url']))
                       <a href="{{ $row['link_url'] }}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex text-xs font-semibold text-[#003E9F] hover:text-[#00327F]">
                         Open / Download file

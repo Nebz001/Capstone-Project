@@ -84,9 +84,43 @@
               <h3 class="mb-2 text-sm font-semibold text-slate-900">{{ $section['title'] ?? 'Details' }}</h3>
               <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 @foreach (($section['rows'] ?? []) as $row)
-                  <div class="{{ $readonlyItemClass }}">
+                  <div class="{{ $readonlyItemClass }} {{ !empty($row['wide']) || !empty($row['table']) ? 'md:col-span-2' : '' }}">
                     <dt class="{{ $readonlyLabelClass }}">{{ $row['label'] }}</dt>
                     <dd class="{{ $readonlyValueClass }}">{{ $row['value'] }}</dd>
+                    @if (! empty($row['link_url']))
+                      <a
+                        href="{{ $row['link_url'] }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="mt-2 inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F]"
+                      >
+                        View file
+                      </a>
+                    @endif
+                    @if (! empty($row['table']) && is_array($row['table']))
+                      <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                        <table class="min-w-160 w-full divide-y divide-slate-200 text-left text-xs sm:text-sm">
+                          <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th class="px-3 py-2.5">Material / item</th>
+                              <th class="px-3 py-2.5">Quantity</th>
+                              <th class="px-3 py-2.5">Unit price</th>
+                              <th class="px-3 py-2.5">Price</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-100">
+                            @foreach ($row['table'] as $budgetRow)
+                              <tr class="align-top">
+                                <td class="px-3 py-2.5 font-medium text-slate-800">{{ $budgetRow['material'] ?? '—' }}</td>
+                                <td class="px-3 py-2.5 text-slate-700">{{ $budgetRow['quantity'] ?? '—' }}</td>
+                                <td class="px-3 py-2.5 text-slate-700">{{ $budgetRow['unit_price'] ?? '—' }}</td>
+                                <td class="px-3 py-2.5 text-slate-700">{{ $budgetRow['price'] ?? '—' }}</td>
+                              </tr>
+                            @endforeach
+                          </tbody>
+                        </table>
+                      </div>
+                    @endif
                   </div>
                 @endforeach
               </dl>

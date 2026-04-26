@@ -34,6 +34,7 @@
   $activeAcademicYear = \App\Models\SystemSetting::activeAcademicYear();
   $requestForm = $requestForm ?? null;
   $hasStep1Autofill = $requestForm !== null;
+  $step1RequestId = (int) old('request_id', request('request_id', $requestForm?->id ?? 0));
   $proposalSource = $proposalSource ?? request('proposal_source', 'calendar');
   if (! in_array($proposalSource, ['calendar', 'unlisted'], true)) {
     $proposalSource = 'calendar';
@@ -83,7 +84,7 @@
       <div class="px-6 py-4.5">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-stretch">
           <a
-            href="{{ route('organizations.activity-proposal-request', ['request_id' => (int) request('request_id'), 'proposal_source' => $proposalSource]) }}"
+            href="{{ route('organizations.activity-proposal-request', ['request_id' => $step1RequestId, 'proposal_source' => $proposalSource]) }}"
             class="flex-1 rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 transition hover:bg-emerald-100"
           >
             <div class="flex items-center gap-2">
@@ -185,7 +186,7 @@
   >
     @csrf
     @if (! $isAdminSubmission)
-      <input type="hidden" name="request_id" value="{{ (int) request('request_id') }}" />
+      <input type="hidden" name="request_id" value="{{ $step1RequestId }}" />
     @endif
     <input type="hidden" name="proposal_source" value="{{ $proposalSource }}" />
     @if ($proposalSource === 'calendar' && $calendarEntry)

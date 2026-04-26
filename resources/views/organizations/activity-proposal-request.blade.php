@@ -25,6 +25,9 @@
   $step2Unlocked = $requestForm !== null;
   $hasCalendarActivities = $hasCalendarActivities ?? false;
   $proposalSource = old('proposal_source', request('proposal_source', $hasCalendarActivities ? 'calendar' : 'unlisted'));
+  if (! $hasCalendarActivities) {
+    $proposalSource = 'unlisted';
+  }
   if (! in_array($proposalSource, ['calendar', 'unlisted'], true)) {
     $proposalSource = $hasCalendarActivities ? 'calendar' : 'unlisted';
   }
@@ -133,20 +136,31 @@
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label
               data-proposal-option="calendar"
-              class="proposal-source-option cursor-pointer rounded-xl border px-4 py-3 transition duration-150 {{ $proposalSource === 'calendar' ? 'border-2 border-[#003E9F] bg-[#003E9F]/10 shadow-sm ring-1 ring-[#003E9F]/20' : 'border-slate-200 bg-white hover:border-slate-300' }}"
+              @class([
+                'proposal-source-option rounded-xl border px-4 py-3 transition duration-150',
+                'border-2 border-[#003E9F] bg-[#003E9F]/10 shadow-sm ring-1 ring-[#003E9F]/20 cursor-pointer' => $hasCalendarActivities && $proposalSource === 'calendar',
+                'border-slate-200 bg-white hover:border-slate-300 cursor-pointer' => $hasCalendarActivities && $proposalSource !== 'calendar',
+                'border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed opacity-80' => ! $hasCalendarActivities,
+              ])
             >
-              <input type="radio" name="proposal_source" value="calendar" class="sr-only" @checked($proposalSource === 'calendar') />
+              <input type="radio" name="proposal_source" value="calendar" class="sr-only" @checked($proposalSource === 'calendar') @disabled(! $hasCalendarActivities) />
               <div class="flex items-start justify-between gap-3">
-                <p data-option-title class="text-sm font-semibold {{ $proposalSource === 'calendar' ? 'text-[#003E9F]' : 'text-slate-900' }}">From submitted Activity Calendar</p>
+                <p data-option-title class="text-sm font-semibold {{ ! $hasCalendarActivities ? 'text-slate-500' : ($proposalSource === 'calendar' ? 'text-[#003E9F]' : 'text-slate-900') }}">From submitted Activity Calendar</p>
                 <span
                   data-option-check
-                  class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold transition {{ $proposalSource === 'calendar' ? 'border-[#003E9F] bg-[#003E9F] text-white' : 'border-slate-300 bg-white text-transparent' }}"
+                  class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold transition {{ ! $hasCalendarActivities ? 'border-slate-300 bg-slate-100 text-transparent' : ($proposalSource === 'calendar' ? 'border-[#003E9F] bg-[#003E9F] text-white' : 'border-slate-300 bg-white text-transparent') }}"
                   aria-hidden="true"
                 >
                   ✓
                 </span>
               </div>
-              <p data-option-helper class="mt-1 text-xs {{ $proposalSource === 'calendar' ? 'text-[#003E9F]/80' : 'text-slate-600' }}">Link this proposal to an activity already listed in your submitted calendar.</p>
+              <p data-option-helper class="mt-1 text-xs {{ ! $hasCalendarActivities ? 'text-slate-500' : ($proposalSource === 'calendar' ? 'text-[#003E9F]/80' : 'text-slate-600') }}">
+                @if ($hasCalendarActivities)
+                  Link this proposal to an activity already listed in your submitted calendar.
+                @else
+                  No submitted activity calendar is available to link. Submit an activity calendar first before using this option.
+                @endif
+              </p>
             </label>
             <label
               data-proposal-option="unlisted"
@@ -166,6 +180,9 @@
               <p data-option-helper class="mt-1 text-xs {{ $proposalSource === 'unlisted' ? 'text-[#003E9F]/80' : 'text-slate-600' }}">Use this for unplanned activities not included in the original calendar (Biglaan).</p>
             </label>
           </div>
+          @error('proposal_source')
+            <x-forms.error class="mt-2">{{ $message }}</x-forms.error>
+          @enderror
           <div id="calendar-link-wrap" class="mt-3 {{ $proposalSource === 'calendar' ? '' : 'hidden' }}">
             <x-forms.label for="activity_calendar_entry_id" required class="{{ $errors->has('activity_calendar_entry_id') ? '!text-rose-700' : '' }}">Select submitted calendar activity to link</x-forms.label>
             <x-forms.select id="activity_calendar_entry_id" name="activity_calendar_entry_id" :required="$proposalSource === 'calendar'" class="{{ $errors->has('activity_calendar_entry_id') ? '!border-rose-400 !ring-rose-500/20 focus:!border-rose-500 focus:!ring-rose-500/20' : '' }}">
@@ -419,16 +436,13 @@
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             <p class="text-sm font-semibold text-slate-900">Request Letter <span class="text-rose-600">*</span></p>
             <p class="mt-1 text-xs text-slate-600">The request letter must include rationale, objectives, and program.</p>
-            <div class="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-100/70 p-2.5">
-              <x-forms.choice id="request_letter_has_rationale" name="request_letter_has_rationale" type="checkbox" value="1" :checked="old('request_letter_has_rationale', $requestForm?->request_letter_has_rationale ? '1' : '') == '1'">
-                Includes Rationale
-              </x-forms.choice>
-              <x-forms.choice id="request_letter_has_objectives" name="request_letter_has_objectives" type="checkbox" value="1" :checked="old('request_letter_has_objectives', $requestForm?->request_letter_has_objectives ? '1' : '') == '1'">
-                Includes Objectives
-              </x-forms.choice>
-              <x-forms.choice id="request_letter_has_program" name="request_letter_has_program" type="checkbox" value="1" :checked="old('request_letter_has_program', $requestForm?->request_letter_has_program ? '1' : '') == '1'">
-                Includes Program
-              </x-forms.choice>
+            <div class="mt-2 rounded-lg border border-slate-200 bg-slate-100/70 p-2.5">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-700">Required contents of the request letter:</p>
+              <ul class="mt-1.5 list-disc space-y-1 pl-5 text-xs text-slate-700">
+                <li>Rationale</li>
+                <li>Objectives</li>
+                <li>Program</li>
+              </ul>
             </div>
             <div class="mt-2">
               @if ($requestLetterLink)
@@ -504,6 +518,8 @@
 <script>
   (() => {
     const proposalSourceRadios = Array.from(document.querySelectorAll('input[name="proposal_source"]'));
+    const calendarSourceRadio = proposalSourceRadios.find((radio) => radio.value === 'calendar');
+    const unlistedSourceRadio = proposalSourceRadios.find((radio) => radio.value === 'unlisted');
     const proposalForm = document.getElementById('activity-proposal-request-form');
     const calendarLinkWrap = document.getElementById('calendar-link-wrap');
     const proposalSourceCards = Array.from(document.querySelectorAll('[data-proposal-option]'));
@@ -533,11 +549,17 @@
 
     const selectedProposalSource = () => {
       const hit = proposalSourceRadios.find((r) => r.checked);
-      return hit ? hit.value : 'calendar';
+      return hit ? hit.value : 'unlisted';
     };
 
     const syncProposalSourceUi = () => {
-      const source = selectedProposalSource();
+      let source = selectedProposalSource();
+      if (source === 'calendar' && calendarSourceRadio && calendarSourceRadio.disabled) {
+        if (unlistedSourceRadio) {
+          unlistedSourceRadio.checked = true;
+          source = 'unlisted';
+        }
+      }
       const isCalendar = source === 'calendar';
 
       if (calendarLinkWrap) {
@@ -568,36 +590,45 @@
       }
 
       proposalSourceCards.forEach((card) => {
+        const option = card.getAttribute('data-proposal-option');
+        const isDisabledOption = option === 'calendar' && calendarSourceRadio && calendarSourceRadio.disabled;
         const isActive = card.getAttribute('data-proposal-option') === source;
-        card.classList.toggle('border-2', isActive);
-        card.classList.toggle('border-[#003E9F]', isActive);
-        card.classList.toggle('bg-[#003E9F]/10', isActive);
-        card.classList.toggle('shadow-sm', isActive);
-        card.classList.toggle('ring-1', isActive);
-        card.classList.toggle('ring-[#003E9F]/20', isActive);
-        card.classList.toggle('border-slate-200', !isActive);
-        card.classList.toggle('bg-white', !isActive);
-        card.classList.toggle('hover:border-slate-300', !isActive);
+        card.classList.toggle('border-2', isActive && !isDisabledOption);
+        card.classList.toggle('border-[#003E9F]', isActive && !isDisabledOption);
+        card.classList.toggle('bg-[#003E9F]/10', isActive && !isDisabledOption);
+        card.classList.toggle('shadow-sm', isActive && !isDisabledOption);
+        card.classList.toggle('ring-1', isActive && !isDisabledOption);
+        card.classList.toggle('ring-[#003E9F]/20', isActive && !isDisabledOption);
+        card.classList.toggle('border-slate-200', !isActive || isDisabledOption);
+        card.classList.toggle('bg-white', !isActive && !isDisabledOption);
+        card.classList.toggle('bg-slate-100', isDisabledOption);
+        card.classList.toggle('hover:border-slate-300', !isActive && !isDisabledOption);
+        card.classList.toggle('cursor-pointer', !isDisabledOption);
+        card.classList.toggle('cursor-not-allowed', isDisabledOption);
+        card.classList.toggle('opacity-80', isDisabledOption);
 
         const title = card.querySelector('[data-option-title]');
         if (title) {
-          title.classList.toggle('text-[#003E9F]', isActive);
-          title.classList.toggle('text-slate-900', !isActive);
+          title.classList.toggle('text-[#003E9F]', isActive && !isDisabledOption);
+          title.classList.toggle('text-slate-900', !isActive && !isDisabledOption);
+          title.classList.toggle('text-slate-500', isDisabledOption);
         }
 
         const helper = card.querySelector('[data-option-helper]');
         if (helper) {
-          helper.classList.toggle('text-[#003E9F]/80', isActive);
-          helper.classList.toggle('text-slate-600', !isActive);
+          helper.classList.toggle('text-[#003E9F]/80', isActive && !isDisabledOption);
+          helper.classList.toggle('text-slate-600', !isActive && !isDisabledOption);
+          helper.classList.toggle('text-slate-500', isDisabledOption);
         }
 
         const check = card.querySelector('[data-option-check]');
         if (check) {
-          check.classList.toggle('border-[#003E9F]', isActive);
-          check.classList.toggle('bg-[#003E9F]', isActive);
-          check.classList.toggle('text-white', isActive);
-          check.classList.toggle('border-slate-300', !isActive);
-          check.classList.toggle('bg-white', !isActive);
+          check.classList.toggle('border-[#003E9F]', isActive && !isDisabledOption);
+          check.classList.toggle('bg-[#003E9F]', isActive && !isDisabledOption);
+          check.classList.toggle('text-white', isActive && !isDisabledOption);
+          check.classList.toggle('border-slate-300', !isActive || isDisabledOption);
+          check.classList.toggle('bg-white', !isActive && !isDisabledOption);
+          check.classList.toggle('bg-slate-100', isDisabledOption);
           check.classList.toggle('text-transparent', !isActive);
         }
       });

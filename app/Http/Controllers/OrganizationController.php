@@ -28,7 +28,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -1314,12 +1313,13 @@ class OrganizationController extends Controller
         }
 
         $requestForm = $this->resolveEditableActivityRequestForm($request, $organization);
-        $hasCalendarActivities = ActivityCalendar::query()
+        $submittedCalendarQuery = ActivityCalendar::query()
             ->where('organization_id', $organization->id)
-            ->whereHas('entries')
+            ->where('status', '!=', 'draft')
+            ->whereHas('entries');
+        $hasCalendarActivities = (clone $submittedCalendarQuery)
             ->exists();
-        $latestCalendar = ActivityCalendar::query()
-            ->where('organization_id', $organization->id)
+        $latestCalendar = (clone $submittedCalendarQuery)
             ->with([
                 'entries' => fn ($q) => $q->with('proposal')->orderBy('activity_date')->orderBy('id'),
             ])
@@ -1327,6 +1327,9 @@ class OrganizationController extends Controller
             ->latest('id')
             ->first();
         $calendarEntries = $latestCalendar?->entries ?? collect();
+        if ($calendarEntries->isEmpty()) {
+            $hasCalendarActivities = false;
+        }
 
         return view('organizations.activity-proposal-request', [
             'organization' => $organization,
@@ -1370,6 +1373,12 @@ class OrganizationController extends Controller
                 ->route('organizations.activity-proposal-request')
                 ->with('error', 'Your organization registration is not yet approved by SDAO. You cannot submit an activity proposal until your registration is approved.');
         }
+
+        $hasSubmittedCalendarActivities = ActivityCalendar::query()
+            ->where('organization_id', $organization->id)
+            ->where('status', '!=', 'draft')
+            ->whereHas('entries')
+            ->exists();
 
         // Always bind RSO name to the logged-in officer's linked organization.
         $request->merge([
@@ -1420,9 +1429,6 @@ class OrganizationController extends Controller
             'budget_source' => ['required', 'string', Rule::in(['RSO Fund', 'RSO Savings', 'External'])],
             'activity_date' => ['required', 'date'],
             'venue' => ['required', 'string', 'max:255'],
-            'request_letter_has_rationale' => ['nullable', 'boolean'],
-            'request_letter_has_objectives' => ['nullable', 'boolean'],
-            'request_letter_has_program' => ['nullable', 'boolean'],
             'request_letter' => [
                 Rule::requiredIf(fn () => ! $editableRequest || ! $existingRequestLetterPath),
                 'nullable',
@@ -1450,12 +1456,21 @@ class OrganizationController extends Controller
             'activity_types.size' => 'Select exactly one Type of Activity option.',
         ]);
 
+        if ((string) ($validated['proposal_source'] ?? '') === 'calendar' && ! $hasSubmittedCalendarActivities) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'proposal_source' => 'No submitted activity calendar is available to link. Submit an activity calendar first before using this option.',
+                ]);
+        }
+
         $selectedCalendarEntry = null;
         if ((string) $validated['proposal_source'] === 'calendar') {
             $selectedCalendarEntry = ActivityCalendarEntry::query()
                 ->whereKey((int) ($validated['activity_calendar_entry_id'] ?? 0))
                 ->whereHas('activityCalendar', function ($q) use ($organization): void {
-                    $q->where('organization_id', $organization->id);
+                    $q->where('organization_id', $organization->id)
+                        ->where('status', '!=', 'draft');
                 })
                 ->first();
 
@@ -1492,9 +1507,6 @@ class OrganizationController extends Controller
         if ($request->hasFile('speaker_resume')) {
             $speakerResumePath = $request->file('speaker_resume')->store($basePath, 'public');
         }
-        if (! in_array('seminar_workshop', (array) $validated['activity_types'], true)) {
-            $speakerResumePath = null;
-        }
 
         $postSurveyPath = null;
         if ($request->hasFile('post_survey_form')) {
@@ -1520,12 +1532,6 @@ class OrganizationController extends Controller
             'promoted_at' => null,
         ];
 
-        if ($this->supportsActivityRequestChecklistColumns()) {
-            $payload['request_letter_has_rationale'] = $request->boolean('request_letter_has_rationale');
-            $payload['request_letter_has_objectives'] = $request->boolean('request_letter_has_objectives');
-            $payload['request_letter_has_program'] = $request->boolean('request_letter_has_program');
-        }
-
         if ($editableRequest) {
             $editableRequest->update($payload);
             $activityRequest = $editableRequest;
@@ -1550,10 +1556,6 @@ class OrganizationController extends Controller
                 (string) $speakerResumePath,
                 $request->file('speaker_resume')
             );
-        } elseif (! in_array('seminar_workshop', (array) $validated['activity_types'], true)) {
-            $activityRequest->attachments()
-                ->where('file_type', Attachment::TYPE_REQUEST_SPEAKER_RESUME)
-                ->delete();
         }
         if ($request->hasFile('post_survey_form')) {
             $this->upsertSingleAttachment(
@@ -3013,22 +3015,6 @@ class OrganizationController extends Controller
         }
 
         return $links;
-    }
-
-    private function supportsActivityRequestChecklistColumns(): bool
-    {
-        static $supported;
-
-        if ($supported !== null) {
-            return $supported;
-        }
-
-        $supported = Schema::hasTable('activity_request_forms')
-            && Schema::hasColumn('activity_request_forms', 'request_letter_has_rationale')
-            && Schema::hasColumn('activity_request_forms', 'request_letter_has_objectives')
-            && Schema::hasColumn('activity_request_forms', 'request_letter_has_program');
-
-        return $supported;
     }
 
     /**

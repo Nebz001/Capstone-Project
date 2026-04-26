@@ -568,7 +568,7 @@ class ApproverDashboardController extends Controller
         if ($approvable instanceof ActivityCalendar) {
             $approvable->load(['entries' => fn ($query) => $query->orderBy('activity_date')->orderBy('id')]);
         } elseif ($approvable instanceof ActivityProposal) {
-            $approvable->load(['calendar', 'calendarEntry', 'academicTerm', 'attachments']);
+            $approvable->load(['calendar', 'calendarEntry', 'academicTerm', 'attachments', 'budgetItems']);
         }
     }
 
@@ -606,6 +606,13 @@ class ApproverDashboardController extends Controller
                 : '—';
             $proposalTime = $this->proposalTimeRangeLabel($approvable);
             $department = (string) ($approvable->school_code ?: ($approvable->organization?->college_school ?? ''));
+            $step1ActivityDate = $requestForm?->activity_date
+                ? optional($requestForm->activity_date)->format('M d, Y')
+                : null;
+            $sourceOfFunding = (string) ($approvable->source_of_funding ?? '');
+            $isExternalFunding = strtoupper($sourceOfFunding) === 'EXTERNAL';
+            $budgetRows = $approvable->budgetItems->values();
+            $budgetRowsTotal = $budgetRows->sum(fn ($row) => (float) ($row->total_cost ?? 0));
 
             $base['Activity Title'] = $approvable->activity_title ?? 'N/A';
             $base['Proposed Dates'] = trim(collect([
@@ -617,12 +624,15 @@ class ApproverDashboardController extends Controller
             $step1Rows = [
                 ['key' => 'step1_proposal_option', 'label' => 'Proposal Option', 'value' => $approvable->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar'],
                 ['key' => 'step1_rso_name', 'label' => 'RSO Name', 'value' => $requestForm?->rso_name ?: ($approvable->organization?->organization_name ?? '—')],
+                ['key' => 'step1_activity_title', 'label' => 'Title of Activity', 'value' => $requestForm?->activity_title ?: '—'],
                 ['key' => 'step1_partner_entities', 'label' => 'Partner Entities', 'value' => $requestForm?->partner_entities ?: '—'],
                 ['key' => 'step1_nature_of_activity', 'label' => 'Nature of Activity', 'value' => $this->requestFormOptionsLabel((array) ($requestForm?->nature_of_activity ?? []), $requestForm?->nature_other)],
                 ['key' => 'step1_type_of_activity', 'label' => 'Type of Activity', 'value' => $this->requestFormOptionsLabel((array) ($requestForm?->activity_types ?? []), $requestForm?->activity_type_other)],
                 ['key' => 'step1_target_sdg', 'label' => 'Target SDG', 'value' => $requestForm?->target_sdg ?: ($approvable->target_sdg ?: '—')],
                 ['key' => 'step1_proposed_budget', 'label' => 'Step 1 Proposed Budget', 'value' => $requestForm?->proposed_budget !== null ? number_format((float) $requestForm->proposed_budget, 2) : '—'],
                 ['key' => 'step1_budget_source', 'label' => 'Step 1 Budget Source', 'value' => $requestForm?->budget_source ?: '—'],
+                ['key' => 'step1_activity_date', 'label' => 'Date of Activity', 'value' => $step1ActivityDate ?: '—'],
+                ['key' => 'step1_venue', 'label' => 'Venue', 'value' => $requestForm?->venue ?: '—'],
             ];
             if ($approvable->activity_calendar_entry_id) {
                 array_splice($step1Rows, 2, 0, [
@@ -632,11 +642,12 @@ class ApproverDashboardController extends Controller
             }
 
             $step2Rows = [
-                ['key' => 'step2_activity_title', 'label' => 'Activity Title', 'value' => $approvable->activity_title ?: '—'],
+                ['key' => 'step2_organization_logo', 'label' => 'Organization Logo', 'value' => $this->proposalReviewFilePathByKey($approvable, $requestForm, 'organization_logo') ? 'Submitted file attached.' : '—', 'link_url' => $this->proposalReviewFilePathByKey($approvable, $requestForm, 'organization_logo') ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => 'organization_logo']) : null],
                 ['key' => 'step2_organization', 'label' => 'Organization (Form)', 'value' => $approvable->organization?->organization_name ?: '—'],
                 ['key' => 'step2_academic_year', 'label' => 'Academic Year', 'value' => $approvable->academicTerm?->academic_year ?: '—'],
                 ['key' => 'step2_department', 'label' => 'Department', 'value' => $department !== '' ? $department : '—'],
                 ['key' => 'step2_program', 'label' => 'Program', 'value' => $approvable->program ?: '—'],
+                ['key' => 'step2_activity_title', 'label' => 'Project / Activity Title', 'value' => $approvable->activity_title ?: '—'],
                 ['key' => 'step2_proposed_dates', 'label' => 'Proposed Dates', 'value' => trim(collect([
                     optional($approvable->proposed_start_date)->format('M d, Y'),
                     optional($approvable->proposed_end_date)->format('M d, Y'),
@@ -648,8 +659,45 @@ class ApproverDashboardController extends Controller
                 ['key' => 'step2_criteria_mechanics', 'label' => 'Criteria / Mechanics', 'value' => $approvable->criteria_mechanics ?: '—'],
                 ['key' => 'step2_program_flow', 'label' => 'Program Flow', 'value' => $approvable->program_flow ?: '—'],
                 ['key' => 'step2_budget_total', 'label' => 'Proposed Budget (Total)', 'value' => $approvable->estimated_budget !== null ? number_format((float) $approvable->estimated_budget, 2) : '—'],
-                ['key' => 'step2_source_of_funding', 'label' => 'Source of Funding', 'value' => $approvable->source_of_funding ?: '—'],
+                ['key' => 'step2_source_of_funding', 'label' => 'Source of Funding', 'value' => $sourceOfFunding !== '' ? $sourceOfFunding : '—'],
+                [
+                    'key' => 'step2_budget_table',
+                    'label' => 'Detailed Budget Table',
+                    'value' => $budgetRows->count() > 0 ? ('Rows: '.$budgetRows->count().' · Total: '.number_format((float) $budgetRowsTotal, 2)) : 'No rows submitted.',
+                    'table' => $budgetRows->map(function ($row): array {
+                        $material = trim((string) ($row->item_description ?? $row->particulars ?? ''));
+                        return [
+                            'material' => $material !== '' ? $material : '—',
+                            'quantity' => $row->quantity !== null ? (string) $row->quantity : '—',
+                            'unit_price' => $row->unit_cost !== null ? number_format((float) $row->unit_cost, 2) : '—',
+                            'price' => $row->total_cost !== null ? number_format((float) $row->total_cost, 2) : '—',
+                        ];
+                    })->all(),
+                ],
             ];
+            if ($isExternalFunding) {
+                $externalLink = $this->proposalReviewFilePathByKey($approvable, $requestForm, 'external_funding')
+                    ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => 'external_funding'])
+                    : null;
+                $step2Rows[] = [
+                    'key' => 'step2_external_funding_support',
+                    'label' => 'External Funding Support',
+                    'value' => $externalLink ? 'Submitted file attached.' : 'Missing required file.',
+                    'link_url' => $externalLink,
+                ];
+            }
+            $additionalRows = [];
+            $resourceResumeLink = $this->proposalReviewFilePathByKey($approvable, $requestForm, 'resource_resume')
+                ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => 'resource_resume'])
+                : null;
+            if ($resourceResumeLink) {
+                $additionalRows[] = [
+                    'key' => 'step2_resume_resource_persons',
+                    'label' => 'Resume of Resource Person/s',
+                    'value' => 'Submitted file attached.',
+                    'link_url' => $resourceResumeLink,
+                ];
+            }
 
             $mapReview = function (array $row) use ($existingFieldReviews): array {
                 $review = $existingFieldReviews->get($row['key']);
@@ -662,42 +710,28 @@ class ApproverDashboardController extends Controller
             };
             $step1Rows = array_map($mapReview, $step1Rows);
             $step2Rows = array_map($mapReview, $step2Rows);
-
-            $proposalFileLinks = [
-                ['label' => 'Organization Logo', 'key' => 'organization_logo'],
-                ['label' => 'Upload Request Letter', 'key' => 'request_letter'],
-                ['label' => 'Resume of Speaker', 'key' => 'speaker_resume'],
-                ['label' => 'Sample Post-Survey Form', 'key' => 'post_survey_form'],
-            ];
-            $proposalFileLinks = collect($proposalFileLinks)
-                ->filter(fn (array $item): bool => $this->proposalReviewFilePathByKey($approvable, $requestForm, $item['key']) !== null)
-                ->map(fn (array $item): array => [
+            $step1AttachmentRows = [];
+            foreach ([
+                ['key' => 'request_letter', 'label' => 'Upload Request Letter'],
+                ['key' => 'speaker_resume', 'label' => 'Resume of Speaker'],
+                ['key' => 'post_survey_form', 'label' => 'Sample Post-Survey Form'],
+            ] as $item) {
+                $url = $this->proposalReviewFilePathByKey($approvable, $requestForm, $item['key']) !== null
+                    ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => $item['key']])
+                    : null;
+                if (! $url) {
+                    continue;
+                }
+                $step1AttachmentRows[] = $mapReview([
+                    'key' => 'step1_'.$item['key'],
                     'label' => $item['label'],
-                    'key' => $item['key'],
-                    'url' => route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => $item['key']]),
-                ])
-                ->values()
-                ->all();
-            $fileReviewRows = collect($proposalFileLinks)
-                ->map(function (array $file) use ($existingFieldReviews): array {
-                    $reviewKey = 'file_'.$file['key'];
-                    $review = $existingFieldReviews->get($reviewKey);
+                    'value' => 'Submitted file attached.',
+                    'link_url' => $url,
+                ]);
+            }
+            $additionalRows = array_map($mapReview, $additionalRows);
 
-                    return [
-                        'key' => $reviewKey,
-                        'label' => $file['label'],
-                        'value' => 'Submitted file attached.',
-                        'link_url' => $file['url'],
-                        'review' => [
-                            'status' => (string) ($review?->status ?? ''),
-                            'comment' => (string) ($review?->comment ?? ''),
-                        ],
-                    ];
-                })
-                ->values()
-                ->all();
-
-            $reviewableKeys = collect([$step1Rows, $step2Rows, $fileReviewRows])
+            $reviewableKeys = collect([$step1Rows, $step1AttachmentRows, $step2Rows, $additionalRows])
                 ->flatten(1)
                 ->map(fn (array $row): string => (string) ($row['key'] ?? ''))
                 ->filter(fn (string $key): bool => $key !== '')
@@ -709,11 +743,11 @@ class ApproverDashboardController extends Controller
                 'page_title' => $this->resolveDocumentType($approvable)['label'].' Review',
                 'details' => $base,
                 'detail_sections' => [
-                    ['title' => 'Step 1: Activity Request Form', 'rows' => $step1Rows],
+                    ['title' => 'Step 1: Activity Request Form', 'rows' => array_merge($step1Rows, $step1AttachmentRows)],
                     ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
-                    ['title' => 'Submitted Files', 'rows' => $fileReviewRows],
+                    ...($additionalRows !== [] ? [['title' => 'Additional', 'rows' => $additionalRows]] : []),
                 ],
-                'proposal_file_links' => $proposalFileLinks,
+                'proposal_file_links' => [],
                 'is_proposal_review' => true,
                 'scoped_status' => $stageStatus,
                 'calendar_entries' => collect(),
@@ -785,6 +819,8 @@ class ApproverDashboardController extends Controller
     {
         $proposalType = match ($key) {
             'organization_logo' => Attachment::TYPE_PROPOSAL_LOGO,
+            'resource_resume' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
+            'external_funding' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
             default => null,
         };
         if ($proposalType !== null) {

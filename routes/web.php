@@ -174,11 +174,15 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
 
     Route::get('/activity-calendars', 'calendars')->name('calendars.index');
     Route::get('/activity-calendars/{calendar}', 'showCalendar')->name('calendars.show');
+    Route::get('/activity-calendars/{calendar}/file', 'streamCalendarFile')->name('calendars.file');
     Route::patch('/activity-calendars/{calendar}/review-draft', 'saveCalendarReviewDraft')->name('calendars.review-draft');
     Route::patch('/activity-calendars/{calendar}/status', 'updateCalendarStatus')->name('calendars.update-status');
 
     Route::get('/activity-proposals', 'proposals')->name('proposals.index');
     Route::get('/activity-proposals/{proposal}', 'showProposal')->name('proposals.show');
+    Route::get('/activity-proposals/{proposal}/files/{key}', 'streamProposalFile')
+        ->name('proposals.file')
+        ->where('key', '[a-z_]+');
     Route::patch('/activity-proposals/{proposal}/review-draft', 'saveProposalReviewDraft')->name('proposals.review-draft');
     Route::patch('/activity-proposals/{proposal}/status', 'updateProposalStatus')->name('proposals.update-status');
     Route::patch('/activity-proposals/{proposal}/workflow', 'updateProposalWorkflow')->name('proposals.workflow');

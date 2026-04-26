@@ -338,31 +338,27 @@ class OrganizationSubmittedDocumentsController extends Controller
     public function showSubmittedActivityProposal(Request $request, ActivityProposal $proposal): View
     {
         $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
-        $proposal->load(['calendar', 'calendarEntry', 'academicTerm', 'organization']);
+        $proposal->load(['calendar', 'calendarEntry', 'academicTerm', 'organization', 'budgetItems']);
 
         $sp = $this->submissionStatusPresentation($proposal->status, true);
         $revisionSections = $this->moduleRevisionSections(is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : []);
-        $fileLinks = [];
-        if ($this->proposalFilePathByKey($proposal, 'logo')) {
-            $fileLinks[] = [
-                'label' => 'Organization logo',
-                'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'logo']),
-            ];
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $resolvedFilePaths = [];
+        foreach (['logo', 'request_letter', 'speaker_resume', 'post_survey_form', 'external', 'resume'] as $fileKey) {
+            $resolvedPath = $this->proposalResolvedFilePathByKey($proposal, $requestForm, $fileKey);
+            if ($resolvedPath !== null) {
+                $resolvedFilePaths[$fileKey] = $resolvedPath;
+            }
         }
-        if ($this->proposalFilePathByKey($proposal, 'external')) {
-            $fileLinks[] = [
-                'label' => 'External funding support (letter / proof)',
-                'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'external']),
-            ];
-        }
-        if ($this->proposalFilePathByKey($proposal, 'resume')) {
-            $fileLinks[] = [
-                'label' => 'Résumé / resource persons',
-                'url' => route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => 'resume']),
-            ];
+        $fileUrls = [];
+        foreach ($resolvedFilePaths as $fileKey => $resolvedPath) {
+            $fileUrls[$fileKey] = route('organizations.submitted-documents.proposals.file', [
+                'proposal' => $proposal,
+                'key' => $fileKey,
+                'p' => $this->encodePathParam($resolvedPath),
+            ]);
         }
 
-        $requestForm = $this->relatedRequestFormForProposal($proposal);
         $school = $this->proposalSchoolLabel($proposal);
         $proposalTime = $this->proposalTimeRangeLabel($proposal);
         $proposalDates = trim(collect([
@@ -407,39 +403,146 @@ class OrganizationSubmittedDocumentsController extends Controller
             ? trim(($proposal->calendarEntry->activity_name ?? '—').' · '.(optional($proposal->calendarEntry->activity_date)->format('M j, Y') ?? ''))
             : '—';
         $isCalendarLinkedProposal = $proposal->activity_calendar_entry_id !== null;
+        $step1ActivityDate = $requestForm?->activity_date
+            ? optional($requestForm->activity_date)->format('M j, Y')
+            : null;
+
         $step1Rows = [
-            ['label' => 'Proposal option', 'value' => $proposal->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar'],
-            ['label' => 'RSO name', 'value' => $requestForm?->rso_name ?: ($proposal->organization?->organization_name ?? '—')],
-            ['label' => 'Partner entities', 'value' => $requestForm?->partner_entities ?: '—'],
-            ['label' => 'Nature of activity', 'value' => $nature],
-            ['label' => 'Type of activity', 'value' => $types],
-            ['label' => 'Target SDG', 'value' => $targetSdg ?: '—'],
-            ['label' => 'Step 1 proposed budget', 'value' => $requestForm?->proposed_budget !== null ? number_format((float) $requestForm->proposed_budget, 2) : '—'],
-            ['label' => 'Step 1 budget source', 'value' => $requestForm?->budget_source ?: '—'],
+            ['key' => 'step1_proposal_option', 'label' => 'Proposal option', 'value' => $proposal->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar'],
+            ['key' => 'step1_rso_name', 'label' => 'RSO name', 'value' => $requestForm?->rso_name ?: ($proposal->organization?->organization_name ?? '—')],
+            ['key' => 'step1_activity_title', 'label' => 'Title of activity', 'value' => $requestForm?->activity_title ?: '—'],
+            ['key' => 'step1_partner_entities', 'label' => 'Partner entities', 'value' => $requestForm?->partner_entities ?: '—'],
+            ['key' => 'step1_nature_of_activity', 'label' => 'Nature of activity', 'value' => $nature],
+            ['key' => 'step1_type_of_activity', 'label' => 'Type of activity', 'value' => $types],
+            ['key' => 'step1_target_sdg', 'label' => 'Target SDG', 'value' => $targetSdg ?: '—'],
+            ['key' => 'step1_proposed_budget', 'label' => 'Step 1 proposed budget', 'value' => $requestForm?->proposed_budget !== null ? number_format((float) $requestForm->proposed_budget, 2) : '—'],
+            ['key' => 'step1_budget_source', 'label' => 'Step 1 budget source', 'value' => $requestForm?->budget_source ?: '—'],
+            ['key' => 'step1_activity_date', 'label' => 'Date of activity', 'value' => $step1ActivityDate ?: '—'],
+            ['key' => 'step1_venue', 'label' => 'Venue', 'value' => $requestForm?->venue ?: '—'],
         ];
         if ($isCalendarLinkedProposal) {
             array_splice($step1Rows, 2, 0, [
-                ['label' => 'Linked activity calendar', 'value' => $linkedCalendarLabel],
-                ['label' => 'Calendar activity row', 'value' => $calendarRowLabel],
+                ['key' => 'step1_linked_activity_calendar', 'label' => 'Linked activity calendar', 'value' => $linkedCalendarLabel],
+                ['key' => 'step1_calendar_activity_row', 'label' => 'Calendar activity row', 'value' => $calendarRowLabel],
             ]);
         }
+
+        $step1AttachmentRows = [];
+        if (isset($resolvedFilePaths['request_letter'])) {
+            $step1AttachmentRows[] = [
+                'key' => 'step1_request_letter',
+                'label' => 'Request letter',
+                'value' => 'Submitted file attached.',
+                'link_url' => $fileUrls['request_letter'] ?? null,
+            ];
+        } else {
+            $step1AttachmentRows[] = [
+                'key' => 'step1_request_letter_unavailable',
+                'label' => 'Request letter',
+                'value' => 'File unavailable',
+            ];
+        }
+        if (isset($resolvedFilePaths['speaker_resume'])) {
+            $step1AttachmentRows[] = [
+                'key' => 'step1_speaker_resume',
+                'label' => 'Resume of speaker',
+                'value' => 'Submitted file attached.',
+                'link_url' => $fileUrls['speaker_resume'] ?? null,
+            ];
+        }
+        if (isset($resolvedFilePaths['post_survey_form'])) {
+            $step1AttachmentRows[] = [
+                'key' => 'step1_post_survey_form',
+                'label' => 'Sample post-survey form',
+                'value' => 'Submitted file attached.',
+                'link_url' => $fileUrls['post_survey_form'] ?? null,
+            ];
+        }
+
+        $budgetRows = $proposal->budgetItems->values();
+        $budgetRowsTotal = $budgetRows->sum(fn ($row) => (float) ($row->total_cost ?? 0));
+        $sourceOfFunding = (string) ($proposal->source_of_funding ?? '');
+        $isExternalFunding = strtoupper($sourceOfFunding) === 'EXTERNAL';
         $step2Rows = [
-            ['label' => 'Activity title', 'value' => $proposal->activity_title ?? '—'],
-            ['label' => 'Organization (form)', 'value' => $proposal->organization?->organization_name ?? '—'],
-            ['label' => 'Academic year', 'value' => $proposal->academicTerm?->academic_year ?? $proposal->calendar?->academic_year ?? '—'],
-            ['label' => 'Department', 'value' => $school],
-            ['label' => 'Program', 'value' => $proposal->program ?: ($proposal->organization?->college_department ?? '—')],
-            ['label' => 'Proposed dates', 'value' => $proposalDates],
-            ['label' => 'Proposed time', 'value' => $proposalTime],
-            ['label' => 'Venue', 'value' => $proposal->venue ?? '—'],
-            ['label' => 'Overall goal', 'value' => $proposal->overall_goal ?: '—'],
-            ['label' => 'Specific objectives', 'value' => $proposal->specific_objectives ?: '—'],
-            ['label' => 'Criteria / mechanics', 'value' => $proposal->criteria_mechanics ?: '—'],
-            ['label' => 'Program flow', 'value' => $proposal->program_flow ?: '—'],
-            ['label' => 'Proposed budget (total)', 'value' => $proposal->estimated_budget !== null ? number_format((float) $proposal->estimated_budget, 2) : '—'],
-            ['label' => 'Source of funding', 'value' => $proposal->source_of_funding ?: '—'],
-            ['label' => 'Submitted', 'value' => optional($proposal->submission_date)->format('M j, Y') ?? '—'],
+            [
+                'key' => 'step2_organization_logo',
+                'label' => 'Organization logo',
+                'value' => isset($resolvedFilePaths['logo']) ? 'Submitted file attached.' : 'File unavailable',
+                'link_url' => isset($resolvedFilePaths['logo'])
+                    ? ($fileUrls['logo'] ?? null)
+                    : null,
+            ],
+            ['key' => 'step2_organization', 'label' => 'Organization (form)', 'value' => $proposal->organization?->organization_name ?? '—'],
+            ['key' => 'step2_academic_year', 'label' => 'Academic year', 'value' => $proposal->academicTerm?->academic_year ?? $proposal->calendar?->academic_year ?? '—'],
+            ['key' => 'step2_department', 'label' => 'Department', 'value' => $school],
+            ['key' => 'step2_program', 'label' => 'Program', 'value' => $proposal->program ?: '—'],
+            ['key' => 'step2_activity_title', 'label' => 'Project / activity title', 'value' => $proposal->activity_title ?? '—'],
+            ['key' => 'step2_proposed_dates', 'label' => 'Proposed dates', 'value' => $proposalDates],
+            ['key' => 'step2_proposed_time', 'label' => 'Proposed time', 'value' => $proposalTime],
+            ['key' => 'step2_venue', 'label' => 'Venue', 'value' => $proposal->venue ?? '—'],
+            ['key' => 'step2_overall_goal', 'label' => 'Overall goal', 'value' => $proposal->overall_goal ?: '—', 'wide' => true],
+            ['key' => 'step2_specific_objectives', 'label' => 'Specific objectives', 'value' => $proposal->specific_objectives ?: '—', 'wide' => true],
+            ['key' => 'step2_criteria_mechanics', 'label' => 'Criteria / mechanics', 'value' => $proposal->criteria_mechanics ?: '—', 'wide' => true],
+            ['key' => 'step2_program_flow', 'label' => 'Program flow', 'value' => $proposal->program_flow ?: '—', 'wide' => true],
+            ['key' => 'step2_budget_total', 'label' => 'Proposed budget (total)', 'value' => $proposal->estimated_budget !== null ? number_format((float) $proposal->estimated_budget, 2) : '—'],
+            ['key' => 'step2_source_of_funding', 'label' => 'Source of funding', 'value' => $sourceOfFunding !== '' ? $sourceOfFunding : '—'],
+            [
+                'key' => 'step2_budget_table',
+                'label' => 'Detailed budget table',
+                'value' => $budgetRows->count() > 0 ? ('Rows: '.$budgetRows->count().' · Total: '.number_format((float) $budgetRowsTotal, 2)) : 'No rows submitted.',
+                'table' => $budgetRows->map(function ($row): array {
+                    return [
+                        'material' => (string) ($row->item_description ?? '—'),
+                        'quantity' => $row->quantity !== null ? (string) $row->quantity : '—',
+                        'unit_price' => $row->unit_cost !== null ? number_format((float) $row->unit_cost, 2) : '—',
+                        'price' => $row->total_cost !== null ? number_format((float) $row->total_cost, 2) : '—',
+                    ];
+                })->all(),
+                'wide' => true,
+            ],
+            ['key' => 'step2_submitted', 'label' => 'Submitted', 'value' => optional($proposal->submission_date)->format('M j, Y') ?? '—'],
         ];
+        if ($isExternalFunding && isset($resolvedFilePaths['external'])) {
+            $step2Rows[] = [
+                'key' => 'step2_external_funding_support',
+                'label' => 'External funding support',
+                'value' => 'Submitted file attached.',
+                'link_url' => $fileUrls['external'] ?? null,
+            ];
+        } elseif ($isExternalFunding) {
+            $step2Rows[] = [
+                'key' => 'step2_external_funding_support_unavailable',
+                'label' => 'External funding support',
+                'value' => 'File unavailable',
+            ];
+        }
+
+        $additionalRows = [];
+        if (isset($resolvedFilePaths['resume'])) {
+            $additionalRows[] = [
+                'key' => 'additional_resume_resource_persons',
+                'label' => 'Resume / resource persons',
+                'value' => 'Submitted file attached.',
+                'link_url' => $fileUrls['resume'] ?? null,
+            ];
+        }
+
+        $fileLinks = [];
+        foreach (array_merge($step1AttachmentRows, array_filter($step2Rows, fn (array $row): bool => ! empty($row['link_url'])), $additionalRows) as $row) {
+            $fileLinks[] = [
+                'label' => (string) ($row['label'] ?? 'File'),
+                'url' => (string) ($row['link_url'] ?? ''),
+            ];
+        }
+        $fileLinks = array_values(array_filter($fileLinks, static fn (array $row): bool => ($row['url'] ?? '') !== ''));
+
+        $metaSections = [
+            ['title' => 'Step 1: Activity Request Form', 'rows' => array_merge($step1Rows, $step1AttachmentRows)],
+            ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
+        ];
+        if ($additionalRows !== []) {
+            $metaSections[] = ['title' => 'Additional', 'rows' => $additionalRows];
+        }
 
         $nav = $this->detailBackNavigation($request);
 
@@ -451,10 +554,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
             'metaRows' => $step2Rows,
-            'metaSections' => [
-                ['title' => 'Step 1: Activity Request Form', 'rows' => $step1Rows],
-                ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
-            ],
+            'metaSections' => $metaSections,
             'remarkHighlight' => $this->revisionSectionsPreview($revisionSections) ?: $this->truncatePreview($proposal->overall_goal, 220),
             'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
@@ -469,17 +569,13 @@ class OrganizationSubmittedDocumentsController extends Controller
     public function streamSubmittedActivityProposalFile(Request $request, ActivityProposal $proposal, string $key): StreamedResponse
     {
         $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
-
-        $organizationId = (int) $proposal->organization_id;
-        $expectedPrefix = 'activity-proposals/'.$organizationId.'/';
-
-        $relativePath = $this->proposalFilePathByKey($proposal, $key);
-
-        if (! is_string($relativePath) || $relativePath === '') {
-            abort(404);
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $relativePath = $this->decodePathParam((string) $request->query('p'));
+        if (! $relativePath || ! $this->isPathAllowedForProposalOrganization($relativePath, (int) $proposal->organization_id)) {
+            $relativePath = $this->proposalResolvedFilePathByKey($proposal, $requestForm, $key);
         }
 
-        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/') || ! str_starts_with($relativePath, $expectedPrefix)) {
+        if (! is_string($relativePath) || $relativePath === '') {
             abort(404);
         }
 
@@ -1349,16 +1445,77 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $rows;
     }
 
-    private function proposalFilePathByKey(ActivityProposal $proposal, string $key): ?string
+    private function proposalFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
     {
         $fileType = match ($key) {
             'logo' => Attachment::TYPE_PROPOSAL_LOGO,
             'resume' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
             'external' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
+            'request_letter' => Attachment::TYPE_REQUEST_LETTER,
+            'speaker_resume' => Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+            'post_survey_form' => Attachment::TYPE_REQUEST_POST_SURVEY,
             default => null,
         };
 
-        if ($fileType !== null) {
+        if (in_array($key, ['request_letter', 'speaker_resume', 'post_survey_form'], true) && $requestForm !== null && $fileType !== null) {
+            $attachment = $requestForm->attachments()
+                ->where('file_type', $fileType)
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                return $attachment->stored_path;
+            }
+        }
+
+        if (in_array($key, ['request_letter', 'speaker_resume', 'post_survey_form'], true) && $fileType !== null) {
+            $requestFormFallback = ActivityRequestForm::query()
+                ->where('organization_id', $proposal->organization_id)
+                ->where('submitted_by', $proposal->submitted_by)
+                ->whereNotNull('promoted_at')
+                ->where(function ($q) use ($proposal): void {
+                    $q->where('promoted_to_proposal_id', $proposal->id)
+                        ->orWhere(function ($nested) use ($proposal): void {
+                            if ($proposal->activity_calendar_entry_id !== null) {
+                                $nested->where('activity_calendar_entry_id', $proposal->activity_calendar_entry_id);
+                            } else {
+                                $nested->where('activity_title', (string) ($proposal->activity_title ?? ''));
+                            }
+                        });
+                })
+                ->latest('promoted_at')
+                ->latest('id')
+                ->first();
+            if ($requestFormFallback) {
+                $attachment = $requestFormFallback->attachments()
+                    ->where('file_type', $fileType)
+                    ->latest('id')
+                    ->first();
+                if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                    return $attachment->stored_path;
+                }
+            }
+
+            // Last-resort fallback: pick the latest request form by this officer/org
+            // that actually has the requested file type attached.
+            $latestWithRequestedAttachment = ActivityRequestForm::query()
+                ->where('organization_id', $proposal->organization_id)
+                ->where('submitted_by', $proposal->submitted_by)
+                ->whereHas('attachments', fn ($q) => $q->where('file_type', $fileType))
+                ->latest('updated_at')
+                ->latest('id')
+                ->first();
+            if ($latestWithRequestedAttachment) {
+                $attachment = $latestWithRequestedAttachment->attachments()
+                    ->where('file_type', $fileType)
+                    ->latest('id')
+                    ->first();
+                if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                    return $attachment->stored_path;
+                }
+            }
+        }
+
+        if ($fileType !== null && ! in_array($key, ['request_letter', 'speaker_resume', 'post_survey_form'], true)) {
             $attachment = $proposal->attachments()
                 ->where('file_type', $fileType)
                 ->latest('id')
@@ -1374,6 +1531,82 @@ class OrganizationSubmittedDocumentsController extends Controller
             'external' => $proposal->external_funding_support_path,
             default => null,
         };
+    }
+
+    private function proposalResolvedFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
+    {
+        $relativePath = $this->normalizeStoredPublicPath($this->proposalFilePathByKey($proposal, $requestForm, $key));
+        if (! $relativePath || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            return null;
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            return null;
+        }
+
+        return $relativePath;
+    }
+
+    private function normalizeStoredPublicPath(?string $rawPath): ?string
+    {
+        if (! is_string($rawPath)) {
+            return null;
+        }
+
+        $path = trim($rawPath);
+        if ($path === '') {
+            return null;
+        }
+
+        if (filter_var($path, FILTER_VALIDATE_URL)) {
+            $parsedPath = parse_url($path, PHP_URL_PATH);
+            if (is_string($parsedPath) && $parsedPath !== '') {
+                $path = $parsedPath;
+            }
+        }
+
+        $path = str_replace('\\', '/', $path);
+        if (str_starts_with($path, '/storage/')) {
+            $path = substr($path, strlen('/storage/'));
+        } elseif (str_starts_with($path, 'storage/')) {
+            $path = substr($path, strlen('storage/'));
+        }
+        $path = ltrim($path, '/');
+
+        return $path !== '' ? $path : null;
+    }
+
+    private function encodePathParam(string $path): string
+    {
+        return rtrim(strtr(base64_encode($path), '+/', '-_'), '=');
+    }
+
+    private function decodePathParam(string $encoded): ?string
+    {
+        $trimmed = trim($encoded);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $padded = str_pad(strtr($trimmed, '-_', '+/'), (int) ceil(strlen($trimmed) / 4) * 4, '=', STR_PAD_RIGHT);
+        $decoded = base64_decode($padded, true);
+        if (! is_string($decoded) || $decoded === '') {
+            return null;
+        }
+
+        return $this->normalizeStoredPublicPath($decoded);
+    }
+
+    private function isPathAllowedForProposalOrganization(string $relativePath, int $organizationId): bool
+    {
+        $normalized = $this->normalizeStoredPublicPath($relativePath);
+        if (! $normalized || str_contains($normalized, '..') || str_starts_with($normalized, '/')) {
+            return false;
+        }
+
+        return str_starts_with($normalized, 'activity-proposals/'.$organizationId.'/')
+            || str_starts_with($normalized, 'activity-request-forms/'.$organizationId.'/');
     }
 
     /**
@@ -1514,6 +1747,15 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->where('organization_id', $proposal->organization_id)
             ->where('submitted_by', $proposal->submitted_by)
             ->whereNotNull('promoted_at');
+
+        $linked = (clone $query)
+            ->where('promoted_to_proposal_id', $proposal->id)
+            ->latest('promoted_at')
+            ->latest('id')
+            ->first();
+        if ($linked) {
+            return $linked;
+        }
 
         if ($proposal->activity_calendar_entry_id) {
             $hit = (clone $query)

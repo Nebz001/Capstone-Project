@@ -49,6 +49,7 @@
 
   @foreach ($sections as $section)
     @php
+      $sectionReviewable = (bool) ($section['reviewable'] ?? true);
       $badge = $statusBadge((string) (data_get($persistedSectionReviews, ($section['key'] ?? '').'.status', 'pending')));
       $readonlyItemClass = 'field-review-card rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3.5';
       $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
@@ -62,7 +63,9 @@
               <p class="mt-1 text-sm text-slate-500">{{ $section['subtitle'] }}</p>
             @endif
           </div>
-          <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $badge['class'] }}" data-section-status-badge="{{ $section['key'] }}">{{ $badge['label'] }}</span>
+          @if ($sectionReviewable)
+            <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $badge['class'] }}" data-section-status-badge="{{ $section['key'] }}">{{ $badge['label'] }}</span>
+          @endif
         </div>
       </div>
       <div class="bg-white px-6 py-5">
@@ -75,19 +78,47 @@
                 @if (! empty($field['action'] ?? null))
                   <a href="{{ $field['action']['href'] }}" target="_blank" rel="noopener noreferrer" class="inline-flex rounded-xl border border-[#003E9F] bg-white px-3.5 py-2 text-xs font-semibold text-[#003E9F] transition hover:bg-slate-50">View file</a>
                 @endif
-                @include('admin.registrations.partials.field-review-control', [
-                  'sectionKey' => $section['key'],
-                  'fieldKey' => $field['key'],
-                  'fieldLabel' => $field['label'],
-                  'persistedFieldReviews' => $persistedFieldReviews,
-                  'persistedSectionReviews' => $persistedSectionReviews,
-                ])
+                @if ($sectionReviewable && ($field['reviewable'] ?? true))
+                  @include('admin.registrations.partials.field-review-control', [
+                    'sectionKey' => $section['key'],
+                    'fieldKey' => $field['key'],
+                    'fieldLabel' => $field['label'],
+                    'persistedFieldReviews' => $persistedFieldReviews,
+                    'persistedSectionReviews' => $persistedSectionReviews,
+                  ])
+                @endif
               </div>
+              @if (! empty($field['table']) && is_array($field['table']))
+                <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <table class="min-w-160 w-full divide-y divide-slate-200 text-left text-xs sm:text-sm">
+                    <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th class="px-3 py-2.5">Material / Item</th>
+                        <th class="px-3 py-2.5">Quantity</th>
+                        <th class="px-3 py-2.5">Unit Price</th>
+                        <th class="px-3 py-2.5">Price</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      @foreach ($field['table'] as $budgetRow)
+                        <tr class="align-top">
+                          <td class="px-3 py-2.5 font-medium text-slate-800">{{ $budgetRow['material'] ?? '—' }}</td>
+                          <td class="px-3 py-2.5 text-slate-700">{{ $budgetRow['quantity'] ?? '—' }}</td>
+                          <td class="px-3 py-2.5 text-slate-700">{{ $budgetRow['unit_price'] ?? '—' }}</td>
+                          <td class="px-3 py-2.5 text-slate-700">{{ $budgetRow['price'] ?? '—' }}</td>
+                        </tr>
+                      @endforeach
+                    </tbody>
+                  </table>
+                </div>
+              @endif
             </div>
           @endforeach
         </dl>
       </div>
-      @include('admin.registrations.partials.section-submit-control', ['sectionKey' => $section['key'], 'persistedSectionReviews' => $persistedSectionReviews])
+      @if ($sectionReviewable)
+        @include('admin.registrations.partials.section-submit-control', ['sectionKey' => $section['key'], 'persistedSectionReviews' => $persistedSectionReviews])
+      @endif
     </x-ui.card>
   @endforeach
 

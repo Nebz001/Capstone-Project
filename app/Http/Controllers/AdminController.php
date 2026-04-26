@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
+use App\Models\ActivityRequestForm;
 use App\Models\ActivityReport;
 use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
@@ -804,21 +805,18 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $calendar->load(['organization', 'entries']);
-
-        $termLabels = [
-            'term_1' => 'Term 1',
-            'term_2' => 'Term 2',
-            'term_3' => 'Term 3',
-        ];
-        $termKey = $calendar->semester ?? '';
-        $termLabel = $termLabels[$termKey] ?? ($termKey !== '' ? $termKey : 'N/A');
+        $calendar->load([
+            'organization',
+            'submittedBy',
+            'academicTerm',
+            'entries' => fn ($query) => $query->orderBy('activity_date')->orderBy('id'),
+        ]);
 
         return view('admin.reviews.module-show', [
             'pageTitle' => 'Activity Calendar Submission Details',
             'moduleLabel' => 'Activity Calendar',
             'status' => strtoupper((string) ($calendar->status ?? 'pending')),
-            'sections' => $this->calendarReviewSections($calendar, $termLabel),
+            'sections' => $this->calendarReviewSections($calendar),
             'persistedFieldReviews' => is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [],
             'persistedSectionReviews' => is_array($calendar->admin_section_reviews) ? $calendar->admin_section_reviews : [],
             'persistedRemarks' => $calendar->admin_review_remarks ?? '',
@@ -829,74 +827,170 @@ class AdminController extends Controller
         ]);
     }
 
+    public function streamCalendarFile(Request $request, ActivityCalendar $calendar): StreamedResponse
+    {
+        $this->authorizeAdmin($request);
+        $relativePath = (string) ($calendar->calendar_file ?? '');
+        if ($relativePath === '') {
+            abort(404);
+        }
+
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        return $disk->response($relativePath, basename($relativePath), [], 'inline');
+    }
+
     public function showProposal(Request $request, ActivityProposal $proposal): View
     {
         $this->authorizeAdmin($request);
 
-        $proposal->load(['organization', 'user', 'submittedBy', 'academicTerm', 'budgetItems', 'workflowSteps.role', 'approvalLogs.actor']);
+        $proposal->load([
+            'organization',
+            'user',
+            'submittedBy',
+            'academicTerm',
+            'budgetItems',
+            'workflowSteps.role',
+            'approvalLogs.actor',
+            'calendar',
+            'calendarEntry',
+            'attachments',
+        ]);
         $this->ensureProposalWorkflow($proposal);
         $proposal->load(['workflowSteps.role', 'approvalLogs.actor']);
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
 
-        $schoolLabels = [
-            'sace' => 'School of Architecture, Computer and Engineering',
-            'sahs' => 'School of Allied Health and Sciences',
-            'sabm' => 'School of Accounting and Business Management',
-            'shs' => 'Senior High School',
+        $proposalTime = $this->proposalTimeRangeLabel($proposal);
+        $budgetRows = $proposal->budgetItems->values();
+        $budgetRowsTotal = $budgetRows->sum(fn ($row) => (float) ($row->total_cost ?? 0));
+        $linkedCalendar = $proposal->calendar
+            ? trim(($proposal->calendar->academic_year ?? '—').' · '.(string) ($proposal->calendar->semester ?? '—'))
+            : '—';
+        $calendarRow = $proposal->calendarEntry
+            ? trim(($proposal->calendarEntry->activity_name ?? '—').' · '.(optional($proposal->calendarEntry->activity_date)->format('M j, Y') ?? ''))
+            : '—';
+        $department = (string) ($proposal->school_code ?: ($proposal->organization?->college_school ?? ''));
+        $step1ActivityDate = $requestForm?->activity_date
+            ? optional($requestForm->activity_date)->format('M d, Y')
+            : null;
+        $sourceOfFunding = (string) ($proposal->source_of_funding ?? '');
+        $isExternalFunding = strtoupper($sourceOfFunding) === 'EXTERNAL';
+
+        $step1Rows = [
+            ['key' => 'step1_proposal_option', 'label' => 'Proposal Option', 'value' => $proposal->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar'],
+            ['key' => 'step1_rso_name', 'label' => 'RSO Name', 'value' => $requestForm?->rso_name ?: ($proposal->organization?->organization_name ?? '—')],
+            ['key' => 'step1_activity_title', 'label' => 'Title of Activity', 'value' => $requestForm?->activity_title ?: '—'],
+            ['key' => 'step1_partner_entities', 'label' => 'Partner Entities', 'value' => $requestForm?->partner_entities ?: '—'],
+            ['key' => 'step1_nature_of_activity', 'label' => 'Nature of Activity', 'value' => $this->requestFormOptionsLabel((array) ($requestForm?->nature_of_activity ?? []), $requestForm?->nature_other), 'wide' => true],
+            ['key' => 'step1_type_of_activity', 'label' => 'Type of Activity', 'value' => $this->requestFormOptionsLabel((array) ($requestForm?->activity_types ?? []), $requestForm?->activity_type_other), 'wide' => true],
+            ['key' => 'step1_target_sdg', 'label' => 'Target SDG', 'value' => $requestForm?->target_sdg ?: ($proposal->target_sdg ?: '—')],
+            ['key' => 'step1_proposed_budget', 'label' => 'Step 1 Proposed Budget', 'value' => $requestForm?->proposed_budget !== null ? number_format((float) $requestForm->proposed_budget, 2) : '—'],
+            ['key' => 'step1_budget_source', 'label' => 'Step 1 Budget Source', 'value' => $requestForm?->budget_source ?: '—'],
+            ['key' => 'step1_activity_date', 'label' => 'Date of Activity', 'value' => $step1ActivityDate ?: '—'],
+            ['key' => 'step1_venue', 'label' => 'Venue', 'value' => $requestForm?->venue ?: '—'],
+        ];
+        if ($proposal->activity_calendar_entry_id) {
+            array_splice($step1Rows, 2, 0, [
+                ['key' => 'step1_linked_activity_calendar', 'label' => 'Linked Activity Calendar', 'value' => $linkedCalendar],
+                ['key' => 'step1_calendar_activity_row', 'label' => 'Calendar Activity Row', 'value' => $calendarRow],
+            ]);
+        }
+
+        $step1AttachmentRows = [];
+        foreach ([
+            ['key' => 'request_letter', 'label' => 'Upload Request Letter'],
+            ['key' => 'speaker_resume', 'label' => 'Resume of Speaker'],
+            ['key' => 'post_survey_form', 'label' => 'Sample Post-Survey Form'],
+        ] as $item) {
+            $url = $this->proposalReviewFilePathByKey($proposal, $requestForm, $item['key']) !== null
+                ? route('admin.proposals.file', ['proposal' => $proposal, 'key' => $item['key']])
+                : null;
+            if (! $url) {
+                continue;
+            }
+            $step1AttachmentRows[] = [
+                'key' => 'step1_'.$item['key'],
+                'label' => $item['label'],
+                'value' => 'Submitted file attached.',
+                'action' => ['href' => $url],
+            ];
+        }
+
+        $step2Rows = [
+            ['key' => 'step2_organization_logo', 'label' => 'Organization Logo', 'value' => $this->proposalReviewFilePathByKey($proposal, $requestForm, 'organization_logo') ? 'Submitted file attached.' : '—', 'action' => $this->proposalReviewFilePathByKey($proposal, $requestForm, 'organization_logo') ? ['href' => route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'organization_logo'])] : null],
+            ['key' => 'step2_organization', 'label' => 'Organization (Form)', 'value' => $proposal->organization?->organization_name ?: '—'],
+            ['key' => 'step2_academic_year', 'label' => 'Academic Year', 'value' => $proposal->academicTerm?->academic_year ?: '—'],
+            ['key' => 'step2_department', 'label' => 'Department', 'value' => $department !== '' ? $department : '—'],
+            ['key' => 'step2_program', 'label' => 'Program', 'value' => $proposal->program ?: '—'],
+            ['key' => 'step2_activity_title', 'label' => 'Project / Activity Title', 'value' => $proposal->activity_title ?: '—'],
+            ['key' => 'step2_proposed_dates', 'label' => 'Proposed Dates', 'value' => trim(collect([
+                optional($proposal->proposed_start_date)->format('M d, Y'),
+                optional($proposal->proposed_end_date)->format('M d, Y'),
+            ])->filter()->implode(' - ')) ?: '—'],
+            ['key' => 'step2_proposed_time', 'label' => 'Proposed Time', 'value' => $proposalTime],
+            ['key' => 'step2_venue', 'label' => 'Venue', 'value' => $proposal->venue ?: '—'],
+            ['key' => 'step2_overall_goal', 'label' => 'Overall Goal', 'value' => $proposal->overall_goal ?: '—', 'wide' => true],
+            ['key' => 'step2_specific_objectives', 'label' => 'Specific Objectives', 'value' => $proposal->specific_objectives ?: '—', 'wide' => true],
+            ['key' => 'step2_criteria_mechanics', 'label' => 'Criteria / Mechanics', 'value' => $proposal->criteria_mechanics ?: '—', 'wide' => true],
+            ['key' => 'step2_program_flow', 'label' => 'Program Flow', 'value' => $proposal->program_flow ?: '—', 'wide' => true],
+            ['key' => 'step2_budget_total', 'label' => 'Proposed Budget (Total)', 'value' => $proposal->estimated_budget !== null ? number_format((float) $proposal->estimated_budget, 2) : '—'],
+            ['key' => 'step2_source_of_funding', 'label' => 'Source of Funding', 'value' => $sourceOfFunding !== '' ? $sourceOfFunding : '—'],
+            [
+                'key' => 'step2_budget_table',
+                'label' => 'Detailed Budget Table',
+                'value' => $budgetRows->count() > 0 ? ('Rows: '.$budgetRows->count().' · Total: '.number_format((float) $budgetRowsTotal, 2)) : 'No rows submitted.',
+                'table' => $budgetRows->map(function ($row): array {
+                    $material = trim((string) ($row->item_description ?? $row->particulars ?? ''));
+                    return [
+                        'material' => $material !== '' ? $material : '—',
+                        'quantity' => $row->quantity !== null ? (string) $row->quantity : '—',
+                        'unit_price' => $row->unit_cost !== null ? number_format((float) $row->unit_cost, 2) : '—',
+                        'price' => $row->total_cost !== null ? number_format((float) $row->total_cost, 2) : '—',
+                    ];
+                })->all(),
+                'wide' => true,
+            ],
         ];
 
-        $logoPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_LOGO, $proposal->organization_logo_path);
-        $logoUrl = $logoPath
-            ? Storage::disk('public')->url($logoPath)
-            : null;
-        $resumePath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME, $proposal->resume_resource_persons_path);
-        $resumeUrl = $resumePath
-            ? Storage::disk('public')->url($resumePath)
-            : null;
-        $externalPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING, $proposal->external_funding_support_path);
-        $externalUrl = $externalPath ? Storage::disk('public')->url($externalPath) : null;
-        $proposalTime = $proposal->proposed_start_time
-            ? trim($proposal->proposed_start_time.($proposal->proposed_end_time ? ' - '.$proposal->proposed_end_time : ''))
-            : ($proposal->proposed_time ?? 'N/A');
-        $budgetRows = $proposal->budgetItems;
-        $budgetRowsCount = $budgetRows->count();
-        $budgetRowsTotal = $budgetRowsCount > 0
-            ? number_format((float) $budgetRows->sum('total_cost'), 2)
-            : 'N/A';
+        if ($isExternalFunding) {
+            $externalLink = $this->proposalReviewFilePathByKey($proposal, $requestForm, 'external_funding')
+                ? route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'external_funding'])
+                : null;
+            if ($externalLink) {
+                $step2Rows[] = [
+                    'key' => 'step2_external_funding_support',
+                    'label' => 'External Funding Support',
+                    'value' => 'Submitted file attached.',
+                    'action' => ['href' => $externalLink],
+                ];
+            }
+        }
 
-        $details = [
-            'Organization (profile)' => $proposal->organization?->organization_name ?? 'N/A',
-            'Submitted By' => $proposal->submittedBy?->full_name ?? $proposal->user?->full_name ?? 'N/A',
-            'Submission Date' => optional($proposal->submission_date)->format('M d, Y') ?? 'N/A',
-            'Organization name (form)' => $proposal->form_organization_name ?? 'N/A',
-            'Academic Year' => $proposal->academicTerm?->academic_year ?? $proposal->academic_year ?? 'N/A',
-            'School' => $proposal->school_code ? ($schoolLabels[$proposal->school_code] ?? $proposal->school_code) : 'N/A',
-            'Department / Program' => $proposal->department_program ?? 'N/A',
-            'Organization logo' => $logoUrl ?? 'N/A',
-            'Activity Title' => $proposal->activity_title ?? 'N/A',
-            'Proposed Start' => optional($proposal->proposed_start_date)->format('M d, Y') ?? 'N/A',
-            'Proposed End' => optional($proposal->proposed_end_date)->format('M d, Y') ?? 'N/A',
-            'Proposed Time' => $proposalTime,
-            'Venue' => $proposal->venue ?? 'N/A',
-            'Overall Goal' => $proposal->overall_goal ?? ($proposal->activity_description ?? 'N/A'),
-            'Specific Objectives' => $proposal->specific_objectives ?? 'N/A',
-            'Criteria / Mechanics' => $proposal->criteria_mechanics ?? 'N/A',
-            'Program Flow' => $proposal->program_flow ?? 'N/A',
-            'Proposed Budget (total)' => $proposal->estimated_budget !== null ? number_format((float) $proposal->estimated_budget, 2) : 'N/A',
-            'Budget Items Rows' => $budgetRowsCount > 0 ? (string) $budgetRowsCount : 'N/A',
-            'Budget Items Total' => $budgetRowsTotal,
-            'Source of Funding' => $proposal->source_of_funding ?? 'N/A',
-            'Materials and Supplies' => $proposal->budget_materials_supplies !== null ? number_format((float) $proposal->budget_materials_supplies, 2) : 'N/A',
-            'Food and Beverage' => $proposal->budget_food_beverage !== null ? number_format((float) $proposal->budget_food_beverage, 2) : 'N/A',
-            'Other Expenses' => $proposal->budget_other_expenses !== null ? number_format((float) $proposal->budget_other_expenses, 2) : 'N/A',
-            'Resume (resource persons)' => $resumeUrl ?? 'N/A',
-            'External funding support' => $externalUrl ?? 'N/A',
-        ];
+        $additionalRows = [];
+        $resourceResumeLink = $this->proposalReviewFilePathByKey($proposal, $requestForm, 'resource_resume')
+            ? route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'resource_resume'])
+            : null;
+        if ($resourceResumeLink) {
+            $additionalRows[] = [
+                'key' => 'step2_resume_resource_persons',
+                'label' => 'Resume of Resource Person/s',
+                'value' => 'Submitted file attached.',
+                'action' => ['href' => $resourceResumeLink],
+            ];
+        }
 
         return view('admin.reviews.module-show', [
             'pageTitle' => 'Activity Proposal Submission Details',
             'moduleLabel' => 'Activity Proposal',
             'status' => strtoupper((string) ($proposal->status ?? 'pending')),
-            'sections' => $this->proposalReviewSections($proposal, $details),
+            'sections' => $this->proposalReviewSections($step1Rows, $step1AttachmentRows, $step2Rows, $additionalRows),
             'persistedFieldReviews' => is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : [],
             'persistedSectionReviews' => is_array($proposal->admin_section_reviews) ? $proposal->admin_section_reviews : [],
             'persistedRemarks' => $proposal->admin_review_remarks ?? '',
@@ -905,6 +999,28 @@ class AdminController extends Controller
             'backRoute' => route('admin.proposals.index'),
             'backLabel' => 'Back to Activity Proposals',
         ]);
+    }
+
+    public function streamProposalFile(Request $request, ActivityProposal $proposal, string $key): StreamedResponse
+    {
+        $this->authorizeAdmin($request);
+        $proposal->loadMissing('attachments');
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $relativePath = $this->proposalReviewFilePathByKey($proposal, $requestForm, $key);
+        if (! is_string($relativePath) || trim($relativePath) === '') {
+            abort(404);
+        }
+        $relativePath = trim($relativePath);
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        return $disk->response($relativePath, basename($relativePath), [], 'inline');
     }
 
     public function updateProposalWorkflow(Request $request, ActivityProposal $proposal): RedirectResponse
@@ -1363,106 +1479,314 @@ class AdminController extends Controller
 
     private function calendarReviewSchema(ActivityCalendar $calendar): array
     {
+        $calendarFilePath = trim((string) ($calendar->calendar_file ?? ''));
         $schema = [
-            'overview' => [
-                'organization_profile' => 'Organization (profile)',
-                'organization_form' => 'RSO Name (form)',
-                'academic_year' => 'Academic Year',
-                'term' => 'Term',
-                'submission_date' => 'Submission Date',
-            ],
-            'entries' => [],
         ];
-        foreach ($calendar->entries as $entry) {
-            $schema['entries']['entry_'.$entry->id] = 'Activity: '.($entry->activity_name ?? 'Untitled');
+        if ($calendarFilePath !== '') {
+            $schema['submitted_files'] = [
+                'calendar_file' => 'Calendar file',
+            ];
         }
+
+        foreach ($calendar->entries as $entry) {
+            $entryPrefix = 'entry_'.$entry->id;
+            $entrySchema = [
+                $entryPrefix.'_name' => 'Activity Name',
+                $entryPrefix.'_date' => 'Date',
+                $entryPrefix.'_venue' => 'Venue',
+                $entryPrefix.'_sdg' => 'Target SDG',
+                $entryPrefix.'_participants' => 'Participants',
+                $entryPrefix.'_budget' => 'Estimated Budget',
+            ];
+            if (trim((string) ($entry->target_program ?? '')) !== '') {
+                $entrySchema[$entryPrefix.'_program'] = 'Program';
+            }
+            $schema[$entryPrefix] = $entrySchema;
+        }
+
         return $schema;
     }
 
-    private function calendarReviewSections(ActivityCalendar $calendar, string $termLabel): array
+    private function calendarReviewSections(ActivityCalendar $calendar): array
     {
+        $termLabel = $this->termDisplayLabel(
+            (string) ($calendar->academicTerm?->semester ?? ''),
+            SystemSetting::activeSemester()
+        );
+        $academicYearValue = (string) ($calendar->academicTerm?->academic_year ?? '');
+        if ($academicYearValue === '') {
+            $academicYearValue = (string) SystemSetting::activeAcademicYear();
+        }
+        $organizationFormValue = trim((string) ($calendar->submitted_organization_name ?? ''));
+        if ($organizationFormValue === '') {
+            $organizationFormValue = (string) ($calendar->organization?->organization_name ?? '');
+        }
+        $calendarFilePath = trim((string) ($calendar->calendar_file ?? ''));
+
         $sections = [
-            ['key' => 'overview', 'title' => 'Calendar Overview', 'subtitle' => 'Core activity calendar submission details.', 'fields' => [
-                ['key' => 'organization_profile', 'label' => 'Organization (profile)', 'value' => $calendar->organization?->organization_name ?? 'N/A'],
-                ['key' => 'organization_form', 'label' => 'RSO Name (form)', 'value' => $calendar->submitted_organization_name ?? 'N/A'],
-                ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $calendar->academic_year ?? 'N/A'],
+            ['key' => 'overview', 'title' => 'Calendar Overview', 'subtitle' => 'Core activity calendar submission details.', 'reviewable' => false, 'fields' => [
+                ['key' => 'organization_profile', 'label' => 'Organization (profile)', 'value' => $calendar->organization?->organization_name ?? '—'],
+                ['key' => 'organization_form', 'label' => 'RSO Name (form)', 'value' => $organizationFormValue !== '' ? $organizationFormValue : '—'],
+                ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $calendar->submittedBy?->full_name ?? '—'],
+                ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $academicYearValue !== '' ? $academicYearValue : '—'],
                 ['key' => 'term', 'label' => 'Term', 'value' => $termLabel],
-                ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => optional($calendar->submission_date)->format('M d, Y') ?? 'N/A'],
+                ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => optional($calendar->submission_date)->format('M d, Y') ?? '—'],
             ]],
-            ['key' => 'entries', 'title' => 'Submitted Activities', 'subtitle' => 'Each listed activity should be reviewed.', 'fields' => []],
         ];
-        foreach ($calendar->entries as $entry) {
-            $sections[1]['fields'][] = [
-                'key' => 'entry_'.$entry->id,
-                'label' => 'Activity: '.($entry->activity_name ?? 'Untitled'),
-                'value' => trim((optional($entry->activity_date)->format('M d, Y') ?? 'N/A').' · '.($entry->venue ?? 'No venue')),
-                'wide' => true,
+        if ($calendarFilePath !== '') {
+            $sections[] = [
+                'key' => 'submitted_files',
+                'title' => 'Submitted Files',
+                'subtitle' => 'Files uploaded with this activity calendar submission.',
+                'fields' => [[
+                    'key' => 'calendar_file',
+                    'label' => 'Calendar file',
+                    'value' => 'File uploaded',
+                    'action' => ['href' => route('admin.calendars.file', $calendar)],
+                    'wide' => true,
+                ]],
             ];
         }
+
+        foreach ($calendar->entries->values() as $index => $entry) {
+            $entryPrefix = 'entry_'.$entry->id;
+            $entryFields = [
+                ['key' => $entryPrefix.'_name', 'label' => 'Activity Name', 'value' => $entry->activity_name ?? '—', 'wide' => true],
+                ['key' => $entryPrefix.'_date', 'label' => 'Date', 'value' => optional($entry->activity_date)->format('M d, Y') ?? '—'],
+                ['key' => $entryPrefix.'_venue', 'label' => 'Venue', 'value' => $entry->venue ?? '—'],
+                ['key' => $entryPrefix.'_sdg', 'label' => 'Target SDG', 'value' => $entry->target_sdg ?? '—', 'wide' => true],
+                ['key' => $entryPrefix.'_participants', 'label' => 'Participants', 'value' => $entry->target_participants ?? '—', 'wide' => true],
+            ];
+            $programValue = trim((string) ($entry->target_program ?? ''));
+            if ($programValue !== '') {
+                $entryFields[] = ['key' => $entryPrefix.'_program', 'label' => 'Program', 'value' => $programValue, 'wide' => true];
+            }
+            $entryFields[] = [
+                'key' => $entryPrefix.'_budget',
+                'label' => 'Estimated Budget',
+                'value' => $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2) : '—',
+                'wide' => $programValue === '',
+            ];
+
+            $sections[] = [
+                'key' => $entryPrefix,
+                'title' => 'Submitted Activity #'.($index + 1),
+                'subtitle' => 'Review all submitted details for this activity item.',
+                'fields' => $entryFields,
+            ];
+        }
+
         return $sections;
+    }
+
+    private function termDisplayLabel(string $semesterValue, string $fallbackSetting = ''): string
+    {
+        $termLabels = [
+            'term_1' => 'Term 1',
+            'term_2' => 'Term 2',
+            'term_3' => 'Term 3',
+            'first' => 'Term 1',
+            'second' => 'Term 2',
+            'midyear' => 'Term 3',
+        ];
+        $normalized = strtolower(trim($semesterValue));
+        if ($normalized !== '' && isset($termLabels[$normalized])) {
+            return $termLabels[$normalized];
+        }
+
+        $fallbackNormalized = strtolower(trim($fallbackSetting));
+        if ($fallbackNormalized !== '' && isset($termLabels[$fallbackNormalized])) {
+            return $termLabels[$fallbackNormalized];
+        }
+
+        return $normalized !== '' ? $semesterValue : '—';
     }
 
     private function proposalReviewSchema(): array
     {
         return [
-            'overview' => [
-                'organization' => 'Organization (profile)',
-                'submitted_by' => 'Submitted By',
-                'submission_date' => 'Submission Date',
-                'academic_year' => 'Academic Year',
+            'step1_request_form' => [
+                'step1_proposal_option' => 'Proposal Option',
+                'step1_rso_name' => 'RSO Name',
+                'step1_activity_title' => 'Title of Activity',
+                'step1_linked_activity_calendar' => 'Linked Activity Calendar',
+                'step1_calendar_activity_row' => 'Calendar Activity Row',
+                'step1_partner_entities' => 'Partner Entities',
+                'step1_nature_of_activity' => 'Nature of Activity',
+                'step1_type_of_activity' => 'Type of Activity',
+                'step1_target_sdg' => 'Target SDG',
+                'step1_proposed_budget' => 'Step 1 Proposed Budget',
+                'step1_budget_source' => 'Step 1 Budget Source',
+                'step1_activity_date' => 'Date of Activity',
+                'step1_venue' => 'Venue',
+                'step1_request_letter' => 'Upload Request Letter',
+                'step1_speaker_resume' => 'Resume of Speaker',
+                'step1_post_survey_form' => 'Sample Post-Survey Form',
             ],
-            'activity' => [
-                'activity_title' => 'Activity Title',
-                'proposed_start' => 'Proposed Start',
-                'proposed_end' => 'Proposed End',
-                'proposed_time' => 'Proposed Time',
-                'venue' => 'Venue',
-                'overall_goal' => 'Overall Goal',
-                'specific_objectives' => 'Specific Objectives',
-                'criteria_mechanics' => 'Criteria / Mechanics',
-                'program_flow' => 'Program Flow',
+            'step2_submission' => [
+                'step2_organization_logo' => 'Organization Logo',
+                'step2_organization' => 'Organization (Form)',
+                'step2_academic_year' => 'Academic Year',
+                'step2_department' => 'Department',
+                'step2_program' => 'Program',
+                'step2_activity_title' => 'Project / Activity Title',
+                'step2_proposed_dates' => 'Proposed Dates',
+                'step2_proposed_time' => 'Proposed Time',
+                'step2_venue' => 'Venue',
+                'step2_overall_goal' => 'Overall Goal',
+                'step2_specific_objectives' => 'Specific Objectives',
+                'step2_criteria_mechanics' => 'Criteria / Mechanics',
+                'step2_program_flow' => 'Program Flow',
+                'step2_budget_total' => 'Proposed Budget (Total)',
+                'step2_source_of_funding' => 'Source of Funding',
+                'step2_budget_table' => 'Detailed Budget Table',
+                'step2_external_funding_support' => 'External Funding Support',
             ],
-            'budget_files' => [
-                'proposed_budget_total' => 'Proposed Budget (total)',
-                'source_of_funding' => 'Source of Funding',
-                'organization_logo' => 'Organization Logo',
-                'resource_resume' => 'Resume (resource persons)',
-                'external_funding' => 'External Funding Support',
+            'additional' => [
+                'step2_resume_resource_persons' => 'Resume of Resource Person/s',
             ],
         ];
     }
 
-    private function proposalReviewSections(ActivityProposal $proposal, array $details): array
+    private function proposalReviewSections(array $step1Rows, array $step1AttachmentRows, array $step2Rows, array $additionalRows): array
     {
-        $logoPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_LOGO, $proposal->organization_logo_path);
-        $resumePath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME, $proposal->resume_resource_persons_path);
-        $externalPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING, $proposal->external_funding_support_path);
-        return [
-            ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Organization and proposal submission context.', 'fields' => [
-                ['key' => 'organization', 'label' => 'Organization (profile)', 'value' => $details['Organization (profile)'] ?? 'N/A'],
-                ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $details['Submitted By'] ?? 'N/A'],
-                ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => $details['Submission Date'] ?? 'N/A'],
-                ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $details['Academic Year'] ?? 'N/A'],
-            ]],
-            ['key' => 'activity', 'title' => 'Activity Details', 'subtitle' => 'Event schedule, rationale, and mechanics.', 'fields' => [
-                ['key' => 'activity_title', 'label' => 'Activity Title', 'value' => $details['Activity Title'] ?? 'N/A'],
-                ['key' => 'proposed_start', 'label' => 'Proposed Start', 'value' => $details['Proposed Start'] ?? 'N/A'],
-                ['key' => 'proposed_end', 'label' => 'Proposed End', 'value' => $details['Proposed End'] ?? 'N/A'],
-                ['key' => 'proposed_time', 'label' => 'Proposed Time', 'value' => $details['Proposed Time'] ?? 'N/A'],
-                ['key' => 'venue', 'label' => 'Venue', 'value' => $details['Venue'] ?? 'N/A'],
-                ['key' => 'overall_goal', 'label' => 'Overall Goal', 'value' => $details['Overall Goal'] ?? 'N/A', 'wide' => true],
-                ['key' => 'specific_objectives', 'label' => 'Specific Objectives', 'value' => $details['Specific Objectives'] ?? 'N/A', 'wide' => true],
-                ['key' => 'criteria_mechanics', 'label' => 'Criteria / Mechanics', 'value' => $details['Criteria / Mechanics'] ?? 'N/A', 'wide' => true],
-                ['key' => 'program_flow', 'label' => 'Program Flow', 'value' => $details['Program Flow'] ?? 'N/A', 'wide' => true],
-            ]],
-            ['key' => 'budget_files', 'title' => 'Budget and Files', 'subtitle' => 'Budget figures and required uploaded files.', 'fields' => [
-                ['key' => 'proposed_budget_total', 'label' => 'Proposed Budget (total)', 'value' => $details['Proposed Budget (total)'] ?? 'N/A'],
-                ['key' => 'source_of_funding', 'label' => 'Source of Funding', 'value' => $details['Source of Funding'] ?? 'N/A'],
-                ['key' => 'organization_logo', 'label' => 'Organization Logo', 'value' => $logoPath ? 'File uploaded' : 'N/A', 'action' => $logoPath ? ['href' => Storage::disk('public')->url($logoPath)] : null],
-                ['key' => 'resource_resume', 'label' => 'Resume (resource persons)', 'value' => $resumePath ? 'File uploaded' : 'N/A', 'action' => $resumePath ? ['href' => Storage::disk('public')->url($resumePath)] : null],
-                ['key' => 'external_funding', 'label' => 'External Funding Support', 'value' => $externalPath ? 'File uploaded' : 'N/A', 'action' => $externalPath ? ['href' => Storage::disk('public')->url($externalPath)] : null],
-            ]],
+        $sections = [
+            [
+                'key' => 'step1_request_form',
+                'title' => 'Step 1: Activity Request Form',
+                'subtitle' => 'Officer-submitted request form fields used to promote this proposal.',
+                'fields' => array_merge($step1Rows, $step1AttachmentRows),
+            ],
+            [
+                'key' => 'step2_submission',
+                'title' => 'Step 2: Proposal Submission',
+                'subtitle' => 'Complete proposal content submitted by the officer.',
+                'fields' => $step2Rows,
+            ],
         ];
+        if ($additionalRows !== []) {
+            $sections[] = [
+                'key' => 'additional',
+                'title' => 'Additional',
+                'subtitle' => 'Additional supporting documents submitted by the officer.',
+                'fields' => $additionalRows,
+            ];
+        }
+
+        return $sections;
+    }
+
+    private function relatedRequestFormForProposal(ActivityProposal $proposal): ?ActivityRequestForm
+    {
+        $base = ActivityRequestForm::query()
+            ->where('organization_id', $proposal->organization_id)
+            ->where('submitted_by', $proposal->submitted_by)
+            ->whereNotNull('promoted_at');
+
+        if ($proposal->activity_calendar_entry_id) {
+            $hit = (clone $base)
+                ->where('activity_calendar_entry_id', $proposal->activity_calendar_entry_id)
+                ->with('attachments')
+                ->latest('promoted_at')
+                ->latest('id')
+                ->first();
+            if ($hit) {
+                return $hit;
+            }
+        }
+
+        return (clone $base)
+            ->where('activity_title', (string) ($proposal->activity_title ?? ''))
+            ->with('attachments')
+            ->latest('promoted_at')
+            ->latest('id')
+            ->first();
+    }
+
+    private function proposalReviewFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
+    {
+        $proposalType = match ($key) {
+            'organization_logo' => Attachment::TYPE_PROPOSAL_LOGO,
+            'resource_resume' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
+            'external_funding' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
+            default => null,
+        };
+        if ($proposalType !== null) {
+            $attachment = $proposal->attachments()
+                ->where('file_type', $proposalType)
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+                return trim($attachment->stored_path);
+            }
+        }
+
+        if ($requestForm) {
+            $requestType = match ($key) {
+                'request_letter' => Attachment::TYPE_REQUEST_LETTER,
+                'speaker_resume' => Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+                'post_survey_form' => Attachment::TYPE_REQUEST_POST_SURVEY,
+                default => null,
+            };
+            if ($requestType !== null) {
+                $attachment = $requestForm->attachments()
+                    ->where('file_type', $requestType)
+                    ->latest('id')
+                    ->first();
+                if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+                    return trim($attachment->stored_path);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function proposalTimeRangeLabel(ActivityProposal $proposal): string
+    {
+        $start = $this->formatTimeValue($proposal->proposed_start_time);
+        $end = $this->formatTimeValue($proposal->proposed_end_time);
+        if ($start && $end) {
+            return $start.' - '.$end;
+        }
+
+        return $start ?: '—';
+    }
+
+    private function formatTimeValue(?string $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        $trimmed = trim($value);
+        $normalized = strlen($trimmed) >= 5 ? substr($trimmed, 0, 5) : $trimmed;
+        $dt = \DateTime::createFromFormat('H:i', $normalized);
+
+        return $dt ? $dt->format('g:i A') : $trimmed;
+    }
+
+    /**
+     * @param  array<int, string>  $values
+     */
+    private function requestFormOptionsLabel(array $values, ?string $otherText = null): string
+    {
+        $values = array_values(array_filter($values, fn ($v) => is_string($v) && trim($v) !== ''));
+        if ($values === []) {
+            return '—';
+        }
+
+        $labels = array_map(
+            fn (string $value): string => ucfirst(str_replace('_', ' ', $value)),
+            $values
+        );
+        if (in_array('Others', $labels, true) && is_string($otherText) && trim($otherText) !== '') {
+            $labels = array_map(
+                fn (string $label): string => $label === 'Others' ? 'Others: '.trim($otherText) : $label,
+                $labels
+            );
+        }
+
+        return implode(', ', $labels);
     }
 
     private function reportReviewSchema(): array
