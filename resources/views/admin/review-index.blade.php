@@ -21,7 +21,12 @@
 @endphp
 
 <x-ui.card padding="p-0" class="overflow-hidden">
-  <div class="px-3 py-3 sm:px-5 sm:py-4">
+  <x-ui.card-section-header
+    :title="$pageTitle"
+    :subtitle="$pageSubtitle ?? 'Review submitted records and open a row for full details.'"
+    content-padding="px-6"
+  />
+  <div class="border-t border-slate-100 px-3 py-3 sm:px-5 sm:py-4">
     <div class="overflow-x-auto rounded-xl border border-slate-200">
     <table class="min-w-4xl w-full divide-y divide-slate-200 text-left text-sm">
       <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">

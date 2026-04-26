@@ -7,7 +7,7 @@
   $revBody = old($revisionFieldName, $registration->{$revisionFieldName} ?? '');
 @endphp
 <div
-  class="section-review mt-5 border-t border-slate-100 pt-5"
+  class="section-review mt-5 border-t border-slate-100 px-6 pb-5 pt-5"
   data-section-key="{{ $sectionKey }}"
   data-section-title="{{ $sectionTitle }}"
   data-revision-field="{{ $revisionFieldName }}"

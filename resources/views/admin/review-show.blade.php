@@ -12,24 +12,34 @@
     'REVISION', 'REVISION_REQUIRED' => 'bg-orange-100 text-orange-700 border border-orange-200',
     default => 'bg-slate-100 text-slate-700 border border-slate-200',
   };
+  $readonlyItemClass = 'rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3.5';
+  $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
+  $readonlyValueClass = 'mt-1.5 text-sm font-semibold text-slate-900';
 @endphp
 
-<x-ui.card padding="p-5">
-  <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
-    @foreach ($details as $label => $value)
-      <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">{{ $label }}</dt>
-        <dd class="mt-2 text-sm font-medium text-slate-900">{{ $value }}</dd>
-      </div>
-    @endforeach
-  </dl>
+<x-ui.card padding="p-0" class="overflow-hidden">
+  <x-ui.card-section-header
+    :title="$pageTitle"
+    subtitle="Read-only submission details from the selected review module."
+    content-padding="px-6"
+  />
+  <div class="border-t border-slate-100 px-6 py-5">
+    <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+      @foreach ($details as $label => $value)
+        <div class="{{ $readonlyItemClass }}">
+          <dt class="{{ $readonlyLabelClass }}">{{ $label }}</dt>
+          <dd class="{{ $readonlyValueClass }}">{{ $value }}</dd>
+        </div>
+      @endforeach
+    </dl>
+  </div>
 
   @isset($calendarEntries)
     @if ($calendarEntries->isNotEmpty())
       <div class="mt-6 border-t border-slate-100 pt-6">
-        <h2 class="text-base font-bold text-slate-900">Submitted activities</h2>
-        <p class="mt-1 text-sm text-slate-500">Each row is a saved record linked to this activity calendar.</p>
-        <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+        <h2 class="px-6 text-lg font-bold text-slate-900">Submitted activities</h2>
+        <p class="mt-1 px-6 text-sm text-slate-500">Each row is a saved record linked to this activity calendar.</p>
+        <div class="mt-4 mx-6 overflow-x-auto rounded-xl border border-slate-200">
           <table class="min-w-3xl w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
@@ -62,16 +72,16 @@
   @isset($organization)
     @if ($organization)
       <div class="mt-6 border-t border-slate-100 pt-6">
-        <h2 class="text-base font-bold text-slate-900">Organization profile (SDAO)</h2>
-        <p class="mt-1 text-sm text-slate-500">
+        <h2 class="px-6 text-lg font-bold text-slate-900">Organization profile (SDAO)</h2>
+        <p class="mt-1 px-6 text-sm text-slate-500">
           Request a profile revision when the organization must update registered organization details or adviser information. Officers can edit only while this is active and the organization is not pending review.
         </p>
         @if ($organization->profile_information_revision_requested)
-          <x-feedback.blocked-message class="mt-4">
+          <x-feedback.blocked-message class="mx-6 mt-4">
             A profile revision is currently <span class="font-semibold">open</span> for this organization.
           </x-feedback.blocked-message>
         @endif
-        <form method="POST" action="{{ route('admin.organizations.request-profile-revision', $organization) }}" class="mt-4 space-y-4">
+        <form method="POST" action="{{ route('admin.organizations.request-profile-revision', $organization) }}" class="mx-6 mt-4 space-y-4">
           @csrf
           <div>
             <x-forms.label for="profile_revision_notes">Optional notes to the organization (shown on their profile)</x-forms.label>
@@ -93,17 +103,17 @@
   @isset($workflowSteps)
     @if (($workflowSteps?->count() ?? 0) > 0)
       <div class="mt-6 border-t border-slate-100 pt-6">
-        <h2 class="text-base font-bold text-slate-900">Approval Workflow</h2>
-        <p class="mt-1 text-sm text-slate-500">Step-based review for this proposal. Every decision is logged for traceability.</p>
+        <h2 class="px-6 text-lg font-bold text-slate-900">Approval Workflow</h2>
+        <p class="mt-1 px-6 text-sm text-slate-500">Step-based review for this proposal. Every decision is logged for traceability.</p>
 
         @if (isset($workflowCurrentStep) && $workflowCurrentStep)
-          <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+          <div class="mx-6 mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
             Current step:
             <span class="font-semibold">#{{ $workflowCurrentStep->step_order }} — {{ $workflowCurrentStep->role?->display_name ?? $workflowCurrentStep->role?->name ?? 'Unassigned role' }}</span>
           </div>
         @endif
 
-        <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+        <div class="mx-6 mt-4 overflow-x-auto rounded-xl border border-slate-200">
           <table class="min-w-2xl w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
@@ -137,7 +147,7 @@
         </div>
 
         @isset($workflowActionRoute)
-          <form method="POST" action="{{ $workflowActionRoute }}" class="mt-5 space-y-4">
+          <form method="POST" action="{{ $workflowActionRoute }}" class="mx-6 mt-5 space-y-4">
             @csrf
             @method('PATCH')
             <div>
@@ -154,7 +164,7 @@
 
         @isset($workflowLogs)
           @if (($workflowLogs?->count() ?? 0) > 0)
-            <div class="mt-6">
+            <div class="mx-6 mt-6">
               <h3 class="text-sm font-semibold text-slate-900">Recent workflow logs</h3>
               <ul class="mt-2 space-y-2 text-sm">
                 @foreach ($workflowLogs as $log)
