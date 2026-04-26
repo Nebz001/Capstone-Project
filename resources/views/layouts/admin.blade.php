@@ -461,22 +461,37 @@
 
   <script>
     (() => {
-      const toggles = document.querySelectorAll('[data-sidebar-toggle]');
-      toggles.forEach((btn) => {
-        const key = btn.getAttribute('data-sidebar-toggle');
-        const panelId = btn.getAttribute('aria-controls');
-        const panel = panelId ? document.getElementById(panelId) : null;
-        const chevron = key ? document.querySelector(`[data-sidebar-chevron="${key}"]`) : null;
-        if (!panel) return;
+      const toggles = Array.from(document.querySelectorAll('[data-sidebar-toggle]'));
+      const sections = toggles
+        .map((btn) => {
+          const key = btn.getAttribute('data-sidebar-toggle');
+          const panelId = btn.getAttribute('aria-controls');
+          const panel = panelId ? document.getElementById(panelId) : null;
+          const chevron = key ? document.querySelector(`[data-sidebar-chevron="${key}"]`) : null;
+          if (!key || !panel) return null;
+          return { key, btn, panel, chevron };
+        })
+        .filter(Boolean);
+      let openSection = sections.find((section) => section.btn.getAttribute('aria-expanded') === 'true')?.key ?? null;
 
-        btn.addEventListener('click', () => {
-          const isExpanded = btn.getAttribute('aria-expanded') === 'true';
-          const next = !isExpanded;
-          btn.setAttribute('aria-expanded', next ? 'true' : 'false');
-          panel.classList.toggle('hidden', !next);
-          if (chevron) {
-            chevron.classList.toggle('rotate-180', next);
+      const setOpenSection = (nextSection) => {
+        openSection = nextSection;
+        sections.forEach((section) => {
+          const isOpen = section.key === openSection;
+          section.btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          section.panel.classList.toggle('hidden', !isOpen);
+          if (section.chevron) {
+            section.chevron.classList.toggle('rotate-180', isOpen);
           }
+        });
+      };
+
+      // Normalize initial state so only one dropdown is open on first paint.
+      setOpenSection(openSection);
+
+      sections.forEach((section) => {
+        section.btn.addEventListener('click', () => {
+          setOpenSection(openSection === section.key ? null : section.key);
         });
       });
 
