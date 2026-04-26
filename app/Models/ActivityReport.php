@@ -24,6 +24,9 @@ class ActivityReport extends Model
         'program_content',
         'evaluation_report',
         'participants_reached_percent',
+        'admin_field_reviews',
+        'admin_section_reviews',
+        'admin_review_remarks',
     ];
 
     protected function casts(): array
@@ -36,6 +39,8 @@ class ActivityReport extends Model
             'submitted_by' => 'integer',
             'current_approval_step' => 'integer',
             'participants_reached_percent' => 'decimal:2',
+            'admin_field_reviews' => 'array',
+            'admin_section_reviews' => 'array',
         ];
     }
 

@@ -46,6 +46,30 @@
     </div>
   @endif
 
+  @if (! empty($revisionSections ?? []))
+    <x-ui.card padding="p-0" class="mb-5">
+      <x-ui.card-section-header
+        title="Revision notes"
+        subtitle="Only fields marked for revision are shown below."
+        content-padding="px-6"
+      />
+      <div class="border-t border-slate-100 px-6 py-4.5">
+        <div class="space-y-3.5">
+          @foreach ($revisionSections as $section)
+            <section class="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+              <h3 class="text-sm font-semibold text-amber-900">{{ $section['title'] }}</h3>
+              <ul class="mt-2 space-y-1.5">
+                @foreach (($section['items'] ?? []) as $item)
+                  <li class="text-sm text-amber-950"><span class="font-semibold">{{ $item['field'] }}:</span> {{ $item['note'] }}</li>
+                @endforeach
+              </ul>
+            </section>
+          @endforeach
+        </div>
+      </div>
+    </x-ui.card>
+  @endif
+
   <x-ui.card padding="p-0" class="mb-5">
     <x-ui.card-section-header
       title="Submission details"

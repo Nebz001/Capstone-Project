@@ -165,17 +165,28 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::patch('/registrations/{submission}/status', 'updateRegistrationStatus')->name('registrations.update-status');
 
     Route::get('/renewals', 'renewals')->name('renewals.index');
+    Route::get('/renewals/{submission}/requirements/{key}', 'showRenewalRequirementFile')
+        ->name('renewals.requirement-file')
+        ->where('key', '[a-z0-9_]+');
     Route::get('/renewals/{submission}', 'showRenewal')->name('renewals.show');
+    Route::patch('/renewals/{submission}/review-draft', 'saveRenewalReviewDraft')->name('renewals.review-draft');
+    Route::patch('/renewals/{submission}/status', 'updateRenewalStatus')->name('renewals.update-status');
 
     Route::get('/activity-calendars', 'calendars')->name('calendars.index');
     Route::get('/activity-calendars/{calendar}', 'showCalendar')->name('calendars.show');
+    Route::patch('/activity-calendars/{calendar}/review-draft', 'saveCalendarReviewDraft')->name('calendars.review-draft');
+    Route::patch('/activity-calendars/{calendar}/status', 'updateCalendarStatus')->name('calendars.update-status');
 
     Route::get('/activity-proposals', 'proposals')->name('proposals.index');
     Route::get('/activity-proposals/{proposal}', 'showProposal')->name('proposals.show');
+    Route::patch('/activity-proposals/{proposal}/review-draft', 'saveProposalReviewDraft')->name('proposals.review-draft');
+    Route::patch('/activity-proposals/{proposal}/status', 'updateProposalStatus')->name('proposals.update-status');
     Route::patch('/activity-proposals/{proposal}/workflow', 'updateProposalWorkflow')->name('proposals.workflow');
 
     Route::get('/after-activity-reports', 'reports')->name('reports.index');
     Route::get('/after-activity-reports/{report}', 'showReport')->name('reports.show');
+    Route::patch('/after-activity-reports/{report}/review-draft', 'saveReportReviewDraft')->name('reports.review-draft');
+    Route::patch('/after-activity-reports/{report}/status', 'updateReportStatus')->name('reports.update-status');
 
     Route::post('/organizations/{organization}/request-profile-revision', 'requestOrganizationProfileRevision')
         ->name('organizations.request-profile-revision');

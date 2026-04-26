@@ -38,52 +38,71 @@
     @endforeach
   </dl>
 
+  @if (($isProposalReview ?? false) && !empty($detailSections))
+    <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="text-sm font-semibold text-slate-900">Field review progress</p>
+        <div id="proposal-review-progress" class="inline-flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700" data-progress="verified">Verified: 0</span>
+          <span class="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700" data-progress="needs_revision">Needs Revision: 0</span>
+          <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700" data-progress="pending">Pending: 0</span>
+        </div>
+      </div>
+    </div>
+  @endif
+
   @if (!empty($detailSections))
     <div class="mt-6 space-y-6 border-t border-slate-100 pt-6">
       @foreach ($detailSections as $section)
-        <section>
-          <h2 class="text-base font-bold text-slate-900">{{ $section['title'] }}</h2>
+        <section class="{{ ($isProposalReview ?? false) ? 'rounded-xl border border-slate-200 bg-white p-4' : '' }}" data-review-section-card="{{ ($isProposalReview ?? false) ? '1' : '0' }}" data-section-key="section_{{ $loop->index }}">
+          <div class="flex items-start justify-between gap-3">
+            <h2 class="text-base font-bold text-slate-900">{{ $section['title'] }}</h2>
+            @if ($isProposalReview ?? false)
+              <span class="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700" data-section-status-badge="section_{{ $loop->index }}">Pending</span>
+            @endif
+          </div>
           <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             @foreach (($section['rows'] ?? []) as $row)
-              <div class="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
+              <div class="field-review-card rounded-xl border border-slate-200 bg-slate-50/90 p-4">
                 <dt class="text-xs font-semibold uppercase tracking-wide text-slate-700">{{ $row['label'] }}</dt>
-                <dd class="mt-2 whitespace-pre-line text-sm font-medium text-slate-900">{{ $row['value'] }}</dd>
-                @if (! empty($row['link_url']))
-                  <a href="{{ $row['link_url'] }}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex text-xs font-semibold text-[#003E9F] hover:text-[#00327F]">
-                    Open / Download file
-                    <span class="ml-1 text-slate-400" aria-hidden="true">↗</span>
-                  </a>
-                @endif
+                <div class="mt-1.5 field-review-top-row flex flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <dd class="whitespace-pre-line text-sm font-medium text-slate-900">{{ $row['value'] }}</dd>
+                    @if (! empty($row['link_url']))
+                      <a href="{{ $row['link_url'] }}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex text-xs font-semibold text-[#003E9F] hover:text-[#00327F]">
+                        Open / Download file
+                        <span class="ml-1 text-slate-400" aria-hidden="true">↗</span>
+                      </a>
+                    @endif
+                  </div>
                 @if ($isProposalReview ?? false)
                   @php
                     $fieldKey = (string) ($row['key'] ?? '');
-                    $fieldStatus = old("field_reviews.{$fieldKey}.status", $row['review']['status'] ?? '');
+                    $savedStatus = (string) ($row['review']['status'] ?? '');
+                    $fieldStatus = old("field_reviews.{$fieldKey}.status", $savedStatus === 'approved' ? 'passed' : ($savedStatus === 'revision' ? 'revision' : 'pending'));
+                    if (! in_array($fieldStatus, ['pending', 'passed', 'revision'], true)) {
+                      $fieldStatus = 'pending';
+                    }
                     $fieldComment = old("field_reviews.{$fieldKey}.comment", $row['review']['comment'] ?? '');
                   @endphp
-                  <div class="mt-4 rounded-xl border border-slate-200 bg-white p-3">
-                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Field review</p>
+                  <div class="field-review-control shrink-0" data-field-review data-section-key="section_{{ $loop->parent->index }}" data-field-key="{{ $fieldKey }}" data-field-label="{{ $row['label'] }}">
                     <input type="hidden" name="field_reviews[{{ $fieldKey }}][label]" value="{{ $row['label'] }}" form="proposal-field-review-form" />
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        <input type="radio" name="field_reviews[{{ $fieldKey }}][status]" value="approved" form="proposal-field-review-form" class="h-3.5 w-3.5 border-emerald-300 text-emerald-600 focus:ring-emerald-400/30" @checked($fieldStatus === 'approved') />
-                        Approved / OK
-                      </label>
-                      <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700">
-                        <input type="radio" name="field_reviews[{{ $fieldKey }}][status]" value="revision" form="proposal-field-review-form" class="h-3.5 w-3.5 border-orange-300 text-orange-600 focus:ring-orange-400/30" @checked($fieldStatus === 'revision') />
-                        For Revision
-                      </label>
-                      <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
-                        <input type="radio" name="field_reviews[{{ $fieldKey }}][status]" value="rejected" form="proposal-field-review-form" class="h-3.5 w-3.5 border-rose-300 text-rose-600 focus:ring-rose-400/30" @checked($fieldStatus === 'rejected') />
-                        Rejected
-                      </label>
+                    <div class="inline-flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="Field review for {{ $row['label'] }}">
+                      <button type="button" class="field-review-btn rounded-md px-2.5 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50 {{ $fieldStatus === 'passed' ? 'ring-2 ring-emerald-400' : '' }}" data-status-value="passed" aria-pressed="{{ $fieldStatus === 'passed' ? 'true' : 'false' }}">Passed</button>
+                      <button type="button" class="field-review-btn rounded-md px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-50 {{ $fieldStatus === 'revision' ? 'ring-2 ring-amber-400' : '' }}" data-status-value="revision" aria-pressed="{{ $fieldStatus === 'revision' ? 'true' : 'false' }}">Revision</button>
                     </div>
-                    <input type="hidden" name="field_reviews[{{ $fieldKey }}][comment]" value="{{ $fieldComment }}" form="proposal-field-review-form" data-field-comment-input data-field-key="{{ $fieldKey }}" />
-                    <p class="mt-2 hidden text-xs text-slate-600" data-field-comment-preview data-field-key="{{ $fieldKey }}"></p>
+                    <input type="hidden" class="field-review-status" name="field_reviews[{{ $fieldKey }}][status]" value="{{ $fieldStatus }}" form="proposal-field-review-form" />
+                    <div class="field-review-note mt-2 {{ $fieldStatus === 'revision' ? '' : 'hidden' }}">
+                      <x-forms.textarea class="field-review-note-input" name="field_reviews[{{ $fieldKey }}][comment]" form="proposal-field-review-form" :rows="2" placeholder="Add revision note for this field...">{{ $fieldComment }}</x-forms.textarea>
+                      <p class="mt-1 text-xs text-slate-500">Required when this field needs revision.</p>
+                      <p class="field-review-note-error mt-1 hidden text-xs font-medium text-rose-700">Revision note is required.</p>
+                    </div>
                     @error("field_reviews.{$fieldKey}.comment")
                       <p class="mt-2 text-xs font-medium text-rose-600">{{ $message }}</p>
                     @enderror
                   </div>
                 @endif
+                </div>
               </div>
             @endforeach
           </dl>
@@ -255,8 +274,10 @@
       @method('PATCH')
       @if ($isProposalReview ?? false)
         <input type="hidden" name="action" value="approve" />
-        <div class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-          Mark each field as Approved / For Revision / Rejected. Final outcome is computed automatically from field-level statuses.
+        <div id="revision-summary-box" class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900">
+          <p class="text-sm font-bold uppercase tracking-widest text-amber-900">Revision Summary</p>
+          <p id="revision-summary-helper" class="mt-1 text-xs text-amber-800/90">Click a revision item below to jump to the field that needs updates.</p>
+          <ul id="revision-summary-list" class="mt-3 space-y-3"></ul>
         </div>
         @error('field_reviews')
           <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-700">
@@ -264,8 +285,9 @@
           </div>
         @enderror
         <div class="flex flex-wrap gap-2">
-          <button type="submit" class="inline-flex rounded-xl bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#00327F]">Submit Field Review</button>
+          <button id="save-review-btn" type="submit" class="inline-flex rounded-xl bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#00327F] disabled:cursor-not-allowed disabled:opacity-60">Submit Field Review</button>
         </div>
+        <p id="save-review-helper" class="text-xs text-slate-500"></p>
       @else
         <div>
           <x-forms.label for="workflow_comments">Comments (optional)</x-forms.label>
@@ -299,19 +321,6 @@
     @endif
   </div>
 </x-ui.card>
-@if ($isProposalReview ?? false)
-  <div id="field-comment-modal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/40 px-4">
-    <div class="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xl">
-      <p class="text-sm font-bold text-slate-900" id="field-comment-modal-title">Add review comment</p>
-      <p class="mt-1 text-xs text-slate-600">Explain what needs to be changed or why this field is rejected.</p>
-      <textarea id="field-comment-modal-input" rows="4" class="mt-3 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Enter required comment..."></textarea>
-      <div class="mt-4 flex justify-end gap-2">
-        <button type="button" id="field-comment-modal-cancel" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-        <button type="button" id="field-comment-modal-save" class="rounded-lg bg-[#003E9F] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#00327F]">Save Comment</button>
-      </div>
-    </div>
-  </div>
-@endif
 <script id="approver-workflow-stage-nodes" type="application/json">@json($workflowStageNodes)</script>
 <script id="approver-workflow-selected-stage" type="application/json">@json($selectedStageId)</script>
 <script>
@@ -363,135 +372,244 @@
 @if ($isProposalReview ?? false)
 <script>
   (() => {
-    const modal = document.getElementById('field-comment-modal');
-    const modalTitle = document.getElementById('field-comment-modal-title');
-    const modalInput = document.getElementById('field-comment-modal-input');
-    const saveBtn = document.getElementById('field-comment-modal-save');
-    const cancelBtn = document.getElementById('field-comment-modal-cancel');
-    if (!modal || !modalTitle || !modalInput || !saveBtn || !cancelBtn) return;
-
-    let currentFieldKey = '';
-    let currentLabel = '';
-
-    const getCommentInput = (fieldKey) => document.querySelector(`[data-field-comment-input][data-field-key="${fieldKey}"]`);
-    const getCommentPreview = (fieldKey) => document.querySelector(`[data-field-comment-preview][data-field-key="${fieldKey}"]`);
-
-    const renderCommentPreview = (fieldKey) => {
-      const input = getCommentInput(fieldKey);
-      const preview = getCommentPreview(fieldKey);
-      if (!input || !preview) return;
-      const value = (input.value || '').trim();
-      preview.textContent = value ? `Comment: ${value}` : '';
-      preview.classList.toggle('hidden', value.length === 0);
-    };
-
-    const openModal = (fieldKey, label) => {
-      currentFieldKey = fieldKey;
-      currentLabel = label;
-      modalTitle.textContent = `Comment for: ${label}`;
-      const currentInput = getCommentInput(fieldKey);
-      modalInput.value = currentInput ? currentInput.value : '';
-      modal.classList.remove('hidden');
-      modal.classList.add('flex');
-      modalInput.focus();
-    };
-
-    const closeModal = () => {
-      modal.classList.add('hidden');
-      modal.classList.remove('flex');
-      currentFieldKey = '';
-      currentLabel = '';
-    };
-
-    saveBtn.addEventListener('click', () => {
-      const input = getCommentInput(currentFieldKey);
-      if (!input) {
-        closeModal();
-        return;
-      }
-      const value = modalInput.value.trim();
-      if (value.length === 0) {
-        modalInput.focus();
-        return;
-      }
-      input.value = value;
-      renderCommentPreview(currentFieldKey);
-      closeModal();
-    });
-
-    cancelBtn.addEventListener('click', closeModal);
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) closeModal();
-    });
-
-    const statusRadios = Array.from(document.querySelectorAll('input[name^="field_reviews["][name$="[status]"]'));
     const statusBadge = document.getElementById('proposal-stage-status-badge');
+    const progressEl = document.getElementById('proposal-review-progress');
+    const saveReviewBtn = document.getElementById('save-review-btn');
+    const saveReviewHelper = document.getElementById('save-review-helper');
+    const revisionSummaryBox = document.getElementById('revision-summary-box');
+    const revisionSummaryHelper = document.getElementById('revision-summary-helper');
+    const revisionSummaryList = document.getElementById('revision-summary-list');
+    const reviewForm = document.getElementById('proposal-field-review-form');
+    if (!statusBadge || !progressEl || !saveReviewBtn || !saveReviewHelper || !revisionSummaryBox || !revisionSummaryHelper || !revisionSummaryList || !reviewForm) return;
+
+    const normalizeStatus = (status) => {
+      const value = String(status || 'pending');
+      if (value === 'approved') return 'passed';
+      if (value === 'passed' || value === 'revision' || value === 'pending') return value;
+      return 'pending';
+    };
+
+    const allSectionRoots = () => Array.from(document.querySelectorAll('[data-review-section-card="1"]'));
+    const getFieldControls = (sectionKey) => Array.from(document.querySelectorAll(`[data-field-review][data-section-key="${sectionKey}"]`));
     const statusClassMap = {
       PENDING: 'bg-amber-100 text-amber-800 border border-amber-200',
-      UNDER_REVIEW: 'bg-blue-100 text-blue-700 border border-blue-200',
-      REVIEWED: 'bg-blue-100 text-blue-700 border border-blue-200',
       APPROVED: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-      REJECTED: 'bg-rose-100 text-rose-700 border border-rose-200',
-      REVISION: 'bg-orange-100 text-orange-700 border border-orange-200',
       REVISION_REQUIRED: 'bg-orange-100 text-orange-700 border border-orange-200',
     };
     const knownStatusClasses = Array.from(new Set(Object.values(statusClassMap).join(' ').split(' ')));
 
-    const computeLiveStatus = () => {
-      const grouped = new Map();
-      statusRadios.forEach((radio) => {
-        if (!grouped.has(radio.name)) grouped.set(radio.name, null);
-        if (radio.checked) grouped.set(radio.name, radio.value);
+    function syncFieldControl(control) {
+      const statusInput = control.querySelector('.field-review-status');
+      const noteWrap = control.dataset.noteWrapId
+        ? document.getElementById(control.dataset.noteWrapId)
+        : control.querySelector('.field-review-note');
+      const noteInput = control.dataset.noteInputId
+        ? document.getElementById(control.dataset.noteInputId)
+        : control.querySelector('.field-review-note-input');
+      const noteError = noteWrap?.querySelector('.field-review-note-error');
+      const status = normalizeStatus(statusInput?.value || 'pending');
+      if (statusInput) statusInput.value = status;
+      control.querySelectorAll('.field-review-btn').forEach((btn) => {
+        const active = btn.dataset.statusValue === status;
+        btn.classList.toggle('ring-2', active);
+        btn.classList.toggle('ring-emerald-400', active && status === 'passed');
+        btn.classList.toggle('ring-amber-400', active && status === 'revision');
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
-      const values = Array.from(grouped.values()).filter((value) => typeof value === 'string');
-      if (values.length < grouped.size) return 'PENDING';
-      if (values.includes('rejected')) return 'REJECTED';
-      if (values.includes('revision')) return 'REVISION_REQUIRED';
-      return 'APPROVED';
-    };
+      if (noteWrap) noteWrap.classList.toggle('hidden', status !== 'revision');
+      const hasNote = (noteInput?.value || '').trim() !== '';
+      if (noteError) noteError.classList.toggle('hidden', status !== 'revision' || hasNote);
+      if (status !== 'revision' && noteInput) noteInput.value = '';
+    }
 
-    const renderLiveStatusBadge = () => {
-      if (!statusBadge) return;
-      const nextStatus = computeLiveStatus();
-      statusBadge.textContent = nextStatus;
-      statusBadge.dataset.status = nextStatus;
+    function computeSection(sectionKey) {
+      const controls = getFieldControls(sectionKey);
+      let pending = 0;
+      let revision = 0;
+      let invalidRevision = 0;
+      controls.forEach((control) => {
+        const status = normalizeStatus(control.querySelector('.field-review-status')?.value || 'pending');
+        if (status === 'pending') pending += 1;
+        if (status === 'revision') {
+          revision += 1;
+          const noteInput = control.dataset.noteInputId
+            ? document.getElementById(control.dataset.noteInputId)
+            : control.querySelector('.field-review-note-input');
+          if ((noteInput?.value || '').trim() === '') invalidRevision += 1;
+        }
+      });
+      return { pending, revision, invalidRevision, total: controls.length };
+    }
+
+    function applySectionBadge(sectionKey, status) {
+      const badge = document.querySelector(`[data-section-status-badge="${sectionKey}"]`);
+      if (!badge) return;
+      if (status === 'verified') {
+        badge.className = 'inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700';
+        badge.textContent = 'Verified';
+      } else if (status === 'needs_revision') {
+        badge.className = 'inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700';
+        badge.textContent = 'Needs Revision';
+      } else {
+        badge.className = 'inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700';
+        badge.textContent = 'Pending';
+      }
+    }
+
+    function refreshSummaryAndBadge() {
+      let verified = 0;
+      let needsRevision = 0;
+      let pending = 0;
+      allSectionRoots().forEach((sectionRoot) => {
+        const sectionKey = sectionRoot.dataset.sectionKey || '';
+        const stats = computeSection(sectionKey);
+        const status = stats.pending > 0 ? 'pending' : (stats.revision > 0 ? 'needs_revision' : 'verified');
+        applySectionBadge(sectionKey, status);
+        if (status === 'verified') verified += 1;
+        else if (status === 'needs_revision') needsRevision += 1;
+        else pending += 1;
+      });
+      progressEl.querySelector('[data-progress="verified"]').textContent = `Verified: ${verified}`;
+      progressEl.querySelector('[data-progress="needs_revision"]').textContent = `Needs Revision: ${needsRevision}`;
+      progressEl.querySelector('[data-progress="pending"]').textContent = `Pending: ${pending}`;
+      if (pending > 0) {
+        statusBadge.textContent = 'PENDING';
+      } else if (needsRevision > 0) {
+        statusBadge.textContent = 'REVISION_REQUIRED';
+      } else {
+        statusBadge.textContent = 'APPROVED';
+      }
+      const nextStatus = statusBadge.textContent?.trim() || 'PENDING';
       knownStatusClasses.forEach((className) => statusBadge.classList.remove(className));
       (statusClassMap[nextStatus] || statusClassMap.PENDING).split(' ').forEach((className) => statusBadge.classList.add(className));
-    };
+    }
 
-    statusRadios.forEach((radio) => {
-      const fieldKey = radio.name.replace(/^field_reviews\[/, '').replace(/\]\[status\]$/, '');
-      renderCommentPreview(fieldKey);
-      radio.addEventListener('change', () => {
-        const labelInput = document.querySelector(`input[name="field_reviews[${fieldKey}][label]"]`);
-        const label = labelInput ? labelInput.value : fieldKey;
-        if (radio.value === 'revision' || radio.value === 'rejected') {
-          openModal(fieldKey, label);
-        } else {
-          const commentInput = getCommentInput(fieldKey);
-          if (commentInput) commentInput.value = '';
-          renderCommentPreview(fieldKey);
-        }
-        renderLiveStatusBadge();
+    function refreshRevisionSummary() {
+      const rows = [];
+      document.querySelectorAll('[data-field-review]').forEach((control) => {
+        const status = normalizeStatus(control.querySelector('.field-review-status')?.value || 'pending');
+        if (status !== 'revision') return;
+        const sectionRoot = control.closest('[data-review-section-card="1"]');
+        const section = sectionRoot?.querySelector('h2')?.textContent || 'Section';
+        const field = control.dataset.fieldLabel || 'Field';
+        const noteInput = control.dataset.noteInputId
+          ? document.getElementById(control.dataset.noteInputId)
+          : control.querySelector('.field-review-note-input');
+        const note = (noteInput?.value || '').trim();
+        const target = control.closest('.field-review-card');
+        if (target && !target.id) target.id = `review-target-${control.dataset.fieldKey || 'field'}`;
+        rows.push({ section, field, note: note || 'No note provided yet.', targetId: target?.id || '' });
       });
-    });
-    renderLiveStatusBadge();
 
-    const reviewForm = document.querySelector(`form[action="{{ $workflowActionRoute }}"]`);
-    if (reviewForm) {
-      reviewForm.addEventListener('submit', (e) => {
-        const unresolved = Array.from(document.querySelectorAll('input[name^="field_reviews["][name$="[status]"]:checked'))
-          .some((checked) => {
-            if (checked.value === 'approved') return false;
-            const fieldKey = checked.name.replace(/^field_reviews\[/, '').replace(/\]\[status\]$/, '');
-            const commentInput = getCommentInput(fieldKey);
-            return !commentInput || commentInput.value.trim().length === 0;
-          });
-        if (unresolved) {
-          e.preventDefault();
-        }
+      if (rows.length === 0) {
+        revisionSummaryBox.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900';
+        revisionSummaryHelper.textContent = 'No fields are marked for revision.';
+        revisionSummaryList.innerHTML = '<li class="text-sm">All reviewed fields are marked Passed.</li>';
+        return;
+      }
+
+      revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+      revisionSummaryHelper.textContent = 'Click a revision item below to jump to the field that needs updates.';
+      revisionSummaryList.innerHTML = '';
+      const grouped = {};
+      rows.forEach((row) => {
+        grouped[row.section] = grouped[row.section] || [];
+        grouped[row.section].push(row);
+      });
+      Object.entries(grouped).forEach(([section, sectionRows]) => {
+        const item = document.createElement('li');
+        item.className = 'rounded-xl border border-amber-200/70 bg-white/70 px-3 py-2.5';
+        item.innerHTML = `<p class="font-semibold text-amber-900">${section} (${sectionRows.length})</p>`;
+        const list = document.createElement('ul');
+        list.className = 'mt-1.5 space-y-1.5';
+        sectionRows.forEach((row) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<button type="button" class="inline-flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-amber-900/95 transition hover:bg-amber-100/70 focus:outline-none focus:ring-2 focus:ring-amber-400/50" data-target-id="${row.targetId}"><span class="font-semibold underline underline-offset-2">${row.field}</span><span>- ${row.note}</span></button>`;
+          list.appendChild(li);
+        });
+        item.appendChild(list);
+        revisionSummaryList.appendChild(item);
       });
     }
+
+    function updateSaveState() {
+      let hasPending = false;
+      let hasMissingNote = false;
+      allSectionRoots().forEach((sectionRoot) => {
+        const stats = computeSection(sectionRoot.dataset.sectionKey || '');
+        if (stats.pending > 0) hasPending = true;
+        if (stats.invalidRevision > 0) hasMissingNote = true;
+      });
+      saveReviewBtn.disabled = hasPending || hasMissingNote;
+      if (hasPending) {
+        saveReviewHelper.textContent = 'All fields must be reviewed before submitting.';
+      } else if (hasMissingNote) {
+        saveReviewHelper.textContent = 'Revision note is required for each field marked Revision.';
+      } else {
+        saveReviewHelper.textContent = '';
+      }
+    }
+
+    document.querySelectorAll('[data-field-review]').forEach((control) => {
+      const parentCard = control.closest('.field-review-card');
+      const noteWrap = control.querySelector('.field-review-note');
+      const noteInput = control.querySelector('.field-review-note-input');
+      if (parentCard && noteWrap) {
+        const noteWrapId = `field-review-note-${control.dataset.sectionKey || 'section'}-${control.dataset.fieldKey || 'field'}`;
+        noteWrap.id = noteWrapId;
+        control.dataset.noteWrapId = noteWrapId;
+        if (noteInput) {
+          const noteInputId = `${noteWrapId}-input`;
+          noteInput.id = noteInputId;
+          control.dataset.noteInputId = noteInputId;
+        }
+        noteWrap.classList.add('w-full', 'border-t', 'border-slate-200/70', 'pt-2.5');
+        parentCard.appendChild(noteWrap);
+      }
+
+      syncFieldControl(control);
+      control.querySelectorAll('.field-review-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const statusInput = control.querySelector('.field-review-status');
+          if (!statusInput) return;
+          statusInput.value = btn.dataset.statusValue || 'pending';
+          syncFieldControl(control);
+          refreshSummaryAndBadge();
+          refreshRevisionSummary();
+          updateSaveState();
+        });
+      });
+      const mappedNoteInput = control.dataset.noteInputId
+        ? document.getElementById(control.dataset.noteInputId)
+        : control.querySelector('.field-review-note-input');
+      mappedNoteInput?.addEventListener('input', () => {
+        syncFieldControl(control);
+        refreshSummaryAndBadge();
+        refreshRevisionSummary();
+        updateSaveState();
+      });
+    });
+
+    revisionSummaryList.addEventListener('click', (event) => {
+      const action = event.target.closest('button[data-target-id]');
+      if (!action) return;
+      const target = document.getElementById(action.dataset.targetId || '');
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('ring-2', 'ring-amber-300', 'bg-amber-50/80');
+      window.setTimeout(() => target.classList.remove('ring-2', 'ring-amber-300', 'bg-amber-50/80'), 1800);
+    });
+
+    reviewForm.addEventListener('submit', (e) => {
+      updateSaveState();
+      if (saveReviewBtn.disabled) {
+        e.preventDefault();
+      }
+    });
+
+    refreshSummaryAndBadge();
+    refreshRevisionSummary();
+    updateSaveState();
   })();
 </script>
 @endif

@@ -229,6 +229,7 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         $sp = $this->submissionStatusPresentation($submission->legacyStatus());
         $fileLinks = $this->renewalFileLinksFromSubmission($submission);
+        $revisionSections = $this->moduleRevisionSections(is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : []);
 
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $this->submittedDocumentsListUrl($request),
@@ -238,6 +239,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusClass' => $sp['badge_class'],
             'metaRows' => $this->renewalMetaRowsFromSubmission($submission),
             'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
+            'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.renew')),
             'calendarEntries' => null,
@@ -278,6 +280,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             ];
         }
 
+        $revisionSections = $this->moduleRevisionSections(is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : []);
         $term = $this->activityCalendarTermLabel($calendar->semester);
         $titleLine = trim(($calendar->academic_year ?? 'Academic year N/A').' · '.$term.' activity calendar');
 
@@ -298,7 +301,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ['label' => 'Date submitted', 'value' => optional($calendar->submission_date)->format('M j, Y') ?? '—'],
                 ['label' => 'Activities listed', 'value' => (string) $calendar->entries->count()],
             ],
-            'remarkHighlight' => null,
+            'remarkHighlight' => $this->revisionSectionsPreview($revisionSections),
+            'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->activityCalendarWorkflowLinks($calendar),
             'calendarEntries' => $calendar->entries,
@@ -337,6 +341,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $proposal->load(['calendar', 'calendarEntry', 'academicTerm', 'organization']);
 
         $sp = $this->submissionStatusPresentation($proposal->status, true);
+        $revisionSections = $this->moduleRevisionSections(is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : []);
         $fileLinks = [];
         if ($this->proposalFilePathByKey($proposal, 'logo')) {
             $fileLinks[] = [
@@ -450,7 +455,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ['title' => 'Step 1: Activity Request Form', 'rows' => $step1Rows],
                 ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
             ],
-            'remarkHighlight' => $this->truncatePreview($proposal->overall_goal, 220),
+            'remarkHighlight' => $this->revisionSectionsPreview($revisionSections) ?: $this->truncatePreview($proposal->overall_goal, 220),
+            'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->activityProposalWorkflowLinks($request, $proposal),
             'calendarEntries' => null,
@@ -491,6 +497,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $report->load('proposal');
 
         $sp = $this->submissionStatusPresentation($report->status, false, 'report');
+        $revisionSections = $this->moduleRevisionSections(is_array($report->admin_field_reviews) ? $report->admin_field_reviews : []);
 
         $fileLinks = [];
         if ($this->reportFilePathByKey($report, 'poster')) {
@@ -531,7 +538,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ['label' => 'Submitted', 'value' => optional($report->report_submission_date)->format('M j, Y') ?? '—'],
                 ['label' => 'Linked proposal', 'value' => $report->proposal?->activity_title ?? '—'],
             ],
-            'remarkHighlight' => $this->truncatePreview($report->evaluation_report, 200),
+            'remarkHighlight' => $this->revisionSectionsPreview($revisionSections) ?: $this->truncatePreview($report->evaluation_report, 200),
+            'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
             'workflowLinks' => [
                 ['label' => 'Submit another report', 'href' => $this->withSuperAdminOrgQuery($request, route('organizations.after-activity-report')), 'variant' => 'secondary'],
@@ -646,6 +654,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'REVIEWED' => ['label' => 'Reviewed', 'badge_class' => 'bg-blue-100 text-blue-700 border border-blue-200', 'filter' => 'REVIEWED'],
                 'APPROVED' => ['label' => 'Approved', 'badge_class' => 'bg-emerald-100 text-emerald-700 border border-emerald-200', 'filter' => 'APPROVED'],
                 'REJECTED' => ['label' => 'Rejected', 'badge_class' => 'bg-rose-100 text-rose-700 border border-rose-200', 'filter' => 'REJECTED'],
+                'REVISION', 'REVISION_REQUIRED' => ['label' => 'For revision', 'badge_class' => 'bg-orange-100 text-orange-700 border border-orange-200', 'filter' => 'REVISION'],
                 default => ['label' => $raw ?: 'Unknown', 'badge_class' => 'bg-slate-100 text-slate-700 border border-slate-200', 'filter' => $u],
             };
         }
@@ -681,6 +690,60 @@ class OrganizationSubmittedDocumentsController extends Controller
         $t = preg_replace('/\s+/', ' ', trim(strip_tags($text)));
 
         return strlen($t) > $max ? substr($t, 0, $max).'…' : $t;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldReviews
+     * @return list<array{title: string, items: list<array{field: string, note: string}>}>
+     */
+    private function moduleRevisionSections(array $fieldReviews): array
+    {
+        $sections = [];
+        foreach ($fieldReviews as $sectionKey => $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            $items = [];
+            foreach ($fields as $row) {
+                if (! is_array($row) || ($row['status'] ?? null) !== 'flagged') {
+                    continue;
+                }
+                $note = trim((string) ($row['note'] ?? ''));
+                if ($note === '') {
+                    continue;
+                }
+                $items[] = [
+                    'field' => trim((string) ($row['label'] ?? 'Field')) ?: 'Field',
+                    'note' => $note,
+                ];
+            }
+            if ($items !== []) {
+                $sections[] = [
+                    'title' => ucwords(str_replace('_', ' ', (string) $sectionKey)),
+                    'items' => $items,
+                ];
+            }
+        }
+
+        return $sections;
+    }
+
+    /**
+     * @param  list<array{title: string, items: list<array{field: string, note: string}>}>  $sections
+     */
+    private function revisionSectionsPreview(array $sections): ?string
+    {
+        $notes = [];
+        foreach ($sections as $section) {
+            foreach (($section['items'] ?? []) as $item) {
+                $notes[] = ($item['field'] ?? 'Field').': '.($item['note'] ?? '');
+            }
+        }
+        if ($notes === []) {
+            return null;
+        }
+
+        return $this->truncatePreview(implode(' — ', $notes), 160);
     }
 
     private function registrationOfficerRevisionNotesPreview(OrganizationSubmission $submission): ?string
@@ -1143,7 +1206,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => $submission->academicTerm?->academic_year,
                 'academic_context' => $submission->academicTerm?->academic_year ? 'AY '.$submission->academicTerm?->academic_year : null,
-                'remarks_preview' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
+                'remarks_preview' => $this->revisionSectionsPreview($this->moduleRevisionSections(is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : []))
+                    ?: $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
                 'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
                 'files_href' => $detail.'#submitted-files',
@@ -1176,7 +1240,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => $cal->academic_year,
                 'academic_context' => trim(collect([$cal->academic_year ? 'AY '.$cal->academic_year : null, $term !== '—' ? $term : null])->filter()->implode(' · ')) ?: null,
-                'remarks_preview' => null,
+                'remarks_preview' => $this->revisionSectionsPreview($this->moduleRevisionSections(is_array($cal->admin_field_reviews) ? $cal->admin_field_reviews : [])),
                 'detail_href' => $detail,
                 'has_files' => $hasFile,
                 'files_href' => $detail.'#submitted-files',
@@ -1218,7 +1282,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => $proposal->academic_year,
                 'academic_context' => $proposal->academic_year ? 'AY '.$proposal->academic_year : null,
-                'remarks_preview' => $this->truncatePreview($proposal->overall_goal ?? $proposal->activity_description, 120),
+                'remarks_preview' => $this->revisionSectionsPreview($this->moduleRevisionSections(is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : []))
+                    ?: $this->truncatePreview($proposal->overall_goal ?? $proposal->activity_description, 120),
                 'detail_href' => $detail,
                 'has_files' => $nAttach > 0,
                 'files_href' => $detail.'#submitted-files',
@@ -1264,7 +1329,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => null,
                 'academic_context' => null,
-                'remarks_preview' => $this->truncatePreview($report->evaluation_report, 120),
+                'remarks_preview' => $this->revisionSectionsPreview($this->moduleRevisionSections(is_array($report->admin_field_reviews) ? $report->admin_field_reviews : []))
+                    ?: $this->truncatePreview($report->evaluation_report, 120),
                 'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
                 'files_href' => $detail.'#submitted-files',

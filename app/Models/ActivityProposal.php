@@ -35,6 +35,9 @@ class ActivityProposal extends Model
         'submission_date',
         'status',
         'current_approval_step',
+        'admin_field_reviews',
+        'admin_section_reviews',
+        'admin_review_remarks',
     ];
 
     protected function casts(): array
@@ -50,6 +53,8 @@ class ActivityProposal extends Model
             'submitted_by' => 'integer',
             'current_approval_step' => 'integer',
             'estimated_budget' => 'decimal:2',
+            'admin_field_reviews' => 'array',
+            'admin_section_reviews' => 'array',
         ];
     }
 

@@ -38,6 +38,18 @@ class AdminController extends Controller
         'proposed_projects_budget',
         'others',
     ];
+    private const RENEWAL_REQUIREMENT_FILE_KEYS = [
+        'letter_of_intent',
+        'application_form',
+        'by_laws_updated_if_applicable',
+        'updated_list_of_officers_founders_ay',
+        'dean_endorsement_faculty_adviser',
+        'proposed_projects_budget',
+        'past_projects',
+        'financial_statement_previous_ay',
+        'evaluation_summary_past_projects',
+        'others',
+    ];
 
     /** Admin per-section review keys (registration show page). */
     private const REGISTRATION_REVIEW_SECTION_KEYS = ['application', 'contact', 'organizational', 'requirements'];
@@ -749,21 +761,21 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
 
-        $submission->load(['organization', 'submittedBy', 'academicTerm']);
+        $submission->load(['organization', 'submittedBy', 'academicTerm', 'attachments']);
+        $sections = $this->renewalReviewSections($submission);
 
-        return view('admin.review-show', [
+        return view('admin.reviews.module-show', [
             'pageTitle' => 'Renewal Submission Details',
-            'backRoute' => route('admin.renewals.index'),
+            'moduleLabel' => 'Renewal',
             'status' => $submission->legacyStatus(),
-            'details' => [
-                'Organization' => $submission->organization?->organization_name ?? 'N/A',
-                'Submitted By' => $submission->submittedBy?->full_name ?? 'N/A',
-                'Academic Year' => $submission->academicTerm?->academic_year ?? 'N/A',
-                'Contact Person' => $submission->contact_person ?? 'N/A',
-                'Submission Date' => optional($submission->submission_date)->format('M d, Y') ?? 'N/A',
-                'Contact Email' => $submission->contact_email ?? 'N/A',
-            ],
-            'organization' => $submission->organization,
+            'sections' => $sections,
+            'persistedFieldReviews' => is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [],
+            'persistedSectionReviews' => is_array($submission->renewal_section_reviews) ? $submission->renewal_section_reviews : [],
+            'persistedRemarks' => $submission->additional_remarks ?? '',
+            'saveRoute' => route('admin.renewals.update-status', $submission),
+            'draftRoute' => route('admin.renewals.review-draft', $submission),
+            'backRoute' => route('admin.renewals.index'),
+            'backLabel' => 'Back to Renewals',
         ]);
     }
 
@@ -802,24 +814,18 @@ class AdminController extends Controller
         $termKey = $calendar->semester ?? '';
         $termLabel = $termLabels[$termKey] ?? ($termKey !== '' ? $termKey : 'N/A');
 
-        $calendarFile = $calendar->calendar_file;
-        $calendarFileDisplay = $calendarFile
-            ? Storage::disk('public')->url($calendarFile)
-            : 'None (activities submitted via form)';
-
-        return view('admin.review-show', [
+        return view('admin.reviews.module-show', [
             'pageTitle' => 'Activity Calendar Submission Details',
-            'backRoute' => route('admin.calendars.index'),
+            'moduleLabel' => 'Activity Calendar',
             'status' => strtoupper((string) ($calendar->status ?? 'pending')),
-            'details' => [
-                'Organization (profile)' => $calendar->organization?->organization_name ?? 'N/A',
-                'RSO name (form)' => $calendar->submitted_organization_name ?? 'N/A',
-                'Academic Year' => $calendar->academic_year ?? 'N/A',
-                'Term' => $termLabel,
-                'Submission Date' => optional($calendar->submission_date)->format('M d, Y') ?? 'N/A',
-                'Calendar File' => $calendarFileDisplay,
-            ],
-            'calendarEntries' => $calendar->entries,
+            'sections' => $this->calendarReviewSections($calendar, $termLabel),
+            'persistedFieldReviews' => is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [],
+            'persistedSectionReviews' => is_array($calendar->admin_section_reviews) ? $calendar->admin_section_reviews : [],
+            'persistedRemarks' => $calendar->admin_review_remarks ?? '',
+            'saveRoute' => route('admin.calendars.update-status', $calendar),
+            'draftRoute' => route('admin.calendars.review-draft', $calendar),
+            'backRoute' => route('admin.calendars.index'),
+            'backLabel' => 'Back to Activity Calendars',
         ]);
     }
 
@@ -886,16 +892,18 @@ class AdminController extends Controller
             'External funding support' => $externalUrl ?? 'N/A',
         ];
 
-        return view('admin.review-show', [
+        return view('admin.reviews.module-show', [
             'pageTitle' => 'Activity Proposal Submission Details',
-            'backRoute' => route('admin.proposals.index'),
+            'moduleLabel' => 'Activity Proposal',
             'status' => strtoupper((string) ($proposal->status ?? 'pending')),
-            'details' => $details,
-            'organization' => $proposal->organization,
-            'workflowSteps' => $proposal->workflowSteps,
-            'workflowLogs' => $proposal->approvalLogs()->latest('created_at')->limit(15)->get(),
-            'workflowActionRoute' => route('admin.proposals.workflow', $proposal),
-            'workflowCurrentStep' => $proposal->workflowSteps->firstWhere('is_current_step', true),
+            'sections' => $this->proposalReviewSections($proposal, $details),
+            'persistedFieldReviews' => is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : [],
+            'persistedSectionReviews' => is_array($proposal->admin_section_reviews) ? $proposal->admin_section_reviews : [],
+            'persistedRemarks' => $proposal->admin_review_remarks ?? '',
+            'saveRoute' => route('admin.proposals.update-status', $proposal),
+            'draftRoute' => route('admin.proposals.review-draft', $proposal),
+            'backRoute' => route('admin.proposals.index'),
+            'backLabel' => 'Back to Activity Proposals',
         ]);
     }
 
@@ -1040,13 +1048,467 @@ class AdminController extends Controller
             'Attendance file' => $attendancePath ? Storage::disk('public')->url($attendancePath) : 'N/A',
         ];
 
-        return view('admin.review-show', [
+        return view('admin.reviews.module-show', [
             'pageTitle' => 'After Activity Report Submission Details',
-            'backRoute' => route('admin.reports.index'),
+            'moduleLabel' => 'After Activity Report',
             'status' => strtoupper((string) ($report->status ?? 'pending')),
-            'details' => $details,
-            'organization' => $report->organization,
+            'sections' => $this->reportReviewSections($report, $details),
+            'persistedFieldReviews' => is_array($report->admin_field_reviews) ? $report->admin_field_reviews : [],
+            'persistedSectionReviews' => is_array($report->admin_section_reviews) ? $report->admin_section_reviews : [],
+            'persistedRemarks' => $report->admin_review_remarks ?? '',
+            'saveRoute' => route('admin.reports.update-status', $report),
+            'draftRoute' => route('admin.reports.review-draft', $report),
+            'backRoute' => route('admin.reports.index'),
+            'backLabel' => 'Back to After Activity Reports',
         ]);
+    }
+
+    public function showRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        if (! in_array($key, self::RENEWAL_REQUIREMENT_FILE_KEYS, true)) {
+            abort(404);
+        }
+        $attachment = $submission->attachments()
+            ->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)
+            ->latest('id')
+            ->first();
+        if (! $attachment) {
+            abort(404);
+        }
+        return Storage::disk('public')->response((string) $attachment->stored_path, basename((string) $attachment->stored_path), [], 'inline');
+    }
+
+    public function saveRenewalReviewDraft(Request $request, OrganizationSubmission $submission): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        return $this->saveModuleDraft($request, $submission, $this->renewalReviewSchema(), 'renewal_field_reviews', 'renewal_section_reviews');
+    }
+
+    public function updateRenewalStatus(Request $request, OrganizationSubmission $submission): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        return $this->finalizeModuleReview(
+            $request,
+            $submission,
+            $this->renewalReviewSchema(),
+            'renewal_field_reviews',
+            'renewal_section_reviews',
+            'additional_remarks',
+            route('admin.renewals.show', $submission),
+            route('admin.renewals.index'),
+            'Back to Renewals'
+        );
+    }
+
+    public function saveCalendarReviewDraft(Request $request, ActivityCalendar $calendar): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        return $this->saveModuleDraft($request, $calendar, $this->calendarReviewSchema($calendar), 'admin_field_reviews', 'admin_section_reviews');
+    }
+
+    public function updateCalendarStatus(Request $request, ActivityCalendar $calendar): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+        return $this->finalizeModuleReview(
+            $request,
+            $calendar,
+            $this->calendarReviewSchema($calendar),
+            'admin_field_reviews',
+            'admin_section_reviews',
+            'admin_review_remarks',
+            route('admin.calendars.show', $calendar),
+            route('admin.calendars.index'),
+            'Back to Activity Calendars'
+        );
+    }
+
+    public function saveProposalReviewDraft(Request $request, ActivityProposal $proposal): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        return $this->saveModuleDraft($request, $proposal, $this->proposalReviewSchema(), 'admin_field_reviews', 'admin_section_reviews');
+    }
+
+    public function updateProposalStatus(Request $request, ActivityProposal $proposal): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+        return $this->finalizeModuleReview(
+            $request,
+            $proposal,
+            $this->proposalReviewSchema(),
+            'admin_field_reviews',
+            'admin_section_reviews',
+            'admin_review_remarks',
+            route('admin.proposals.show', $proposal),
+            route('admin.proposals.index'),
+            'Back to Activity Proposals'
+        );
+    }
+
+    public function saveReportReviewDraft(Request $request, ActivityReport $report): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        return $this->saveModuleDraft($request, $report, $this->reportReviewSchema(), 'admin_field_reviews', 'admin_section_reviews');
+    }
+
+    public function updateReportStatus(Request $request, ActivityReport $report): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+        return $this->finalizeModuleReview(
+            $request,
+            $report,
+            $this->reportReviewSchema(),
+            'admin_field_reviews',
+            'admin_section_reviews',
+            'admin_review_remarks',
+            route('admin.reports.show', $report),
+            route('admin.reports.index'),
+            'Back to After Activity Reports'
+        );
+    }
+
+    private function saveModuleDraft(Request $request, Model $record, array $schema, string $fieldColumn, string $sectionColumn): JsonResponse
+    {
+        $validated = $request->validate(['field_review' => ['nullable', 'array']]);
+        /** @var User $admin */
+        $admin = $request->user();
+        [$fieldReviews, $sectionReviews] = $this->normalizeModuleFieldReviews(
+            is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [],
+            $schema,
+            $admin
+        );
+        $record->update([$fieldColumn => $fieldReviews, $sectionColumn => $sectionReviews]);
+
+        return response()->json(['ok' => true, 'field_reviews' => $fieldReviews, 'section_reviews' => $sectionReviews]);
+    }
+
+    private function finalizeModuleReview(Request $request, Model $record, array $schema, string $fieldColumn, string $sectionColumn, string $remarksColumn, string $showRoute, string $backRoute, string $backLabel): RedirectResponse
+    {
+        $validated = $request->validate([
+            'field_review' => ['nullable', 'array'],
+            'remarks' => ['nullable', 'string', 'max:5000'],
+        ]);
+        /** @var User $admin */
+        $admin = $request->user();
+        [$fieldReviews, $sectionReviews, $hasPending, $hasMissingNotes] = $this->normalizeModuleFieldReviews(
+            is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [],
+            $schema,
+            $admin
+        );
+        if ($hasPending || $hasMissingNotes) {
+            return back()->withErrors(['field_review' => 'Review all fields and provide notes for every revision-marked field before finalizing.'])->withInput();
+        }
+        $allVerified = collect($sectionReviews)->every(fn (array $row): bool => ($row['status'] ?? 'pending') === 'verified');
+        $nextStatus = $allVerified ? 'approved' : 'revision';
+        $remarks = trim((string) ($validated['remarks'] ?? ''));
+        $notes = $this->composeGenericFlaggedNotes($fieldReviews);
+        $payload = [
+            'status' => $nextStatus,
+            $fieldColumn => $fieldReviews,
+            $sectionColumn => $sectionReviews,
+            $remarksColumn => $remarks !== '' ? $remarks : null,
+        ];
+        if ($record instanceof OrganizationSubmission) {
+            $payload['notes'] = $nextStatus === 'revision'
+                ? ($notes ?? ($remarks !== '' ? $remarks : $record->notes))
+                : ($remarks !== '' ? $remarks : $record->notes);
+            $payload['approval_decision'] = $nextStatus === 'approved' ? 'approved' : null;
+        }
+        $record->update($payload);
+
+        return redirect()
+            ->to($showRoute)
+            ->with('success', 'Review saved successfully.')
+            ->with('success_html', 'Review saved successfully. <a href="'.$backRoute.'" class="ml-1 inline-flex items-center font-semibold underline decoration-emerald-700/50 underline-offset-2 hover:decoration-emerald-900">'.$backLabel.'</a>');
+    }
+
+    private function normalizeModuleFieldReviews(array $fieldReviewInput, array $schema, User $admin): array
+    {
+        $normalizedFieldReviews = [];
+        $normalizedSectionReviews = [];
+        $hasPending = false;
+        $hasMissingNotes = false;
+        foreach ($schema as $sectionKey => $fields) {
+            $sectionInput = is_array($fieldReviewInput[$sectionKey] ?? null) ? $fieldReviewInput[$sectionKey] : [];
+            $fieldStates = [];
+            $sectionPending = false;
+            $sectionFlagged = false;
+            foreach ($fields as $fieldKey => $fieldLabel) {
+                $row = is_array($sectionInput[$fieldKey] ?? null) ? $sectionInput[$fieldKey] : [];
+                $status = (string) ($row['status'] ?? 'pending');
+                if (in_array($status, ['revision', 'needs_revision'], true)) {
+                    $status = 'flagged';
+                }
+                if (! in_array($status, ['pending', 'passed', 'flagged'], true)) {
+                    $status = 'pending';
+                }
+                $note = trim((string) ($row['note'] ?? ''));
+                if ($status !== 'flagged') {
+                    $note = '';
+                }
+                if ($status === 'pending') {
+                    $sectionPending = true;
+                }
+                if ($status === 'flagged') {
+                    $sectionFlagged = true;
+                    if ($note === '') {
+                        $hasMissingNotes = true;
+                    }
+                }
+                $fieldStates[$fieldKey] = [
+                    'label' => $fieldLabel,
+                    'status' => $status,
+                    'note' => $note !== '' ? $note : null,
+                    'reviewed_by' => $status === 'pending' ? null : $admin->id,
+                    'reviewed_at' => $status === 'pending' ? null : now()->toDateTimeString(),
+                ];
+            }
+            if ($sectionPending) {
+                $hasPending = true;
+            }
+            $normalizedFieldReviews[$sectionKey] = $fieldStates;
+            $normalizedSectionReviews[$sectionKey] = [
+                'status' => $sectionPending ? 'pending' : ($sectionFlagged ? 'needs_revision' : 'verified'),
+                'submitted' => ! $sectionPending && ! collect($fieldStates)->contains(fn (array $row): bool => ($row['status'] ?? '') === 'flagged' && trim((string) ($row['note'] ?? '')) === ''),
+                'reviewed_by' => $admin->id,
+                'reviewed_at' => now()->toDateTimeString(),
+            ];
+        }
+        return [$normalizedFieldReviews, $normalizedSectionReviews, $hasPending, $hasMissingNotes];
+    }
+
+    private function composeGenericFlaggedNotes(array $fieldReviews): ?string
+    {
+        $blocks = [];
+        foreach ($fieldReviews as $sectionKey => $fields) {
+            $items = [];
+            foreach ($fields as $field) {
+                if (($field['status'] ?? '') !== 'flagged') {
+                    continue;
+                }
+                $note = trim((string) ($field['note'] ?? ''));
+                if ($note !== '') {
+                    $items[] = '- '.((string) ($field['label'] ?? 'Field')).': '.$note;
+                }
+            }
+            if ($items !== []) {
+                $blocks[] = ucwords(str_replace('_', ' ', (string) $sectionKey))."\n".implode("\n", $items);
+            }
+        }
+        return $blocks === [] ? null : implode("\n\n—\n\n", $blocks);
+    }
+
+    private function renewalReviewSchema(): array
+    {
+        return [
+            'overview' => [
+                'organization' => 'Organization',
+                'submitted_by' => 'Submitted By',
+                'academic_year' => 'Academic Year',
+                'submission_date' => 'Submission Date',
+            ],
+            'contact' => [
+                'contact_person' => 'Contact Person',
+                'contact_no' => 'Contact Number',
+                'contact_email' => 'Contact Email',
+            ],
+            'requirements' => [
+                'letter_of_intent' => 'Letter of Intent',
+                'application_form' => 'Application Form',
+                'by_laws_updated_if_applicable' => 'By-Laws Updated (if applicable)',
+                'updated_list_of_officers_founders_ay' => 'Updated Officers/Founders (AY)',
+                'dean_endorsement_faculty_adviser' => 'Dean Endorsement',
+                'proposed_projects_budget' => 'Proposed Projects and Budget',
+                'past_projects' => 'Past Projects',
+                'financial_statement_previous_ay' => 'Financial Statement (Previous AY)',
+                'evaluation_summary_past_projects' => 'Evaluation Summary (Past Projects)',
+                'others' => 'Others',
+            ],
+        ];
+    }
+
+    private function renewalReviewSections(OrganizationSubmission $submission): array
+    {
+        $sections = [
+            ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Renewal context and submitter details.', 'fields' => []],
+            ['key' => 'contact', 'title' => 'Contact Details', 'subtitle' => 'Primary point-of-contact for this renewal.', 'fields' => []],
+            ['key' => 'requirements', 'title' => 'Requirements Attached', 'subtitle' => 'Uploaded requirement files for renewal.', 'fields' => []],
+        ];
+        $sections[0]['fields'] = [
+            ['key' => 'organization', 'label' => 'Organization', 'value' => $submission->organization?->organization_name ?? 'N/A'],
+            ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $submission->submittedBy?->full_name ?? 'N/A'],
+            ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $submission->academicTerm?->academic_year ?? 'N/A'],
+            ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => optional($submission->submission_date)->format('M d, Y') ?? 'N/A'],
+        ];
+        $sections[1]['fields'] = [
+            ['key' => 'contact_person', 'label' => 'Contact Person', 'value' => $submission->contact_person ?? 'N/A'],
+            ['key' => 'contact_no', 'label' => 'Contact Number', 'value' => $submission->contact_no ?? 'N/A'],
+            ['key' => 'contact_email', 'label' => 'Contact Email', 'value' => $submission->contact_email ?? 'N/A', 'wide' => true],
+        ];
+        foreach (self::RENEWAL_REQUIREMENT_FILE_KEYS as $key) {
+            $attachment = $submission->attachments()->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)->latest('id')->first();
+            $sections[2]['fields'][] = [
+                'key' => $key,
+                'label' => ucwords(str_replace('_', ' ', $key)),
+                'value' => $attachment ? 'File uploaded' : 'Not uploaded',
+                'action' => $attachment ? ['href' => route('admin.renewals.requirement-file', ['submission' => $submission, 'key' => $key])] : null,
+                'wide' => true,
+            ];
+        }
+        return $sections;
+    }
+
+    private function calendarReviewSchema(ActivityCalendar $calendar): array
+    {
+        $schema = [
+            'overview' => [
+                'organization_profile' => 'Organization (profile)',
+                'organization_form' => 'RSO Name (form)',
+                'academic_year' => 'Academic Year',
+                'term' => 'Term',
+                'submission_date' => 'Submission Date',
+            ],
+            'entries' => [],
+        ];
+        foreach ($calendar->entries as $entry) {
+            $schema['entries']['entry_'.$entry->id] = 'Activity: '.($entry->activity_name ?? 'Untitled');
+        }
+        return $schema;
+    }
+
+    private function calendarReviewSections(ActivityCalendar $calendar, string $termLabel): array
+    {
+        $sections = [
+            ['key' => 'overview', 'title' => 'Calendar Overview', 'subtitle' => 'Core activity calendar submission details.', 'fields' => [
+                ['key' => 'organization_profile', 'label' => 'Organization (profile)', 'value' => $calendar->organization?->organization_name ?? 'N/A'],
+                ['key' => 'organization_form', 'label' => 'RSO Name (form)', 'value' => $calendar->submitted_organization_name ?? 'N/A'],
+                ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $calendar->academic_year ?? 'N/A'],
+                ['key' => 'term', 'label' => 'Term', 'value' => $termLabel],
+                ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => optional($calendar->submission_date)->format('M d, Y') ?? 'N/A'],
+            ]],
+            ['key' => 'entries', 'title' => 'Submitted Activities', 'subtitle' => 'Each listed activity should be reviewed.', 'fields' => []],
+        ];
+        foreach ($calendar->entries as $entry) {
+            $sections[1]['fields'][] = [
+                'key' => 'entry_'.$entry->id,
+                'label' => 'Activity: '.($entry->activity_name ?? 'Untitled'),
+                'value' => trim((optional($entry->activity_date)->format('M d, Y') ?? 'N/A').' · '.($entry->venue ?? 'No venue')),
+                'wide' => true,
+            ];
+        }
+        return $sections;
+    }
+
+    private function proposalReviewSchema(): array
+    {
+        return [
+            'overview' => [
+                'organization' => 'Organization (profile)',
+                'submitted_by' => 'Submitted By',
+                'submission_date' => 'Submission Date',
+                'academic_year' => 'Academic Year',
+            ],
+            'activity' => [
+                'activity_title' => 'Activity Title',
+                'proposed_start' => 'Proposed Start',
+                'proposed_end' => 'Proposed End',
+                'proposed_time' => 'Proposed Time',
+                'venue' => 'Venue',
+                'overall_goal' => 'Overall Goal',
+                'specific_objectives' => 'Specific Objectives',
+                'criteria_mechanics' => 'Criteria / Mechanics',
+                'program_flow' => 'Program Flow',
+            ],
+            'budget_files' => [
+                'proposed_budget_total' => 'Proposed Budget (total)',
+                'source_of_funding' => 'Source of Funding',
+                'organization_logo' => 'Organization Logo',
+                'resource_resume' => 'Resume (resource persons)',
+                'external_funding' => 'External Funding Support',
+            ],
+        ];
+    }
+
+    private function proposalReviewSections(ActivityProposal $proposal, array $details): array
+    {
+        $logoPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_LOGO, $proposal->organization_logo_path);
+        $resumePath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME, $proposal->resume_resource_persons_path);
+        $externalPath = $this->attachmentPathOrLegacy($proposal, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING, $proposal->external_funding_support_path);
+        return [
+            ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Organization and proposal submission context.', 'fields' => [
+                ['key' => 'organization', 'label' => 'Organization (profile)', 'value' => $details['Organization (profile)'] ?? 'N/A'],
+                ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $details['Submitted By'] ?? 'N/A'],
+                ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => $details['Submission Date'] ?? 'N/A'],
+                ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $details['Academic Year'] ?? 'N/A'],
+            ]],
+            ['key' => 'activity', 'title' => 'Activity Details', 'subtitle' => 'Event schedule, rationale, and mechanics.', 'fields' => [
+                ['key' => 'activity_title', 'label' => 'Activity Title', 'value' => $details['Activity Title'] ?? 'N/A'],
+                ['key' => 'proposed_start', 'label' => 'Proposed Start', 'value' => $details['Proposed Start'] ?? 'N/A'],
+                ['key' => 'proposed_end', 'label' => 'Proposed End', 'value' => $details['Proposed End'] ?? 'N/A'],
+                ['key' => 'proposed_time', 'label' => 'Proposed Time', 'value' => $details['Proposed Time'] ?? 'N/A'],
+                ['key' => 'venue', 'label' => 'Venue', 'value' => $details['Venue'] ?? 'N/A'],
+                ['key' => 'overall_goal', 'label' => 'Overall Goal', 'value' => $details['Overall Goal'] ?? 'N/A', 'wide' => true],
+                ['key' => 'specific_objectives', 'label' => 'Specific Objectives', 'value' => $details['Specific Objectives'] ?? 'N/A', 'wide' => true],
+                ['key' => 'criteria_mechanics', 'label' => 'Criteria / Mechanics', 'value' => $details['Criteria / Mechanics'] ?? 'N/A', 'wide' => true],
+                ['key' => 'program_flow', 'label' => 'Program Flow', 'value' => $details['Program Flow'] ?? 'N/A', 'wide' => true],
+            ]],
+            ['key' => 'budget_files', 'title' => 'Budget and Files', 'subtitle' => 'Budget figures and required uploaded files.', 'fields' => [
+                ['key' => 'proposed_budget_total', 'label' => 'Proposed Budget (total)', 'value' => $details['Proposed Budget (total)'] ?? 'N/A'],
+                ['key' => 'source_of_funding', 'label' => 'Source of Funding', 'value' => $details['Source of Funding'] ?? 'N/A'],
+                ['key' => 'organization_logo', 'label' => 'Organization Logo', 'value' => $logoPath ? 'File uploaded' : 'N/A', 'action' => $logoPath ? ['href' => Storage::disk('public')->url($logoPath)] : null],
+                ['key' => 'resource_resume', 'label' => 'Resume (resource persons)', 'value' => $resumePath ? 'File uploaded' : 'N/A', 'action' => $resumePath ? ['href' => Storage::disk('public')->url($resumePath)] : null],
+                ['key' => 'external_funding', 'label' => 'External Funding Support', 'value' => $externalPath ? 'File uploaded' : 'N/A', 'action' => $externalPath ? ['href' => Storage::disk('public')->url($externalPath)] : null],
+            ]],
+        ];
+    }
+
+    private function reportReviewSchema(): array
+    {
+        return [
+            'overview' => [
+                'organization' => 'Organization',
+                'submitted_by' => 'Submitted By',
+                'submission_date' => 'Submission Date',
+                'event_title' => 'Activity / Event Title',
+                'event_datetime' => 'Event Date & Time',
+            ],
+            'content' => [
+                'program' => 'Program',
+                'summary' => 'Summary / Description',
+                'evaluation' => 'Activity Evaluation',
+                'participants_reached' => 'Participants Reached (%)',
+            ],
+            'files' => [
+                'poster_file' => 'Poster file',
+                'attendance_file' => 'Attendance file',
+            ],
+        ];
+    }
+
+    private function reportReviewSections(ActivityReport $report, array $details): array
+    {
+        return [
+            ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Core after-activity report details.', 'fields' => [
+                ['key' => 'organization', 'label' => 'Organization', 'value' => $details['Organization'] ?? 'N/A'],
+                ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $details['Submitted By'] ?? 'N/A'],
+                ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => $details['Submission Date'] ?? 'N/A'],
+                ['key' => 'event_title', 'label' => 'Activity / Event Title', 'value' => $details['Activity / Event Title'] ?? 'N/A'],
+                ['key' => 'event_datetime', 'label' => 'Event Date & Time', 'value' => $details['Event Date & Time'] ?? 'N/A'],
+            ]],
+            ['key' => 'content', 'title' => 'Narrative Content', 'subtitle' => 'Submitted report narrative and evaluation.', 'fields' => [
+                ['key' => 'program', 'label' => 'Program', 'value' => $details['Program'] ?? 'N/A', 'wide' => true],
+                ['key' => 'summary', 'label' => 'Summary / Description', 'value' => $details['Summary / Description'] ?? 'N/A', 'wide' => true],
+                ['key' => 'evaluation', 'label' => 'Activity Evaluation', 'value' => $details['Activity Evaluation'] ?? 'N/A', 'wide' => true],
+                ['key' => 'participants_reached', 'label' => 'Participants Reached (%)', 'value' => $details['Participants Reached (%)'] ?? 'N/A'],
+            ]],
+            ['key' => 'files', 'title' => 'Attached Files', 'subtitle' => 'Poster and attendance support files.', 'fields' => [
+                ['key' => 'poster_file', 'label' => 'Poster file', 'value' => (string) ($details['Poster file'] ?? 'N/A')],
+                ['key' => 'attendance_file', 'label' => 'Attendance file', 'value' => (string) ($details['Attendance file'] ?? 'N/A')],
+            ]],
+        ];
     }
 
     private function authorizeAdmin(Request $request): void

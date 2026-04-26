@@ -38,6 +38,8 @@ class OrganizationSubmission extends Model
         'approval_decision',
         'registration_field_reviews',
         'registration_section_reviews',
+        'renewal_field_reviews',
+        'renewal_section_reviews',
     ];
 
     protected function casts(): array
@@ -47,6 +49,8 @@ class OrganizationSubmission extends Model
             'current_approval_step' => 'integer',
             'registration_field_reviews' => 'array',
             'registration_section_reviews' => 'array',
+            'renewal_field_reviews' => 'array',
+            'renewal_section_reviews' => 'array',
         ];
     }
 

@@ -262,7 +262,7 @@ class ApproverDashboardController extends Controller
 
             $validated = $request->validate([
                 'field_reviews' => ['nullable', 'array'],
-                'field_reviews.*.status' => ['nullable', Rule::in(['approved', 'revision', 'rejected'])],
+                'field_reviews.*.status' => ['nullable', Rule::in(['passed', 'revision'])],
                 'field_reviews.*.label' => ['nullable', 'string', 'max:255'],
                 'field_reviews.*.comment' => ['nullable', 'string', 'max:2000'],
             ]);
@@ -270,23 +270,28 @@ class ApproverDashboardController extends Controller
             $fieldReviews = collect((array) ($validated['field_reviews'] ?? []))
                 ->filter(fn (array $review, string $fieldKey): bool => in_array((string) $fieldKey, $reviewableKeys, true))
                 ->map(function (array $review, string $fieldKey): array {
+                    $status = (string) ($review['status'] ?? 'pending');
+                    if (! in_array($status, ['pending', 'passed', 'revision'], true)) {
+                        $status = 'pending';
+                    }
+
                     return [
                         'field_key' => (string) $fieldKey,
                         'field_label' => trim((string) ($review['label'] ?? $fieldKey)),
-                        'status' => (string) ($review['status'] ?? ''),
+                        'status' => $status,
                         'comment' => trim((string) ($review['comment'] ?? '')),
                     ];
                 })
-                ->filter(fn (array $row): bool => $row['status'] !== '')
+                ->filter(fn (array $row): bool => $row['status'] !== 'pending')
                 ->values();
 
             $missingReasonField = $fieldReviews
-                ->first(fn (array $row): bool => in_array($row['status'], ['revision', 'rejected'], true) && $row['comment'] === '');
+                ->first(fn (array $row): bool => $row['status'] === 'revision' && $row['comment'] === '');
             if ($missingReasonField) {
                 return back()
                     ->withInput()
                     ->withErrors([
-                        "field_reviews.{$missingReasonField['field_key']}.comment" => 'Comment is required when marking a field as For Revision or Rejected.',
+                        "field_reviews.{$missingReasonField['field_key']}.comment" => 'Revision note is required when marking a field as Revision.',
                     ]);
             }
 
@@ -326,7 +331,7 @@ class ApproverDashboardController extends Controller
                         [
                             'reviewer_id' => $user->id,
                             'field_label' => $row['field_label'],
-                            'status' => $row['status'],
+                            'status' => $row['status'] === 'passed' ? 'approved' : 'revision',
                             'comment' => $row['comment'] !== '' ? $row['comment'] : null,
                             'reviewed_at' => now(),
                         ]
@@ -361,11 +366,10 @@ class ApproverDashboardController extends Controller
                     return;
                 }
 
-                $hasRejected = $statuses->contains('rejected');
-                $hasRevision = ! $hasRejected && $statuses->contains('revision');
-                $action = $hasRejected ? 'reject' : ($hasRevision ? 'revision' : 'approve');
+                $hasRevision = $statuses->contains('revision');
+                $action = $hasRevision ? 'revision' : 'approve';
                 $comments = $fieldReviews
-                    ->filter(fn (array $row): bool => in_array($row['status'], ['revision', 'rejected'], true))
+                    ->filter(fn (array $row): bool => $row['status'] === 'revision')
                     ->map(fn (array $row): string => "{$row['field_label']}: {$row['comment']}")
                     ->values()
                     ->implode(PHP_EOL);
@@ -744,9 +748,6 @@ class ApproverDashboardController extends Controller
 
         if ($statuses->count() < count($reviewableKeys)) {
             return 'PENDING';
-        }
-        if ($statuses->contains('rejected')) {
-            return 'REJECTED';
         }
         if ($statuses->contains('revision')) {
             return 'REVISION_REQUIRED';
