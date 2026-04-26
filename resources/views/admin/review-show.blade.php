@@ -17,7 +17,7 @@
   $readonlyValueClass = 'mt-1.5 text-sm font-semibold text-slate-900';
 @endphp
 
-<x-ui.card padding="p-0" class="overflow-hidden">
+<x-ui.card padding="p-0">
   <x-ui.card-section-header
     :title="$pageTitle"
     subtitle="Read-only submission details from the selected review module."
@@ -36,10 +36,10 @@
 
   @isset($calendarEntries)
     @if ($calendarEntries->isNotEmpty())
-      <div class="mt-6 border-t border-slate-100 pt-6">
+      <div class="mt-6 border-t border-slate-100 pb-6 pt-6">
         <h2 class="px-6 text-lg font-bold text-slate-900">Submitted activities</h2>
         <p class="mt-1 px-6 text-sm text-slate-500">Each row is a saved record linked to this activity calendar.</p>
-        <div class="mt-4 mx-6 overflow-x-auto rounded-xl border border-slate-200">
+        <div class="mx-6 mt-4 overflow-x-auto overflow-y-visible rounded-xl border border-slate-200">
           <table class="min-w-3xl w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
