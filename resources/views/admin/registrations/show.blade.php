@@ -52,6 +52,33 @@
   $readonlyItemClass = 'rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3.5';
   $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
   $readonlyValueClass = 'mt-1.5 text-sm font-semibold text-slate-900';
+  $persistedFieldReviews = is_array($persistedFieldReviews ?? null) ? $persistedFieldReviews : [];
+  $persistedSectionReviews = is_array($persistedSectionReviews ?? null) ? $persistedSectionReviews : [];
+  $reviewStatusFromState = static function (string $state): string {
+    return match ($state) {
+      'validated' => 'verified',
+      'revision' => 'needs_revision',
+      default => 'pending',
+    };
+  };
+  $effectiveSectionStatus = [
+    'application' => old('section_review.application', data_get($persistedSectionReviews, 'application.status', $reviewStatusFromState((string) ($initialSectionReviewState['application'] ?? 'pending')))),
+    'contact' => old('section_review.contact', data_get($persistedSectionReviews, 'contact.status', $reviewStatusFromState((string) ($initialSectionReviewState['contact'] ?? 'pending')))),
+    'organizational' => old('section_review.organizational', data_get($persistedSectionReviews, 'organizational.status', $reviewStatusFromState((string) ($initialSectionReviewState['organizational'] ?? 'pending')))),
+    'requirements' => old('section_review.requirements', data_get($persistedSectionReviews, 'requirements.status', $reviewStatusFromState((string) ($initialSectionReviewState['requirements'] ?? 'pending')))),
+  ];
+  $statusBadge = static function (string $status): array {
+    return match ($status) {
+      'verified' => ['label' => 'Verified', 'class' => 'border border-emerald-200 bg-emerald-50 text-emerald-700'],
+      'needs_revision' => ['label' => 'Needs Revision', 'class' => 'border border-amber-200 bg-amber-50 text-amber-700'],
+      default => ['label' => 'Pending Review', 'class' => 'border border-slate-200 bg-slate-100 text-slate-700'],
+    };
+  };
+  $progressCount = [
+    'verified' => collect($effectiveSectionStatus)->filter(fn ($s) => $s === 'verified')->count(),
+    'needs_revision' => collect($effectiveSectionStatus)->filter(fn ($s) => $s === 'needs_revision')->count(),
+    'pending' => collect($effectiveSectionStatus)->filter(fn ($s) => $s === 'pending')->count(),
+  ];
 @endphp
 
 @if ($registrationMissing)
@@ -82,120 +109,160 @@
   @error('section_review')
     <x-feedback.blocked-message variant="error" :message="$message" />
   @enderror
+  @error('field_review')
+    <x-feedback.blocked-message variant="error" :message="$message" />
+  @enderror
+
+  <x-ui.card padding="p-5" class="border border-slate-200 bg-slate-50/70">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p class="text-sm font-semibold text-slate-900">Registration review progress</p>
+        <p class="mt-1 text-xs text-slate-600">Sections must be submitted first, and all must be verified before approval.</p>
+      </div>
+      <div id="registration-review-progress" class="inline-flex flex-wrap items-center gap-2 text-xs font-semibold">
+        <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700" data-progress="verified">Verified: {{ $progressCount['verified'] }}</span>
+        <span class="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700" data-progress="needs_revision">Needs Revision: {{ $progressCount['needs_revision'] }}</span>
+        <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700" data-progress="pending">Pending: {{ $progressCount['pending'] }}</span>
+      </div>
+    </div>
+  </x-ui.card>
 
   {{-- Application Information --}}
   <x-ui.card padding="p-0" class="overflow-hidden">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
-      <h2 class="text-lg font-bold tracking-tight text-slate-900">Application Information</h2>
-      <p class="mt-1 text-sm text-slate-500">Academic year and submission context for this registration.</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold tracking-tight text-slate-900">Application Information</h2>
+          <p class="mt-1 text-sm text-slate-500">Academic year and submission context for this registration.</p>
+        </div>
+        @php
+          $applicationBadge = $statusBadge((string) ($effectiveSectionStatus['application'] ?? 'pending'));
+        @endphp
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $applicationBadge['class'] }}">{{ $applicationBadge['label'] }}</span>
+      </div>
     </div>
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Academic Year</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $registration->academicTerm?->academic_year ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'academic_year', 'fieldLabel' => 'Academic Year', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Submission Date</dt>
         <dd class="{{ $readonlyValueClass }}">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submission_date', 'fieldLabel' => 'Submission Date', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Submitted By</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submitted_by', 'fieldLabel' => 'Submitted By', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Organization</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $org?->organization_name ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'organization', 'fieldLabel' => 'Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
     </dl>
     </div>
-    @include('admin.registrations.partials.section-review-toolbar', [
-      'sectionKey' => 'application',
-      'sectionTitle' => 'Application Information',
-      'revisionFieldName' => 'revision_comment_application',
-      'revisionTextareaId' => 'revision-comment-application',
-      'registration' => $registration,
-      'initialSectionReviewState' => $initialSectionReviewState,
-    ])
+    @include('admin.registrations.partials.section-submit-control', ['sectionKey' => 'application', 'persistedSectionReviews' => $persistedSectionReviews])
   </x-ui.card>
 
   {{-- Contact Information --}}
   <x-ui.card padding="p-0" class="overflow-hidden">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
-      <h2 class="text-lg font-bold tracking-tight text-slate-900">Contact Information</h2>
-      <p class="mt-1 text-sm text-slate-500">Primary contact details as submitted on the registration form.</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold tracking-tight text-slate-900">Account and Contact Information</h2>
+          <p class="mt-1 text-sm text-slate-500">Primary contact details as submitted on the registration form.</p>
+        </div>
+        @php
+          $contactBadge = $statusBadge((string) ($effectiveSectionStatus['contact'] ?? 'pending'));
+        @endphp
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $contactBadge['class'] }}">{{ $contactBadge['label'] }}</span>
+      </div>
     </div>
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">Organization Name</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $org?->organization_name ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'organization_name', 'fieldLabel' => 'Organization Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Contact Person</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $registration->contact_person ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_person', 'fieldLabel' => 'Contact Person', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Contact No.</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $registration->contact_no ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_no', 'fieldLabel' => 'Contact Number', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">Email Address</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $registration->contact_email ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_email', 'fieldLabel' => 'Email Address', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
     </dl>
     </div>
-    @include('admin.registrations.partials.section-review-toolbar', [
-      'sectionKey' => 'contact',
-      'sectionTitle' => 'Contact Information',
-      'revisionFieldName' => 'revision_comment_contact',
-      'revisionTextareaId' => 'revision-comment-contact',
-      'registration' => $registration,
-      'initialSectionReviewState' => $initialSectionReviewState,
-    ])
+    @include('admin.registrations.partials.section-submit-control', ['sectionKey' => 'contact', 'persistedSectionReviews' => $persistedSectionReviews])
   </x-ui.card>
 
   {{-- Organizational Details --}}
   <x-ui.card padding="p-0" class="overflow-hidden">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
-      <h2 class="text-lg font-bold tracking-tight text-slate-900">Organizational Details</h2>
-      <p class="mt-1 text-sm text-slate-500">Organization profile data at the time of submission (from the linked organization record).</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold tracking-tight text-slate-900">Organization Details</h2>
+          <p class="mt-1 text-sm text-slate-500">Organization profile data at the time of submission (from the linked organization record).</p>
+        </div>
+        @php
+          $organizationalBadge = $statusBadge((string) ($effectiveSectionStatus['organizational'] ?? 'pending'));
+        @endphp
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $organizationalBadge['class'] }}">{{ $organizationalBadge['label'] }}</span>
+      </div>
     </div>
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Date Organized</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'date_organized', 'fieldLabel' => 'Date Organized', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Type of Organization</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $orgTypeLabel }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'organization_type', 'fieldLabel' => 'Type of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">School</dt>
         <dd class="{{ $readonlyValueClass }}">{{ $org?->college_department ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'school', 'fieldLabel' => 'School', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">Purpose of Organization</dt>
         <dd class="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-900">{{ $org?->purpose ?? 'N/A' }}</dd>
+        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'purpose', 'fieldLabel' => 'Purpose of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
       </div>
     </dl>
     </div>
-    @include('admin.registrations.partials.section-review-toolbar', [
-      'sectionKey' => 'organizational',
-      'sectionTitle' => 'Organizational Details',
-      'revisionFieldName' => 'revision_comment_organizational',
-      'revisionTextareaId' => 'revision-comment-organizational',
-      'registration' => $registration,
-      'initialSectionReviewState' => $initialSectionReviewState,
-    ])
+    @include('admin.registrations.partials.section-submit-control', ['sectionKey' => 'organizational', 'persistedSectionReviews' => $persistedSectionReviews])
   </x-ui.card>
 
   {{-- Requirements Attached --}}
   <x-ui.card padding="p-0" class="overflow-hidden">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
-      <h2 class="text-lg font-bold tracking-tight text-slate-900">Requirements Attached</h2>
-      <p class="mt-1 text-sm text-slate-500">Checklist and uploaded files as declared on the application.</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold tracking-tight text-slate-900">Requirements Attached</h2>
+          <p class="mt-1 text-sm text-slate-500">Checklist and uploaded files as declared on the application.</p>
+        </div>
+        @php
+          $requirementsBadge = $statusBadge((string) ($effectiveSectionStatus['requirements'] ?? 'pending'));
+        @endphp
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $requirementsBadge['class'] }}">{{ $requirementsBadge['label'] }}</span>
+      </div>
     </div>
     <div class="bg-white px-6 py-5">
     <ul class="space-y-3">
@@ -205,12 +272,13 @@
           $checked = (bool) ($requirement?->is_submitted ?? false);
           $hasFile = $checked && in_array($key, $requirementAttachmentKeys, true);
         @endphp
-        <li class="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <li class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
           <div class="min-w-0">
             <p class="text-sm font-semibold text-slate-900">{{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}</p>
             <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
           </div>
-          <div class="shrink-0">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="shrink-0">
             @if ($hasFile)
               <a
                 href="{{ route('admin.registrations.requirement-file', ['submission' => ($submission ?? $registration), 'key' => $key]) }}"
@@ -223,19 +291,25 @@
             @elseif ($checked)
               <span class="text-xs font-medium text-amber-700">Marked yes — no file on record</span>
             @endif
+            </div>
+            <div class="ml-auto">
+              @php
+                $requirementFieldLabel = (string) (($requirement?->label) ?? ($reqLabels[$key] ?? $key));
+              @endphp
+              @include('admin.registrations.partials.field-review-control', [
+                'sectionKey' => 'requirements',
+                'fieldKey' => $key,
+                'fieldLabel' => $requirementFieldLabel,
+                'persistedFieldReviews' => $persistedFieldReviews,
+                'persistedSectionReviews' => $persistedSectionReviews,
+              ])
+            </div>
           </div>
         </li>
       @endforeach
     </ul>
     </div>
-    @include('admin.registrations.partials.section-review-toolbar', [
-      'sectionKey' => 'requirements',
-      'sectionTitle' => 'Requirements Attached',
-      'revisionFieldName' => 'revision_comment_requirements',
-      'revisionTextareaId' => 'revision-comment-requirements',
-      'registration' => $registration,
-      'initialSectionReviewState' => $initialSectionReviewState,
-    ])
+    @include('admin.registrations.partials.section-submit-control', ['sectionKey' => 'requirements', 'persistedSectionReviews' => $persistedSectionReviews])
   </x-ui.card>
 
   {{-- Review decision --}}
@@ -252,7 +326,7 @@
     <fieldset class="mt-6">
       <legend class="text-xs font-semibold uppercase tracking-wide text-slate-700">Outcome</legend>
       <div class="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-100/70 p-3 sm:flex-row sm:flex-wrap sm:gap-3">
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-[#003E9F] has-[:checked]:bg-blue-50">
+        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-checked:border-[#003E9F] has-checked:bg-blue-50">
           <input type="radio" name="decision" value="APPROVED" class="sr-only" {{ $defaultDecision === 'APPROVED' ? 'checked' : '' }} />
           <span class="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-blue-100 text-[#003E9F]">
             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15l3-3m6 3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
@@ -262,7 +336,7 @@
             <span class="block text-xs text-slate-500">Auto-approve if all verified, or request revision</span>
           </span>
         </label>
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50">
+        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-checked:border-rose-500 has-checked:bg-rose-50">
           <input type="radio" name="decision" value="REJECTED" class="sr-only" {{ $defaultDecision === 'REJECTED' ? 'checked' : '' }} />
           <span class="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-rose-100 text-rose-700">
             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
@@ -279,14 +353,13 @@
       <x-forms.label for="registration-remarks">
         General remarks / instructions
         <span id="registration-remarks-required" class="hidden font-normal normal-case text-rose-600">(required for rejection)</span>
-        <span id="registration-revision-hint" class="hidden font-normal normal-case text-amber-700">(optional if every Need revision section has feedback — otherwise at least 3 characters)</span>
         <span id="registration-remarks-optional" class="font-normal normal-case text-slate-400">(optional when all sections are verified)</span>
       </x-forms.label>
       <x-forms.textarea
         id="registration-remarks"
         name="remarks"
         :rows="4"
-        placeholder="Optional overall context. Section-specific feedback is added via Need revision on each section."
+        placeholder="Optional overall context. Field-level flagged notes are captured from each section."
       >{{ old('remarks', $registration->additional_remarks ?? $registration->notes) }}</x-forms.textarea>
       @error('remarks')
         <x-forms.error>{{ $message }}</x-forms.error>
@@ -305,30 +378,7 @@
   </x-ui.card>
 </form>
 
-<div id="section-revision-modal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-950/50 px-4">
-  <div class="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40">
-    <h3 id="section-revision-modal-title" class="text-lg font-bold text-slate-900">Section feedback</h3>
-    <p class="mt-1 text-sm text-slate-500">Describe what must be corrected for this section only. The submitter will see it labeled by section.</p>
-    <div class="mt-4">
-      <x-forms.label for="section-revision-modal-body" :required="true">Revision details</x-forms.label>
-      <x-forms.textarea
-        id="section-revision-modal-body"
-        :rows="5"
-        placeholder="Be specific (e.g. upload a clearer scan, fix the contact number format, expand the purpose statement)."
-      />
-    </div>
-    <div class="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
-      <button type="button" id="section-revision-modal-cancel" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20">
-        Cancel
-      </button>
-      <button type="button" id="section-revision-modal-save" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40">
-        Save for this section
-      </button>
-    </div>
-  </div>
-</div>
-
-<div id="registration-decision-modal" class="fixed inset-0 z-[80] hidden items-center justify-center bg-slate-950/50 px-4">
+<div id="registration-decision-modal" class="fixed inset-0 z-80 hidden items-center justify-center bg-slate-950/50 px-4">
   <div class="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-300/40">
     <h3 class="text-lg font-bold text-slate-900">Confirm</h3>
     <p id="registration-decision-modal-text" class="mt-1 text-sm text-slate-600"></p>
@@ -352,188 +402,182 @@
     const confirmBtn = document.getElementById('registration-decision-confirm');
     const remarks = document.getElementById('registration-remarks');
     const reqReject = document.getElementById('registration-remarks-required');
-    const reqRevision = document.getElementById('registration-revision-hint');
     const optLabel = document.getElementById('registration-remarks-optional');
     const summaryEl = document.getElementById('section-review-summary');
-    const revModal = document.getElementById('section-revision-modal');
-    const revTitle = document.getElementById('section-revision-modal-title');
-    const revBody = document.getElementById('section-revision-modal-body');
-    const revCancel = document.getElementById('section-revision-modal-cancel');
-    const revSave = document.getElementById('section-revision-modal-save');
+    const progressEl = document.getElementById('registration-review-progress');
 
-    if (!form || !modal || !modalText || !cancel || !confirmBtn || !remarks || !reqReject || !reqRevision || !optLabel || !summaryEl || !revModal || !revTitle || !revBody || !revCancel || !revSave) return;
-
-    let activeSectionRoot = null;
+    if (!form || !modal || !modalText || !cancel || !confirmBtn || !remarks || !reqReject || !optLabel || !summaryEl || !progressEl) return;
 
     function selectedDecision() {
       const r = form.querySelector('input[name="decision"]:checked');
       return r ? r.value : '';
     }
 
-    function getStateInputs() {
-      return Array.from(form.querySelectorAll('.section-review-state'));
+    function allSectionRoots() {
+      return Array.from(form.querySelectorAll('[data-section-submit]'));
     }
 
-    function getHiddenRevisionTextarea(root) {
-      const id = root.dataset.revisionInputId;
-      return id ? document.getElementById(id) : null;
+    function getFieldControls(sectionKey) {
+      return Array.from(form.querySelectorAll(`[data-field-review][data-section-key="${sectionKey}"]`));
     }
 
-    function refreshSection(root) {
-      const stateEl = root.querySelector('.section-review-state');
-      const statusEl = root.querySelector('.section-review-status');
-      const hintEl = root.querySelector('.section-review-hint');
-      const btnV = root.querySelector('.section-review-btn-verified');
-      const btnR = root.querySelector('.section-review-btn-revision');
-      const btnE = root.querySelector('.section-review-btn-edit');
-      const card = root.closest('section, .rounded-3xl');
-      const state = stateEl ? stateEl.value : 'pending';
-      const ta = getHiddenRevisionTextarea(root);
-      const text = ta ? ta.value.trim() : '';
-
-      const title = root.dataset.sectionTitle || 'This section';
-
-      if (statusEl) {
-        if (state === 'validated') statusEl.textContent = 'Verified — no issues noted for this section.';
-        else if (state === 'revision') statusEl.textContent = 'Need revision — feedback recorded for this section.';
-        else statusEl.textContent = 'Pending — choose Verified or Need revision.';
-      }
-      if (hintEl) {
-        if (state === 'validated') hintEl.textContent = 'You can change your choice anytime before saving.';
-        else if (state === 'revision') {
-          hintEl.textContent = text.length >= 3
-            ? 'Submitter will see this note under "' + title + '".'
-            : 'Add at least 3 characters of feedback (use Need revision or Edit note).';
-        } else hintEl.textContent = 'Both options are required for every section before you can submit review.';
-      }
-
-      if (btnV) {
-        btnV.classList.toggle('ring-2', state === 'validated');
-        btnV.classList.toggle('ring-emerald-500', state === 'validated');
-        btnV.classList.toggle('bg-emerald-50', state === 'validated');
-      }
-      if (btnR) {
-        btnR.classList.toggle('ring-2', state === 'revision');
-        btnR.classList.toggle('ring-amber-500', state === 'revision');
-        btnR.classList.toggle('bg-amber-50', state === 'revision');
-      }
-      if (btnE) btnE.classList.toggle('hidden', state !== 'revision');
-
-      if (card) {
-        card.classList.toggle('border-amber-300', state === 'revision');
-        card.classList.toggle('shadow-md', state === 'revision');
-      }
-    }
-
-    function refreshAllSections() {
-      form.querySelectorAll('.section-review').forEach(refreshSection);
-      updateSummary();
-      updateRemarksHint();
-    }
-
-    function updateSummary() {
-      const inputs = getStateInputs();
-      let v = 0;
-      let r = 0;
-      let p = 0;
-      inputs.forEach((el) => {
-        if (el.value === 'validated') v += 1;
-        else if (el.value === 'revision') r += 1;
-        else p += 1;
+    function syncFieldControl(control) {
+      const statusInput = control.querySelector('.field-review-status');
+      const noteWrap = control.querySelector('.field-review-note');
+      const noteInput = control.querySelector('.field-review-note-input');
+      const status = statusInput?.value || 'pending';
+      control.querySelectorAll('.field-review-btn').forEach((btn) => {
+        const active = btn.dataset.statusValue === status;
+        btn.classList.toggle('ring-2', active);
+        btn.classList.toggle('ring-slate-300', active && status === 'pending');
+        btn.classList.toggle('ring-emerald-400', active && status === 'passed');
+        btn.classList.toggle('ring-rose-400', active && status === 'flagged');
       });
-      const total = inputs.length || 4;
-      if (p > 0) {
-        summaryEl.textContent = `${p} section(s) still pending. Mark each as Verified or Need revision before saving. (${v} verified, ${r} need revision)`;
-        summaryEl.className = 'mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
-      } else if (r > 0) {
-        summaryEl.textContent = `Ready to send for revision: ${r} section(s) need changes. Add section feedback (and optional general remarks), then save. (${v} verified)`;
-        summaryEl.className = 'mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
-      } else {
-        summaryEl.textContent = `All ${total} sections verified. Saving will approve this registration (unless you choose Reject).`;
-        summaryEl.className = 'mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900';
-      }
+      if (noteWrap) noteWrap.classList.toggle('hidden', status !== 'flagged');
+      if (status !== 'flagged' && noteInput) noteInput.value = '';
     }
 
-    function anyRevisionSection() {
-      return getStateInputs().some((el) => el.value === 'revision');
-    }
-
-    function everyRevisionHasComment() {
-      const roots = form.querySelectorAll('.section-review');
-      let ok = true;
-      roots.forEach((root) => {
-        const stateEl = root.querySelector('.section-review-state');
-        if (stateEl && stateEl.value === 'revision') {
-          const ta = getHiddenRevisionTextarea(root);
-          if (!ta || ta.value.trim().length < 3) ok = false;
+    function computeSection(sectionKey) {
+      const controls = getFieldControls(sectionKey);
+      let pending = 0;
+      let flagged = 0;
+      let invalidFlagged = 0;
+      controls.forEach((control) => {
+        const status = control.querySelector('.field-review-status')?.value || 'pending';
+        if (status === 'pending') pending += 1;
+        if (status === 'flagged') {
+          flagged += 1;
+          const note = (control.querySelector('.field-review-note-input')?.value || '').trim();
+          if (note === '') invalidFlagged += 1;
         }
       });
-      return ok;
+      return { pending, flagged, invalidFlagged, total: controls.length };
     }
 
-    function revisionRemarksSatisfied() {
-      const g = remarks.value.trim().length >= 3;
-      return g || everyRevisionHasComment();
+    function syncSection(sectionRoot) {
+      const sectionKey = sectionRoot.dataset.sectionKey;
+      if (!sectionKey) return;
+      const sectionStateInput = sectionRoot.querySelector('.section-review-state');
+      const sectionSubmittedInput = sectionRoot.querySelector('.section-review-submitted');
+      const submitBtn = sectionRoot.querySelector('.section-submit-btn');
+      const editBtn = sectionRoot.querySelector('.section-edit-btn');
+      const badge = sectionRoot.querySelector('.section-submitted-badge');
+      const controls = getFieldControls(sectionKey);
+      const stats = computeSection(sectionKey);
+      const isSubmitted = sectionSubmittedInput?.value === '1';
+
+      const derivedStatus = stats.pending > 0 ? 'pending' : (stats.flagged > 0 ? 'needs_revision' : 'verified');
+      if (sectionStateInput) sectionStateInput.value = derivedStatus;
+
+      const canSubmit = stats.total > 0 && stats.pending === 0 && stats.invalidFlagged === 0;
+      if (submitBtn) {
+        submitBtn.disabled = !canSubmit || isSubmitted;
+        submitBtn.title = canSubmit ? 'Submit section review' : 'All fields must be reviewed before submitting';
+      }
+      controls.forEach((control) => {
+        const disabled = isSubmitted;
+        control.querySelectorAll('button, textarea').forEach((el) => {
+          el.disabled = disabled;
+        });
+      });
+      if (badge) {
+        badge.classList.toggle('hidden', !isSubmitted);
+        if (isSubmitted) {
+          if (derivedStatus === 'verified') {
+            badge.className = 'section-submitted-badge inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700';
+            badge.textContent = 'Verified';
+          } else {
+            badge.className = 'section-submitted-badge inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700';
+            badge.textContent = 'Needs Revision';
+          }
+        }
+      }
+      if (editBtn) editBtn.classList.toggle('hidden', !isSubmitted);
+    }
+
+    function refreshSummary() {
+      const roots = allSectionRoots();
+      let verified = 0;
+      let needsRevision = 0;
+      let pending = 0;
+      roots.forEach((root) => {
+        const state = root.querySelector('.section-review-state')?.value || 'pending';
+        if (state === 'verified') verified += 1;
+        else if (state === 'needs_revision') needsRevision += 1;
+        else pending += 1;
+      });
+      progressEl.querySelector('[data-progress="verified"]').textContent = `Verified: ${verified}`;
+      progressEl.querySelector('[data-progress="needs_revision"]').textContent = `Needs Revision: ${needsRevision}`;
+      progressEl.querySelector('[data-progress="pending"]').textContent = `Pending: ${pending}`;
+      if (pending > 0) {
+        summaryEl.textContent = `${pending} section(s) pending. Submit each section review before finalizing.`;
+        summaryEl.className = 'rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
+      } else if (needsRevision > 0) {
+        summaryEl.textContent = `${needsRevision} section(s) need revision. Submitting review will send this registration back with flagged field notes.`;
+        summaryEl.className = 'rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
+      } else {
+        summaryEl.textContent = 'All sections verified. Registration can be approved.';
+        summaryEl.className = 'rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900';
+      }
     }
 
     function updateRemarksHint() {
       const d = selectedDecision();
-      const rev = d === 'APPROVED' && anyRevisionSection();
       reqReject.classList.toggle('hidden', d !== 'REJECTED');
-      reqRevision.classList.toggle('hidden', !rev);
-      optLabel.classList.toggle('hidden', d === 'REJECTED' || rev);
+      optLabel.classList.toggle('hidden', d === 'REJECTED');
     }
 
-    function openRevModal(root) {
-      activeSectionRoot = root;
-      const title = root.dataset.sectionTitle || 'Section';
-      revTitle.textContent = 'Feedback: ' + title;
-      const ta = getHiddenRevisionTextarea(root);
-      revBody.value = ta ? ta.value : '';
-      revModal.classList.remove('hidden');
-      revModal.classList.add('flex');
-      revBody.focus();
-    }
-
-    function closeRevModal() {
-      activeSectionRoot = null;
-      revModal.classList.add('hidden');
-      revModal.classList.remove('flex');
-      revBody.value = '';
-    }
-
-    form.querySelectorAll('.section-review').forEach((root) => {
-      root.querySelector('.section-review-btn-verified')?.addEventListener('click', () => {
-        const stateEl = root.querySelector('.section-review-state');
-        const ta = getHiddenRevisionTextarea(root);
-        if (stateEl) stateEl.value = 'validated';
-        if (ta) ta.value = '';
-        refreshSection(root);
-        updateSummary();
-        updateRemarksHint();
+    form.querySelectorAll('[data-field-review]').forEach((control) => {
+      syncFieldControl(control);
+      control.querySelectorAll('.field-review-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const statusInput = control.querySelector('.field-review-status');
+          if (!statusInput) return;
+          statusInput.value = btn.dataset.statusValue || 'pending';
+          syncFieldControl(control);
+          const sectionRoot = form.querySelector(`[data-section-submit][data-section-key="${control.dataset.sectionKey}"]`);
+          if (sectionRoot) {
+            const submitted = sectionRoot.querySelector('.section-review-submitted');
+            if (submitted?.value === '1') return;
+            syncSection(sectionRoot);
+            refreshSummary();
+          }
+        });
       });
-      root.querySelector('.section-review-btn-revision')?.addEventListener('click', () => openRevModal(root));
-      root.querySelector('.section-review-btn-edit')?.addEventListener('click', () => openRevModal(root));
+      control.querySelector('.field-review-note-input')?.addEventListener('input', () => {
+        const sectionRoot = form.querySelector(`[data-section-submit][data-section-key="${control.dataset.sectionKey}"]`);
+        if (sectionRoot) {
+          syncSection(sectionRoot);
+          refreshSummary();
+        }
+      });
     });
 
-    revCancel.addEventListener('click', closeRevModal);
-    revModal.addEventListener('click', (e) => { if (e.target === revModal) closeRevModal(); });
-    revSave.addEventListener('click', () => {
-      if (!activeSectionRoot) return;
-      const stateEl = activeSectionRoot.querySelector('.section-review-state');
-      const ta = getHiddenRevisionTextarea(activeSectionRoot);
-      if (stateEl) stateEl.value = 'revision';
-      if (ta) ta.value = revBody.value;
-      refreshSection(activeSectionRoot);
-      updateSummary();
-      updateRemarksHint();
-      closeRevModal();
+    allSectionRoots().forEach((sectionRoot) => {
+      sectionRoot.querySelector('.section-submit-btn')?.addEventListener('click', () => {
+        const stats = computeSection(sectionRoot.dataset.sectionKey || '');
+        if (stats.pending > 0 || stats.invalidFlagged > 0) {
+          return;
+        }
+        const submitted = sectionRoot.querySelector('.section-review-submitted');
+        if (submitted) submitted.value = '1';
+        syncSection(sectionRoot);
+        refreshSummary();
+      });
+      sectionRoot.querySelector('.section-edit-btn')?.addEventListener('click', () => {
+        const submitted = sectionRoot.querySelector('.section-review-submitted');
+        if (submitted) submitted.value = '0';
+        syncSection(sectionRoot);
+        refreshSummary();
+      });
+      syncSection(sectionRoot);
     });
 
     form.querySelectorAll('input[name="decision"]').forEach((el) => el.addEventListener('change', () => {
       updateRemarksHint();
     }));
-    refreshAllSections();
+    refreshSummary();
+    updateRemarksHint();
 
     const closeDecision = () => {
       modal.classList.add('hidden');
@@ -544,8 +588,7 @@
     modal.addEventListener('click', (e) => { if (e.target === modal) closeDecision(); });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (!revModal.classList.contains('hidden')) closeRevModal();
-      else closeDecision();
+      closeDecision();
     });
 
     form.addEventListener('submit', (e) => {
@@ -564,24 +607,15 @@
         return;
       }
       if (d === 'APPROVED') {
-        if (getStateInputs().some((el) => el.value === 'pending')) {
-          alert('Review every section: mark each as Verified or Need revision before submitting.');
+        const sectionRoots = allSectionRoots();
+        if (sectionRoots.some((root) => root.querySelector('.section-review-submitted')?.value !== '1')) {
+          alert('Submit all section reviews before finalizing.');
           return;
         }
-        if (anyRevisionSection() && !everyRevisionHasComment()) {
-          alert('Each section marked Need revision needs feedback (at least 3 characters). Open the modal for that section or use Edit note.');
-          return;
-        }
-        if (anyRevisionSection() && !revisionRemarksSatisfied()) {
-          alert('For revision, add general remarks (at least 3 characters) or ensure every Need revision section has feedback (at least 3 characters).');
-          remarks.focus();
-          return;
-        }
-        if (anyRevisionSection()) {
-          modalText.textContent = 'Send this registration back for revision using your section feedback? Profile editing will be unlocked for the officer.';
-        } else {
-          modalText.textContent = 'Approve this registration? All sections are verified.';
-        }
+        const states = sectionRoots.map((root) => root.querySelector('.section-review-state')?.value || 'pending');
+        modalText.textContent = states.every((state) => state === 'verified')
+          ? 'Approve this registration? All sections are verified.'
+          : 'Send this registration for revision? Flagged field notes will be shared with the submitter.';
       } else {
         modalText.textContent = 'Reject this registration? This cannot be undone from this screen without a new submission flow.';
       }

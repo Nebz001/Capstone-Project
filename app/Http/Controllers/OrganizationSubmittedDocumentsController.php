@@ -200,7 +200,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
             'metaRows' => $this->registrationMetaRowsFromSubmission($submission),
-            'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
+            'remarkHighlight' => $this->registrationOfficerRevisionNotesPreview($submission),
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.register')),
             'calendarEntries' => null,
@@ -683,6 +683,34 @@ class OrganizationSubmittedDocumentsController extends Controller
         return strlen($t) > $max ? substr($t, 0, $max).'…' : $t;
     }
 
+    private function registrationOfficerRevisionNotesPreview(OrganizationSubmission $submission): ?string
+    {
+        $fieldReviews = is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [];
+        $notes = [];
+        foreach ($fieldReviews as $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            foreach ($fields as $field) {
+                if (! is_array($field) || ($field['status'] ?? null) !== 'flagged') {
+                    continue;
+                }
+                $label = trim((string) ($field['label'] ?? ''));
+                $note = trim((string) ($field['note'] ?? ''));
+                if ($note === '') {
+                    continue;
+                }
+                $notes[] = ($label !== '' ? $label.': ' : '').$note;
+            }
+        }
+
+        if ($notes !== []) {
+            return $this->truncatePreview(implode(' — ', $notes), 160);
+        }
+
+        return $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160);
+    }
+
     private function registrationRemarksPreview(OrganizationRegistration $r): ?string
     {
         $parts = array_filter([
@@ -1086,7 +1114,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => $submission->academicTerm?->academic_year,
                 'academic_context' => $submission->academicTerm?->academic_year ? 'AY '.$submission->academicTerm?->academic_year : null,
-                'remarks_preview' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
+                'remarks_preview' => $this->registrationOfficerRevisionNotesPreview($submission),
                 'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
                 'files_href' => $detail.'#submitted-files',

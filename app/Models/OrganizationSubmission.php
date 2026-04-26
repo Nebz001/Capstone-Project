@@ -36,6 +36,8 @@ class OrganizationSubmission extends Model
         'current_approval_step',
         'additional_remarks',
         'approval_decision',
+        'registration_field_reviews',
+        'registration_section_reviews',
     ];
 
     protected function casts(): array
@@ -43,6 +45,8 @@ class OrganizationSubmission extends Model
         return [
             'submission_date' => 'date',
             'current_approval_step' => 'integer',
+            'registration_field_reviews' => 'array',
+            'registration_section_reviews' => 'array',
         ];
     }
 
