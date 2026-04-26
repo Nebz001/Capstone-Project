@@ -299,7 +299,6 @@ class AdminController extends Controller
             'account' => $user,
             'latestOfficerRecord' => $latestOfficerRecord,
             'reviewableFields' => $reviewableFields,
-            'fieldReviews' => $this->normalizedAccountFieldReviews($user, array_keys($reviewableFields)),
         ]);
     }
 
@@ -325,36 +324,6 @@ class AdminController extends Controller
         return redirect()
             ->route('admin.accounts.show', $user)
             ->with('success', 'Officer validation has been updated.');
-    }
-
-    public function updateUserAccountFieldReview(Request $request, User $user): RedirectResponse
-    {
-        $this->authorizeAdmin($request);
-
-        abort_if($user->isSdaoAdmin(), 404);
-
-        $latestOfficerRecord = $user->organizationOfficers()->latest('id')->with('organization')->first();
-        $allowedKeys = array_keys($this->accountReviewableFields($user, $latestOfficerRecord));
-
-        $validated = $request->validate([
-            'field_key' => ['required', Rule::in($allowedKeys)],
-            'action_type' => ['required', Rule::in(['approve', 'revision'])],
-            'revision_message' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        if ($validated['action_type'] === 'revision' && trim((string) ($validated['revision_message'] ?? '')) === '') {
-            return redirect()
-                ->route('admin.accounts.show', $user)
-                ->withErrors(['revision_message' => 'Revision message is required when requesting revision.'])
-                ->withInput();
-        }
-
-        $fieldKey = (string) $validated['field_key'];
-        $actionType = (string) $validated['action_type'];
-
-        return redirect()
-            ->route('admin.accounts.show', $user)
-            ->with('success', 'Field-level account reviews were removed in the redesigned schema. No database update was performed.');
     }
 
     /**
@@ -401,20 +370,6 @@ class AdminController extends Controller
         }
 
         return $fields;
-    }
-
-    /**
-     * @param  list<string>  $allowedKeys
-     * @return array<string, array{status: string, message: ?string, reviewed_by: ?int, reviewed_at: ?string}>
-     */
-    private function normalizedAccountFieldReviews(User $account, array $allowedKeys): array
-    {
-        return collect($allowedKeys)->mapWithKeys(fn (string $key): array => [$key => [
-            'status' => 'pending',
-            'message' => null,
-            'reviewed_by' => null,
-            'reviewed_at' => null,
-        ]])->all();
     }
 
     public function centralizedCalendar(Request $request): View

@@ -155,7 +155,6 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::get('/accounts', 'userAccounts')->name('accounts.index');
     Route::get('/accounts/{user}', 'showUserAccount')->name('accounts.show');
     Route::patch('/accounts/{user}', 'updateUserAccountOfficerValidation')->name('accounts.update');
-    Route::patch('/accounts/{user}/field-review', 'updateUserAccountFieldReview')->name('accounts.field-review');
 
     Route::get('/registrations', 'registrations')->name('registrations.index');
     Route::get('/registrations/{submission}/requirements/{key}', 'showRegistrationRequirementFile')
