@@ -26,6 +26,20 @@
   $allFieldsApproved = $totalReviewableFields > 0 && $approvedReviewableFields === $totalReviewableFields;
 @endphp
 
+<x-ui.card padding="p-6" class="mb-6">
+  <h2 class="text-base font-bold text-slate-900">Account snapshot</h2>
+  <div class="mt-4 grid grid-cols-1 gap-3.5 md:grid-cols-2">
+    <div class="rounded-xl border border-slate-200 bg-slate-50/85 px-4 py-3">
+      <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Full name</p>
+      <p class="mt-1.5 text-sm font-semibold text-slate-900">{{ $account->full_name }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50/85 px-4 py-3">
+      <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">School ID</p>
+      <p class="mt-1.5 text-sm font-semibold text-slate-900">{{ $account->school_id ?: '—' }}</p>
+    </div>
+  </div>
+</x-ui.card>
+
 <x-ui.card padding="p-6">
   <div class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
     <div>

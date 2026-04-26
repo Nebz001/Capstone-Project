@@ -31,209 +31,170 @@
         || request()->routeIs('admin.reports.*');
     $isAccountsGroupActive = request()->routeIs('admin.accounts.*');
   @endphp
-  <div class="min-h-screen lg:pl-[260px]">
-    <aside class="relative border-b border-slate-200 bg-[#003E9F] text-white lg:fixed lg:inset-y-0 lg:left-0 lg:w-[260px] lg:border-b-0 lg:border-r lg:border-white/10 lg:overflow-hidden">
+  <div id="admin-layout-shell" class="min-h-screen transition-[padding] duration-200 lg:pl-[260px]">
+    <aside id="admin-sidebar" class="relative border-b border-slate-200 bg-[#003E9F] text-white transition-[width] duration-200 lg:fixed lg:inset-y-0 lg:left-0 lg:w-[260px] lg:border-b-0 lg:border-r lg:border-white/10 lg:overflow-hidden">
       <div class="pointer-events-none absolute inset-y-0 right-0 hidden w-px bg-[#F5C400]/70 lg:block" aria-hidden="true"></div>
       <div class="px-5 py-5 lg:pb-4">
-        <a href="{{ $dashboardRoute }}" class="flex items-center gap-3 border-b border-[#F5C400]/25 pb-4">
-          <img src="{{ asset('images/logos/nu-logo-onlyy.png') }}" alt="NU Lipa" class="h-10 w-auto" />
-          <div class="min-w-0">
-            <p class="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-[#F5C400]">
-              <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#F5C400]" aria-hidden="true"></span>
-              NU Lipa
-            </p>
-            <p class="truncate text-sm font-semibold">
-              @if ($isSuperAdmin)
-                Super Admin
-              @elseif ($isRoleApprover)
-                {{ $authUser?->role?->display_name ?? 'Approver' }}
-              @else
-                Student Development and Activities Office Admin
-              @endif
-            </p>
-          </div>
-        </a>
+        <div class="flex items-center gap-2 border-b border-[#F5C400]/25 pb-4">
+          <a href="{{ $dashboardRoute }}" class="flex min-w-0 flex-1 items-center gap-3">
+            <img src="{{ asset('images/logos/nu-logo-onlyy.png') }}" alt="NU Lipa" class="h-10 w-auto" />
+            <div class="sidebar-brand-text min-w-0">
+              <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-[#F5C400]">NU Lipa</p>
+              <p class="truncate text-sm font-semibold">
+                @if ($isSuperAdmin)
+                  Super Admin
+                @elseif ($isRoleApprover)
+                  {{ $authUser?->role?->display_name ?? 'Approver' }}
+                @else
+                  Student Development and Activities Office Admin
+                @endif
+              </p>
+            </div>
+          </a>
+          @if ($isSuperAdmin)
+            <button
+              type="button"
+              id="admin-sidebar-collapse-toggle"
+              class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-blue-100 transition hover:bg-white/15 hover:text-white focus:outline-none focus:ring-2 focus:ring-[#F5C400]/40 lg:inline-flex"
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+            >
+              <svg data-sidebar-toggle-icon="collapse" class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+              </svg>
+              <svg data-sidebar-toggle-icon="expand" class="hidden h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5 15.75 12l-7.5 7.5" />
+              </svg>
+            </button>
+          @endif
+        </div>
       </div>
 
-      <nav class="space-y-4 px-3 pb-4 lg:h-[calc(100vh-96px)] lg:overflow-y-auto" aria-label="Admin navigation">
+      <nav class="space-y-3 px-3 pb-4 lg:h-[calc(100vh-96px)] lg:overflow-y-auto" aria-label="Admin navigation">
         <div class="space-y-1.5">
-          <p class="inline-flex items-center gap-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F5C400]/90">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#F5C400]/90" aria-hidden="true"></span>
-            Overview
-          </p>
           <a
             href="{{ $dashboardRoute }}"
+            data-sidebar-primary
+            title="Dashboard"
             class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.dashboard') || request()->routeIs('approver.dashboard') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}"
           >
             <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.dashboard') || request()->routeIs('approver.dashboard') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75h7.5v7.5h-7.5v-7.5Zm9 0h7.5v4.5h-7.5v-4.5Zm0 6h7.5v10.5h-7.5V9.75Zm-9 3h7.5v7.5h-7.5v-7.5Z" />
             </svg>
-            <span>Dashboard</span>
+            <span class="sidebar-label">Dashboard</span>
           </a>
         </div>
 
         @if (auth()->user()?->isSuperAdmin())
-          <div class="space-y-1.5 border-t border-white/10 pt-4">
+          <div class="space-y-1.5 border-t border-white/10 pt-3.5">
             <button
               type="button"
-              class="flex w-full items-center justify-between px-3 text-left"
+              data-sidebar-primary
+              title="SDAO Submissions"
+              class="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-blue-100 transition hover:bg-white/10 hover:text-white"
               data-sidebar-toggle="sdao-submissions"
               aria-controls="sidebar-group-sdao-submissions"
               aria-expanded="{{ $isSubmissionsGroupActive ? 'true' : 'false' }}"
             >
-              <p class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F5C400]/90">
-                <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#F5C400]/90" aria-hidden="true"></span>
-                SDAO Submissions
-              </p>
-              <svg
-                class="h-4 w-4 text-[#F5C400]/90 transition-transform duration-200 {{ $isSubmissionsGroupActive ? 'rotate-180' : '' }}"
-                data-sidebar-chevron="sdao-submissions"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.9"
-                stroke="currentColor"
-                aria-hidden="true"
-              >
+              <span class="inline-flex items-center gap-2.5">
+                <svg class="h-4 w-4 shrink-0 text-blue-200 group-hover:text-[#F5C400]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 0H5.625C5.004 2.25 4.5 2.754 4.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                </svg>
+                <span class="sidebar-label">SDAO Submissions</span>
+              </span>
+              <svg class="h-4 w-4 text-blue-200 transition-transform duration-200 {{ $isSubmissionsGroupActive ? 'rotate-180 text-[#F5C400]' : '' }}" data-sidebar-chevron="sdao-submissions" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
               </svg>
             </button>
-            <div id="sidebar-group-sdao-submissions" class="space-y-1 pl-2 {{ $isSubmissionsGroupActive ? '' : 'hidden' }}">
-              <a href="{{ route('admin.submissions.register') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.register') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-                <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.submissions.register') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                <span>Register organization</span>
-              </a>
-              <a href="{{ route('admin.submissions.renew') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.renew') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-                <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.submissions.renew') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                <span>Renew organization</span>
-              </a>
-              <a href="{{ route('admin.submissions.activity-calendar') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.activity-calendar') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-                <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.submissions.activity-calendar') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75" /></svg>
-                <span>Submit activity calendar</span>
-              </a>
-              <a href="{{ route('admin.submissions.activity-proposal') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.submissions.activity-proposal') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-                <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.submissions.activity-proposal') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6 9-3 3m0 0-3-3m3 3V9m-5.25 9.75h12.75A2.25 2.25 0 0 0 21 16.5V7.5a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
-                <span>Submit activity proposal</span>
-              </a>
+            <div id="sidebar-group-sdao-submissions" data-sidebar-children class="space-y-1 pl-4 {{ $isSubmissionsGroupActive ? '' : 'hidden' }}">
+              <a href="{{ route('admin.submissions.register') }}" class="group block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.submissions.register') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Register organization</a>
+              <a href="{{ route('admin.submissions.renew') }}" class="group block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.submissions.renew') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Renew organization</a>
+              <a href="{{ route('admin.submissions.activity-calendar') }}" class="group block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.submissions.activity-calendar') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Submit activity calendar</a>
+              <a href="{{ route('admin.submissions.activity-proposal') }}" class="group block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.submissions.activity-proposal') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Submit activity proposal</a>
             </div>
           </div>
         @endif
 
         @if (! $isRoleApprover)
-        <div class="space-y-1.5 border-t border-white/10 pt-4">
+        <div class="space-y-1.5 border-t border-white/10 pt-3.5">
           <button
             type="button"
-            class="flex w-full items-center justify-between px-3 text-left"
+              data-sidebar-primary
+              title="Review Modules"
+            class="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-blue-100 transition hover:bg-white/10 hover:text-white"
             data-sidebar-toggle="review-modules"
             aria-controls="sidebar-group-review-modules"
             aria-expanded="{{ $isReviewGroupActive ? 'true' : 'false' }}"
           >
-            <p class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F5C400]/90"><span class="inline-block h-1.5 w-1.5 rounded-full bg-[#F5C400]/90" aria-hidden="true"></span>Review Modules</p>
-            <svg
-              class="h-4 w-4 text-[#F5C400]/90 transition-transform duration-200 {{ $isReviewGroupActive ? 'rotate-180' : '' }}"
-              data-sidebar-chevron="review-modules"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.9"
-              stroke="currentColor"
-              aria-hidden="true"
-            ><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+              <span class="inline-flex items-center gap-2.5">
+              <svg class="h-4 w-4 shrink-0 text-blue-200 group-hover:text-[#F5C400]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3.75 2.25h10.5m-10.5 3h6m-6 3h4.5" />
+              </svg>
+                <span class="sidebar-label">Review Modules</span>
+            </span>
+            <svg class="h-4 w-4 text-blue-200 transition-transform duration-200 {{ $isReviewGroupActive ? 'rotate-180 text-[#F5C400]' : '' }}" data-sidebar-chevron="review-modules" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
           </button>
-          <div id="sidebar-group-review-modules" class="space-y-1 pl-2 {{ $isReviewGroupActive ? '' : 'hidden' }}">
-          <a href="{{ route('admin.registrations.index') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.registrations.*') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.registrations.*') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2.25 4.5H6.75A2.25 2.25 0 0 1 4.5 18.25V5.75A2.25 2.25 0 0 1 6.75 3.5h7.5L19.5 8.75v9.5a2.25 2.25 0 0 1-2.25 2.25Z" />
-            </svg>
-            <span>Registrations</span>
-          </a>
-          <a href="{{ route('admin.renewals.index') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.renewals.*') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.renewals.*') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-            </svg>
-            <span>Renewals</span>
-          </a>
-          <a href="{{ route('admin.calendars.index') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.calendars.*') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.calendars.*') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
-            </svg>
-            <span>Activity Calendars</span>
-          </a>
-          <a href="{{ route('admin.proposals.index') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.proposals.*') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.proposals.*') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 0H5.625C5.004 2.25 4.5 2.754 4.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-            </svg>
-            <span>Activity Proposals</span>
-          </a>
-          <a href="{{ route('admin.reports.index') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.reports.*') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.reports.*') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m3.75 9v6m3-3H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-            </svg>
-            <span>After Activity Reports</span>
-          </a>
+          <div id="sidebar-group-review-modules" data-sidebar-children class="space-y-1 pl-4 {{ $isReviewGroupActive ? '' : 'hidden' }}">
+            <a href="{{ route('admin.registrations.index') }}" class="block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.registrations.*') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Registrations</a>
+            <a href="{{ route('admin.renewals.index') }}" class="block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.renewals.*') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Renewals</a>
+            <a href="{{ route('admin.calendars.index') }}" class="block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.calendars.*') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Activity Calendars</a>
+            <a href="{{ route('admin.proposals.index') }}" class="block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.proposals.*') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">Activity Proposals</a>
+            <a href="{{ route('admin.reports.index') }}" class="block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.reports.*') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">After Activity Reports</a>
           </div>
         </div>
         @else
-        <div class="space-y-1.5 border-t border-white/10 pt-4">
-          <p class="inline-flex items-center gap-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F5C400]/90">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#F5C400]/90" aria-hidden="true"></span>
-            Approvals
-          </p>
+        <div class="space-y-1.5 border-t border-white/10 pt-3.5">
           <a
             href="{{ route('approver.dashboard') }}"
+            data-sidebar-primary
+            title="My approval queue"
             class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('approver.*') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}"
           >
             <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('approver.*') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3.75 2.25h10.5m-10.5 3h6m-6 3h4.5" />
             </svg>
-            <span>My approval queue</span>
+            <span class="sidebar-label">My approval queue</span>
           </a>
         </div>
         @endif
 
         @if (! $isRoleApprover)
-        <div class="space-y-1.5 border-t border-white/10 pt-4">
+        <div class="space-y-1.5 border-t border-white/10 pt-3.5">
           <button
             type="button"
-            class="flex w-full items-center justify-between px-3 text-left"
+            data-sidebar-primary
+              title="Account Management"
+            class="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-blue-100 transition hover:bg-white/10 hover:text-white"
             data-sidebar-toggle="account-management"
             aria-controls="sidebar-group-account-management"
             aria-expanded="{{ $isAccountsGroupActive ? 'true' : 'false' }}"
           >
-            <p class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F5C400]/90"><span class="inline-block h-1.5 w-1.5 rounded-full bg-[#F5C400]/90" aria-hidden="true"></span>Account Management</p>
-            <svg
-              class="h-4 w-4 text-[#F5C400]/90 transition-transform duration-200 {{ $isAccountsGroupActive ? 'rotate-180' : '' }}"
-              data-sidebar-chevron="account-management"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.9"
-              stroke="currentColor"
-              aria-hidden="true"
-            ><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+              <span class="inline-flex items-center gap-2.5">
+              <svg class="h-4 w-4 shrink-0 text-blue-200 group-hover:text-[#F5C400]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.964 0a9 9 0 1 0-11.964 0m11.964 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+                <span class="sidebar-label">Account Management</span>
+            </span>
+            <svg class="h-4 w-4 text-blue-200 transition-transform duration-200 {{ $isAccountsGroupActive ? 'rotate-180 text-[#F5C400]' : '' }}" data-sidebar-chevron="account-management" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
           </button>
-          <div id="sidebar-group-account-management" class="space-y-1 pl-2 {{ $isAccountsGroupActive ? '' : 'hidden' }}">
-          <a href="{{ route('admin.accounts.index') }}" class="group flex items-center gap-2.5 rounded-xl border-l-2 px-3 py-2 text-sm font-medium transition {{ request()->routeIs('admin.accounts.*') ? 'border-[#F5C400] bg-linear-to-r from-white/28 to-white/12 text-white shadow-sm ring-1 ring-white/15' : 'border-transparent text-blue-100 hover:border-[#F5C400]/55 hover:bg-white/10 hover:text-white' }}">
-            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('admin.accounts.*') ? 'text-[#F5C400]' : 'text-blue-200 group-hover:text-[#F5C400]' }}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.964 0a9 9 0 1 0-11.964 0m11.964 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-            </svg>
-            <span>User accounts</span>
-          </a>
+          <div id="sidebar-group-account-management" data-sidebar-children class="space-y-1 pl-4 {{ $isAccountsGroupActive ? '' : 'hidden' }}">
+            <a href="{{ route('admin.accounts.index') }}" class="block rounded-lg border-l-2 px-3 py-1.5 text-sm transition {{ request()->routeIs('admin.accounts.*') ? 'border-[#F5C400] bg-white/15 text-white' : 'border-white/15 text-blue-100 hover:border-white/40 hover:bg-white/10 hover:text-white' }}">User accounts</a>
           </div>
         </div>
         @endif
 
-        <div class="space-y-1.5 border-t border-white/15 pt-4">
-          <p class="px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-red-200/90">Session</p>
+        <div class="space-y-1.5 border-t border-white/15 pt-3.5">
           <button
             type="button"
             id="admin-logout-trigger"
-            class="group flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-200 transition hover:bg-red-500/20 hover:text-red-100 focus:outline-none focus:ring-2 focus:ring-red-200/40"
+            data-sidebar-primary
+            title="Log out"
+            class="group flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-semibold text-blue-100 transition hover:bg-rose-500/15 hover:text-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-200/35"
           >
-            <svg class="h-4 w-4 shrink-0 text-red-200 transition group-hover:text-red-100" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
+            <svg class="h-4 w-4 shrink-0 text-blue-200 transition group-hover:text-rose-200" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-7.5A2.25 2.25 0 0 0 3.75 5.25v13.5A2.25 2.25 0 0 0 6 21h7.5a2.25 2.25 0 0 0 2.25-2.25V15m-3 0 3-3m0 0 3 3m-3-3H9" />
             </svg>
-            <span>Log out</span>
+            <span class="sidebar-label">Log out</span>
           </button>
           <form method="POST" action="{{ route('logout') }}" id="admin-logout-form" class="hidden">
             @csrf
@@ -489,8 +450,74 @@
       // Normalize initial state so only one dropdown is open on first paint.
       setOpenSection(openSection);
 
+      const layoutShell = document.getElementById('admin-layout-shell');
+      const sidebar = document.getElementById('admin-sidebar');
+      const collapseToggle = document.getElementById('admin-sidebar-collapse-toggle');
+      const labelEls = Array.from(document.querySelectorAll('.sidebar-label, .sidebar-brand-text'));
+      const childGroups = Array.from(document.querySelectorAll('[data-sidebar-children]'));
+      const chevronEls = Array.from(document.querySelectorAll('[data-sidebar-chevron]'));
+      const primaryItems = Array.from(document.querySelectorAll('[data-sidebar-primary]'));
+      const primaryIconWraps = Array.from(document.querySelectorAll('[data-sidebar-primary] > .inline-flex'));
+      const collapseIcon = collapseToggle?.querySelector('[data-sidebar-toggle-icon="collapse"]');
+      const expandIcon = collapseToggle?.querySelector('[data-sidebar-toggle-icon="expand"]');
+      const SIDEBAR_STATE_KEY = 'admin-sidebar-minimized';
+      let isSidebarMinimized = false;
+
+      const applySidebarMode = (minimized, { persist = true } = {}) => {
+        isSidebarMinimized = minimized;
+        if (layoutShell) {
+          layoutShell.classList.toggle('lg:pl-[260px]', !minimized);
+          layoutShell.classList.toggle('lg:pl-[84px]', minimized);
+        }
+        if (sidebar) {
+          sidebar.classList.toggle('lg:w-[260px]', !minimized);
+          sidebar.classList.toggle('lg:w-[84px]', minimized);
+        }
+        labelEls.forEach((el) => el.classList.toggle('lg:hidden', minimized));
+        chevronEls.forEach((el) => el.classList.toggle('lg:hidden', minimized));
+        childGroups.forEach((group) => group.classList.toggle('lg:hidden', minimized));
+        primaryItems.forEach((item) => {
+          item.classList.toggle('lg:justify-center', minimized);
+          item.classList.toggle('lg:w-10', minimized);
+          item.classList.toggle('lg:h-10', minimized);
+          item.classList.toggle('lg:mx-auto', minimized);
+          item.classList.toggle('lg:px-0', minimized);
+          item.classList.toggle('lg:border-l-0', minimized);
+        });
+        primaryIconWraps.forEach((wrap) => {
+          wrap.classList.toggle('lg:gap-0', minimized);
+        });
+        if (collapseIcon && expandIcon) {
+          collapseIcon.classList.toggle('hidden', minimized);
+          expandIcon.classList.toggle('hidden', !minimized);
+        }
+        if (collapseToggle) {
+          collapseToggle.setAttribute('aria-label', minimized ? 'Expand sidebar' : 'Collapse sidebar');
+          collapseToggle.setAttribute('title', minimized ? 'Expand sidebar' : 'Collapse sidebar');
+        }
+        if (minimized) {
+          setOpenSection(null);
+        }
+        if (persist) {
+          localStorage.setItem(SIDEBAR_STATE_KEY, minimized ? '1' : '0');
+        }
+      };
+
+      if (collapseToggle) {
+        const storedState = localStorage.getItem(SIDEBAR_STATE_KEY) === '1';
+        applySidebarMode(storedState, { persist: false });
+        collapseToggle.addEventListener('click', () => {
+          applySidebarMode(!isSidebarMinimized);
+        });
+      }
+
       sections.forEach((section) => {
         section.btn.addEventListener('click', () => {
+          if (isSidebarMinimized) {
+            applySidebarMode(false);
+            setOpenSection(section.key);
+            return;
+          }
           setOpenSection(openSection === section.key ? null : section.key);
         });
       });

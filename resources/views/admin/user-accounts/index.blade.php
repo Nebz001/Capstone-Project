@@ -38,16 +38,15 @@
 <x-ui.card padding="p-0" class="overflow-hidden max-w-full">
   <div class="px-3 py-3 sm:px-5 sm:py-4">
     <div class="max-w-full overflow-x-auto rounded-xl border border-slate-200">
-    <table class="min-w-304 w-full divide-y divide-slate-200 text-left text-sm">
+    <table class="min-w-full w-full divide-y divide-slate-200 text-left text-sm">
       <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
         <tr>
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Name</th>
-          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Role</th>
-          <th class="whitespace-nowrap px-4 py-3 sm:px-5">School ID</th>
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Email</th>
-          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Account status</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Role</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Status</th>
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Organization / context</th>
-          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Officer validation</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Validation</th>
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Registered</th>
           <th class="whitespace-nowrap px-4 py-3 text-right sm:px-5">Action</th>
         </tr>
@@ -77,13 +76,12 @@
               <p class="font-semibold text-slate-900">{{ $account->full_name }}</p>
             </td>
             <td class="px-4 py-3.5 sm:px-5">
+              <span class="block max-w-[18rem] wrap-break-word font-medium text-slate-700">{{ $account->email }}</span>
+            </td>
+            <td class="px-4 py-3.5 sm:px-5">
               <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $roleBadgeClass($account->role_type) }}">
                 {{ $roleLabel }}
               </span>
-            </td>
-            <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $account->school_id }}</td>
-            <td class="px-4 py-3.5 text-slate-700 sm:px-5">
-              <span class="block max-w-xs wrap-break-word font-medium">{{ $account->email }}</span>
             </td>
             <td class="px-4 py-3.5 sm:px-5">
               <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $accountStatusBadgeClass($account->account_status) }}">
@@ -111,7 +109,7 @@
           </tr>
         @empty
           <tr>
-            <td colspan="9" class="px-5 py-12 text-center sm:px-6">
+            <td colspan="8" class="px-5 py-12 text-center sm:px-6">
               <div class="flex flex-col items-center gap-2">
                 <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
                   <svg class="h-7 w-7 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
