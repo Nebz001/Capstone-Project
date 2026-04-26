@@ -12,10 +12,6 @@
     'organizational' => 'pending',
     'requirements' => 'pending',
   ];
-  $defaultDecision = old(
-    'decision',
-    strtolower((string) ($registration?->status ?? '')) === 'rejected' ? 'REJECTED' : 'APPROVED',
-  );
   $status = strtoupper((string) ($registration?->status ?? 'PENDING'));
   $statusClass = match ($status) {
     'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
@@ -49,7 +45,7 @@
     'extra_curricular' => 'Extra-Curricular Organization / Interest Club',
     default => $org?->organization_type ? (string) $org->organization_type : 'N/A',
   };
-  $readonlyItemClass = 'rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3.5';
+  $readonlyItemClass = 'field-review-card rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3.5';
   $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
   $readonlyValueClass = 'mt-1.5 text-sm font-semibold text-slate-900';
   $persistedFieldReviews = is_array($persistedFieldReviews ?? null) ? $persistedFieldReviews : [];
@@ -61,17 +57,46 @@
       default => 'pending',
     };
   };
+  $sectionFieldKeys = [
+    'application' => ['academic_year', 'submission_date', 'submitted_by', 'organization'],
+    'contact' => ['organization_name', 'contact_person', 'contact_no', 'contact_email'],
+    'organizational' => ['date_organized', 'organization_type', 'school', 'purpose'],
+    'requirements' => $requirementKeys,
+  ];
+  $deriveSectionStatusFromFields = static function (string $sectionKey, array $fieldKeys) use ($persistedFieldReviews): string {
+    $sectionRows = data_get($persistedFieldReviews, $sectionKey, []);
+    if (! is_array($sectionRows) || $fieldKeys === []) {
+      return 'pending';
+    }
+    $hasPending = false;
+    $hasRevision = false;
+    foreach ($fieldKeys as $fieldKey) {
+      $status = (string) data_get($sectionRows, $fieldKey.'.status', 'pending');
+      if (! in_array($status, ['pending', 'passed', 'flagged'], true)) {
+        $status = 'pending';
+      }
+      if ($status === 'pending') {
+        $hasPending = true;
+      } elseif ($status === 'flagged') {
+        $hasRevision = true;
+      }
+    }
+    if ($hasPending) {
+      return 'pending';
+    }
+    return $hasRevision ? 'needs_revision' : 'verified';
+  };
   $effectiveSectionStatus = [
-    'application' => old('section_review.application', data_get($persistedSectionReviews, 'application.status', $reviewStatusFromState((string) ($initialSectionReviewState['application'] ?? 'pending')))),
-    'contact' => old('section_review.contact', data_get($persistedSectionReviews, 'contact.status', $reviewStatusFromState((string) ($initialSectionReviewState['contact'] ?? 'pending')))),
-    'organizational' => old('section_review.organizational', data_get($persistedSectionReviews, 'organizational.status', $reviewStatusFromState((string) ($initialSectionReviewState['organizational'] ?? 'pending')))),
-    'requirements' => old('section_review.requirements', data_get($persistedSectionReviews, 'requirements.status', $reviewStatusFromState((string) ($initialSectionReviewState['requirements'] ?? 'pending')))),
+    'application' => old('section_review.application', $deriveSectionStatusFromFields('application', $sectionFieldKeys['application'])),
+    'contact' => old('section_review.contact', $deriveSectionStatusFromFields('contact', $sectionFieldKeys['contact'])),
+    'organizational' => old('section_review.organizational', $deriveSectionStatusFromFields('organizational', $sectionFieldKeys['organizational'])),
+    'requirements' => old('section_review.requirements', $deriveSectionStatusFromFields('requirements', $sectionFieldKeys['requirements'])),
   ];
   $statusBadge = static function (string $status): array {
     return match ($status) {
       'verified' => ['label' => 'Verified', 'class' => 'border border-emerald-200 bg-emerald-50 text-emerald-700'],
       'needs_revision' => ['label' => 'Needs Revision', 'class' => 'border border-amber-200 bg-amber-50 text-amber-700'],
-      default => ['label' => 'Pending Review', 'class' => 'border border-slate-200 bg-slate-100 text-slate-700'],
+      default => ['label' => 'Pending', 'class' => 'border border-slate-200 bg-slate-100 text-slate-700'],
     };
   };
   $progressCount = [
@@ -99,13 +124,12 @@
   action="{{ route('admin.registrations.update-status', $submission ?? $registration) }}"
   class="space-y-4"
   data-confirmed="0"
+  data-submission-id="{{ $registration?->id }}"
+  data-review-draft-url="{{ route('admin.registrations.review-draft', $submission ?? $registration) }}"
 >
   @csrf
   @method('PATCH')
 
-  @error('decision')
-    <x-forms.error>{{ $message }}</x-forms.error>
-  @enderror
   @error('section_review')
     <x-feedback.blocked-message variant="error" :message="$message" />
   @enderror
@@ -128,7 +152,7 @@
   </x-ui.card>
 
   {{-- Application Information --}}
-  <x-ui.card padding="p-0" class="overflow-hidden">
+  <x-ui.card padding="p-0" class="overflow-hidden" data-review-section-card data-section-key="application">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -138,30 +162,38 @@
         @php
           $applicationBadge = $statusBadge((string) ($effectiveSectionStatus['application'] ?? 'pending'));
         @endphp
-        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $applicationBadge['class'] }}">{{ $applicationBadge['label'] }}</span>
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $applicationBadge['class'] }}" data-section-status-badge="application">{{ $applicationBadge['label'] }}</span>
       </div>
     </div>
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Academic Year</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $registration->academicTerm?->academic_year ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'academic_year', 'fieldLabel' => 'Academic Year', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $registration->academicTerm?->academic_year ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'academic_year', 'fieldLabel' => 'Academic Year', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Submission Date</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submission_date', 'fieldLabel' => 'Submission Date', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submission_date', 'fieldLabel' => 'Submission Date', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Submitted By</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submitted_by', 'fieldLabel' => 'Submitted By', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submitted_by', 'fieldLabel' => 'Submitted By', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Organization</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $org?->organization_name ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'organization', 'fieldLabel' => 'Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'organization', 'fieldLabel' => 'Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
     </dl>
     </div>
@@ -169,7 +201,7 @@
   </x-ui.card>
 
   {{-- Contact Information --}}
-  <x-ui.card padding="p-0" class="overflow-hidden">
+  <x-ui.card padding="p-0" class="overflow-hidden" data-review-section-card data-section-key="contact">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -179,30 +211,38 @@
         @php
           $contactBadge = $statusBadge((string) ($effectiveSectionStatus['contact'] ?? 'pending'));
         @endphp
-        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $contactBadge['class'] }}">{{ $contactBadge['label'] }}</span>
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $contactBadge['class'] }}" data-section-status-badge="contact">{{ $contactBadge['label'] }}</span>
       </div>
     </div>
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">Organization Name</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $org?->organization_name ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'organization_name', 'fieldLabel' => 'Organization Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'organization_name', 'fieldLabel' => 'Organization Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Contact Person</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $registration->contact_person ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_person', 'fieldLabel' => 'Contact Person', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $registration->contact_person ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_person', 'fieldLabel' => 'Contact Person', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Contact No.</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $registration->contact_no ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_no', 'fieldLabel' => 'Contact Number', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $registration->contact_no ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_no', 'fieldLabel' => 'Contact Number', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">Email Address</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $registration->contact_email ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_email', 'fieldLabel' => 'Email Address', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $registration->contact_email ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_email', 'fieldLabel' => 'Email Address', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
     </dl>
     </div>
@@ -210,7 +250,7 @@
   </x-ui.card>
 
   {{-- Organizational Details --}}
-  <x-ui.card padding="p-0" class="overflow-hidden">
+  <x-ui.card padding="p-0" class="overflow-hidden" data-review-section-card data-section-key="organizational">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -220,30 +260,38 @@
         @php
           $organizationalBadge = $statusBadge((string) ($effectiveSectionStatus['organizational'] ?? 'pending'));
         @endphp
-        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $organizationalBadge['class'] }}">{{ $organizationalBadge['label'] }}</span>
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $organizationalBadge['class'] }}" data-section-status-badge="organizational">{{ $organizationalBadge['label'] }}</span>
       </div>
     </div>
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Date Organized</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'date_organized', 'fieldLabel' => 'Date Organized', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'date_organized', 'fieldLabel' => 'Date Organized', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Type of Organization</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $orgTypeLabel }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'organization_type', 'fieldLabel' => 'Type of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $orgTypeLabel }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'organization_type', 'fieldLabel' => 'Type of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">School</dt>
-        <dd class="{{ $readonlyValueClass }}">{{ $org?->college_department ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'school', 'fieldLabel' => 'School', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <dd class="text-sm font-semibold text-slate-900">{{ $org?->college_department ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'school', 'fieldLabel' => 'School', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
         <dt class="{{ $readonlyLabelClass }}">Purpose of Organization</dt>
-        <dd class="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-900">{{ $org?->purpose ?? 'N/A' }}</dd>
-        @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'purpose', 'fieldLabel' => 'Purpose of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        <div class="mt-1.5 flex flex-wrap items-start justify-between gap-2">
+          <dd class="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">{{ $org?->purpose ?? 'N/A' }}</dd>
+          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'purpose', 'fieldLabel' => 'Purpose of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+        </div>
       </div>
     </dl>
     </div>
@@ -251,7 +299,7 @@
   </x-ui.card>
 
   {{-- Requirements Attached --}}
-  <x-ui.card padding="p-0" class="overflow-hidden">
+  <x-ui.card padding="p-0" class="overflow-hidden" data-review-section-card data-section-key="requirements">
     <div class="border-b border-slate-100 bg-white px-6 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -261,7 +309,7 @@
         @php
           $requirementsBadge = $statusBadge((string) ($effectiveSectionStatus['requirements'] ?? 'pending'));
         @endphp
-        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $requirementsBadge['class'] }}">{{ $requirementsBadge['label'] }}</span>
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $requirementsBadge['class'] }}" data-section-status-badge="requirements">{{ $requirementsBadge['label'] }}</span>
       </div>
     </div>
     <div class="bg-white px-6 py-5">
@@ -272,12 +320,12 @@
           $checked = (bool) ($requirement?->is_submitted ?? false);
           $hasFile = $checked && in_array($key, $requirementAttachmentKeys, true);
         @endphp
-        <li class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+        <li class="requirement-review-item flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
           <div class="min-w-0">
             <p class="text-sm font-semibold text-slate-900">{{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}</p>
             <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
           </div>
-          <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="requirement-review-top-row flex flex-wrap items-start justify-between gap-3">
             <div class="shrink-0">
             @if ($hasFile)
               <a
@@ -292,7 +340,7 @@
               <span class="text-xs font-medium text-amber-700">Marked yes — no file on record</span>
             @endif
             </div>
-            <div class="ml-auto">
+            <div class="ml-auto shrink-0">
               @php
                 $requirementFieldLabel = (string) (($requirement?->label) ?? ($reqLabels[$key] ?? $key));
               @endphp
@@ -317,43 +365,20 @@
     <div class="border-b border-slate-100 bg-white px-6 py-4">
     <h2 class="text-lg font-bold tracking-tight text-slate-900">Finalize review</h2>
     <p class="mt-1 text-sm text-slate-500">
-      With <span class="font-semibold text-slate-800">Submit review</span>, the system <span class="font-semibold text-emerald-700">approves</span> only when every section is Verified. If any section is Need revision (with feedback), the registration returns for updates and profile editing is unlocked for the officer.
+      Saving this review automatically approves the registration when all sections are verified. If any field is marked for revision, the registration is returned for updates using the recorded field-level revision notes.
     </p>
     </div>
     <div class="bg-white px-6 py-5">
-    <p id="section-review-summary" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" role="status"></p>
-
-    <fieldset class="mt-6">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-slate-700">Outcome</legend>
-      <div class="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-100/70 p-3 sm:flex-row sm:flex-wrap sm:gap-3">
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-checked:border-[#003E9F] has-checked:bg-blue-50">
-          <input type="radio" name="decision" value="APPROVED" class="sr-only" {{ $defaultDecision === 'APPROVED' ? 'checked' : '' }} />
-          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-blue-100 text-[#003E9F]">
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15l3-3m6 3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-          </span>
-          <span>
-            <span class="block text-sm font-bold text-slate-900">Submit review</span>
-            <span class="block text-xs text-slate-500">Auto-approve if all verified, or request revision</span>
-          </span>
-        </label>
-        <label class="relative flex flex-1 cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 transition has-checked:border-rose-500 has-checked:bg-rose-50">
-          <input type="radio" name="decision" value="REJECTED" class="sr-only" {{ $defaultDecision === 'REJECTED' ? 'checked' : '' }} />
-          <span class="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-          </span>
-          <span>
-            <span class="block text-sm font-bold text-slate-900">Reject</span>
-            <span class="block text-xs text-slate-500">Decline with a reason (section review not required)</span>
-          </span>
-        </label>
-      </div>
-    </fieldset>
+    <div id="revision-summary-box" class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900">
+      <p class="text-sm font-bold uppercase tracking-widest text-amber-900">Revision Summary</p>
+      <p id="revision-summary-helper" class="mt-1 text-xs text-amber-800/90">Click a revision item below to jump to the section that needs updates.</p>
+      <ul id="revision-summary-list" class="mt-3 space-y-3"></ul>
+    </div>
 
     <div class="mt-6">
       <x-forms.label for="registration-remarks">
         General remarks / instructions
-        <span id="registration-remarks-required" class="hidden font-normal normal-case text-rose-600">(required for rejection)</span>
-        <span id="registration-remarks-optional" class="font-normal normal-case text-slate-400">(optional when all sections are verified)</span>
+        <span class="font-normal normal-case text-slate-400">(optional)</span>
       </x-forms.label>
       <x-forms.textarea
         id="registration-remarks"
@@ -367,13 +392,14 @@
     </div>
 
     <div class="mt-6 flex flex-wrap gap-3 border-t border-slate-100 pt-5">
-      <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40">
-        Save outcome
+      <button id="save-review-btn" type="submit" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40">
+        Save review
       </button>
       <a href="{{ route('admin.registrations.index') }}" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20">
         Back to list
       </a>
     </div>
+    <p id="save-review-helper" class="mt-2 text-xs text-slate-500"></p>
     </div>
   </x-ui.card>
 </form>
@@ -401,20 +427,182 @@
     const cancel = document.getElementById('registration-decision-cancel');
     const confirmBtn = document.getElementById('registration-decision-confirm');
     const remarks = document.getElementById('registration-remarks');
-    const reqReject = document.getElementById('registration-remarks-required');
-    const optLabel = document.getElementById('registration-remarks-optional');
-    const summaryEl = document.getElementById('section-review-summary');
     const progressEl = document.getElementById('registration-review-progress');
+    const revisionSummaryBox = document.getElementById('revision-summary-box');
+    const revisionSummaryHelper = document.getElementById('revision-summary-helper');
+    const revisionSummaryList = document.getElementById('revision-summary-list');
+    const saveReviewBtn = document.getElementById('save-review-btn');
+    const saveReviewHelper = document.getElementById('save-review-helper');
+    const submissionId = form?.dataset.submissionId || 'unknown';
+    const reviewDraftUrl = form?.dataset.reviewDraftUrl || '';
+    const reviewDraftStorageKey = `registration-review-draft:${submissionId}`;
 
-    if (!form || !modal || !modalText || !cancel || !confirmBtn || !remarks || !reqReject || !optLabel || !summaryEl || !progressEl) return;
+    if (!form || !modal || !modalText || !cancel || !confirmBtn || !remarks || !progressEl || !revisionSummaryBox || !revisionSummaryList || !revisionSummaryHelper || !saveReviewBtn || !saveReviewHelper) return;
 
-    function selectedDecision() {
-      const r = form.querySelector('input[name="decision"]:checked');
-      return r ? r.value : '';
+    function readDraftState() {
+      try {
+        const raw = window.localStorage.getItem(reviewDraftStorageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function csrfToken() {
+      return form.querySelector('input[name="_token"]')?.value || '';
+    }
+
+    function buildFieldReviewPayload() {
+      const payload = {};
+      form.querySelectorAll('[data-field-review]').forEach((control) => {
+        const sectionKey = control.dataset.sectionKey || '';
+        const fieldKey = control.dataset.fieldKey || '';
+        if (!sectionKey || !fieldKey) return;
+        if (!payload[sectionKey]) payload[sectionKey] = {};
+        const status = normalizeFieldStatus(control.querySelector('.field-review-status')?.value || 'pending');
+        const noteInput = control.dataset.noteInputId
+          ? document.getElementById(control.dataset.noteInputId)
+          : control.querySelector('.field-review-note-input');
+        payload[sectionKey][fieldKey] = {
+          status,
+          note: noteInput?.value || '',
+        };
+      });
+      return payload;
+    }
+
+    let saveDraftTimer = null;
+    let savingDraft = false;
+    async function persistDraftNow() {
+      if (!reviewDraftUrl || savingDraft) return;
+      savingDraft = true;
+      try {
+        const response = await fetch(reviewDraftUrl, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
+          },
+          body: JSON.stringify({
+            field_review: buildFieldReviewPayload(),
+          }),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const sectionReviews = data?.section_reviews && typeof data.section_reviews === 'object'
+          ? data.section_reviews
+          : null;
+        const fieldReviews = data?.field_reviews && typeof data.field_reviews === 'object'
+          ? data.field_reviews
+          : null;
+        if (fieldReviews) {
+          form.querySelectorAll('[data-field-review]').forEach((control) => {
+            const sectionKey = control.dataset.sectionKey || '';
+            const fieldKey = control.dataset.fieldKey || '';
+            const row = fieldReviews?.[sectionKey]?.[fieldKey];
+            if (!row) return;
+            const statusInput = control.querySelector('.field-review-status');
+            if (statusInput) {
+              statusInput.value = normalizeFieldStatus(row.status || 'pending');
+            }
+            const noteInput = control.dataset.noteInputId
+              ? document.getElementById(control.dataset.noteInputId)
+              : control.querySelector('.field-review-note-input');
+            if (noteInput && typeof row.note === 'string') {
+              noteInput.value = row.note;
+            }
+            syncFieldControl(control);
+          });
+        }
+        if (sectionReviews) {
+          allSectionRoots().forEach((root) => {
+            const key = root.dataset.sectionKey || '';
+            const stateInput = root.querySelector('.section-review-state');
+            const submittedInput = root.querySelector('.section-review-submitted');
+            if (stateInput) {
+              stateInput.value = String(sectionReviews?.[key]?.status || 'pending');
+            }
+            if (submittedInput) {
+              submittedInput.value = sectionReviews?.[key]?.submitted ? '1' : '0';
+            }
+          });
+        }
+        refreshSummary();
+        refreshRevisionSummary();
+        updateSaveReviewAvailability();
+      } catch (e) {
+        // No-op. UI still keeps local draft state.
+      } finally {
+        savingDraft = false;
+      }
+    }
+
+    function scheduleDraftPersist() {
+      if (saveDraftTimer) {
+        window.clearTimeout(saveDraftTimer);
+      }
+      saveDraftTimer = window.setTimeout(() => {
+        persistDraftNow();
+      }, 350);
+    }
+
+    function writeDraftState() {
+      const draft = {
+        fields: {},
+        remarks: remarks.value || '',
+      };
+      form.querySelectorAll('[data-field-review]').forEach((control) => {
+        const sectionKey = control.dataset.sectionKey || '';
+        const fieldKey = control.dataset.fieldKey || '';
+        if (!sectionKey || !fieldKey) return;
+        const status = normalizeFieldStatus(control.querySelector('.field-review-status')?.value || 'pending');
+        const noteInput = control.dataset.noteInputId
+          ? document.getElementById(control.dataset.noteInputId)
+          : control.querySelector('.field-review-note-input');
+        const note = noteInput?.value || '';
+        draft.fields[`${sectionKey}.${fieldKey}`] = { status, note };
+      });
+      window.localStorage.setItem(reviewDraftStorageKey, JSON.stringify(draft));
+    }
+
+    function applyDraftState() {
+      const draft = readDraftState();
+      if (!draft || typeof draft !== 'object') return;
+      const fields = draft.fields && typeof draft.fields === 'object' ? draft.fields : {};
+      form.querySelectorAll('[data-field-review]').forEach((control) => {
+        const sectionKey = control.dataset.sectionKey || '';
+        const fieldKey = control.dataset.fieldKey || '';
+        const key = `${sectionKey}.${fieldKey}`;
+        const state = fields[key];
+        if (!state || typeof state !== 'object') return;
+        const statusInput = control.querySelector('.field-review-status');
+        if (statusInput) {
+          statusInput.value = normalizeFieldStatus(state.status || 'pending');
+        }
+        const noteInput = control.dataset.noteInputId
+          ? document.getElementById(control.dataset.noteInputId)
+          : control.querySelector('.field-review-note-input');
+        if (noteInput && typeof state.note === 'string') {
+          noteInput.value = state.note;
+        }
+      });
+      if (typeof draft.remarks === 'string') {
+        remarks.value = draft.remarks;
+      }
     }
 
     function allSectionRoots() {
       return Array.from(form.querySelectorAll('[data-section-submit]'));
+    }
+
+    function normalizeFieldStatus(status) {
+      const value = String(status || 'pending');
+      if (value === 'revision' || value === 'needs_revision') return 'flagged';
+      if (value === 'passed' || value === 'flagged' || value === 'pending') return value;
+      return 'pending';
     }
 
     function getFieldControls(sectionKey) {
@@ -423,18 +611,74 @@
 
     function syncFieldControl(control) {
       const statusInput = control.querySelector('.field-review-status');
-      const noteWrap = control.querySelector('.field-review-note');
-      const noteInput = control.querySelector('.field-review-note-input');
-      const status = statusInput?.value || 'pending';
+      const noteWrap = control.dataset.noteWrapId
+        ? document.getElementById(control.dataset.noteWrapId)
+        : control.querySelector('.field-review-note');
+      const noteInput = control.dataset.noteInputId
+        ? document.getElementById(control.dataset.noteInputId)
+        : control.querySelector('.field-review-note-input');
+      const noteError = control.dataset.noteWrapId
+        ? document.querySelector(`#${control.dataset.noteWrapId} .field-review-note-error`)
+        : control.querySelector('.field-review-note-error');
+      const status = normalizeFieldStatus(statusInput?.value || 'pending');
+      if (statusInput) statusInput.value = status;
       control.querySelectorAll('.field-review-btn').forEach((btn) => {
         const active = btn.dataset.statusValue === status;
         btn.classList.toggle('ring-2', active);
-        btn.classList.toggle('ring-slate-300', active && status === 'pending');
         btn.classList.toggle('ring-emerald-400', active && status === 'passed');
-        btn.classList.toggle('ring-rose-400', active && status === 'flagged');
+        btn.classList.toggle('ring-amber-400', active && status === 'flagged');
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       if (noteWrap) noteWrap.classList.toggle('hidden', status !== 'flagged');
+      const hasNote = (noteInput?.value || '').trim() !== '';
+      if (noteError) noteError.classList.toggle('hidden', status !== 'flagged' || hasNote);
       if (status !== 'flagged' && noteInput) noteInput.value = '';
+    }
+
+    function evaluateReviewReadiness() {
+      const roots = allSectionRoots();
+      let hasPending = false;
+      let hasMissingRevisionNote = false;
+      roots.forEach((root) => {
+        const stats = computeSection(root.dataset.sectionKey || '');
+        if (stats.pending > 0) hasPending = true;
+        if (stats.invalidFlagged > 0) hasMissingRevisionNote = true;
+      });
+      return {
+        canSave: !hasPending && !hasMissingRevisionNote,
+        hasPending,
+        hasMissingRevisionNote,
+      };
+    }
+
+    function updateSaveReviewAvailability() {
+      const state = evaluateReviewReadiness();
+      saveReviewBtn.disabled = !state.canSave;
+      if (state.hasPending) {
+        saveReviewBtn.title = 'Review all fields before saving.';
+        saveReviewHelper.textContent = 'All sections must be resolved before saving the review.';
+      } else if (state.hasMissingRevisionNote) {
+        saveReviewBtn.title = 'Add required revision notes before saving.';
+        saveReviewHelper.textContent = 'Revision note is required for each field marked Revision.';
+      } else {
+        saveReviewBtn.title = 'Save review';
+        saveReviewHelper.textContent = '';
+      }
+    }
+
+    function applySectionBadge(sectionKey, status) {
+      const badge = form.querySelector(`[data-section-status-badge="${sectionKey}"]`);
+      if (!badge) return;
+      if (status === 'verified') {
+        badge.className = 'inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700';
+        badge.textContent = 'Verified';
+      } else if (status === 'needs_revision') {
+        badge.className = 'inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700';
+        badge.textContent = 'Needs Revision';
+      } else {
+        badge.className = 'inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700';
+        badge.textContent = 'Pending';
+      }
     }
 
     function computeSection(sectionKey) {
@@ -443,11 +687,14 @@
       let flagged = 0;
       let invalidFlagged = 0;
       controls.forEach((control) => {
-        const status = control.querySelector('.field-review-status')?.value || 'pending';
+        const status = normalizeFieldStatus(control.querySelector('.field-review-status')?.value || 'pending');
         if (status === 'pending') pending += 1;
         if (status === 'flagged') {
           flagged += 1;
-          const note = (control.querySelector('.field-review-note-input')?.value || '').trim();
+          const noteInput = control.dataset.noteInputId
+            ? document.getElementById(control.dataset.noteInputId)
+            : control.querySelector('.field-review-note-input');
+          const note = (noteInput?.value || '').trim();
           if (note === '') invalidFlagged += 1;
         }
       });
@@ -459,40 +706,22 @@
       if (!sectionKey) return;
       const sectionStateInput = sectionRoot.querySelector('.section-review-state');
       const sectionSubmittedInput = sectionRoot.querySelector('.section-review-submitted');
-      const submitBtn = sectionRoot.querySelector('.section-submit-btn');
-      const editBtn = sectionRoot.querySelector('.section-edit-btn');
-      const badge = sectionRoot.querySelector('.section-submitted-badge');
       const controls = getFieldControls(sectionKey);
       const stats = computeSection(sectionKey);
-      const isSubmitted = sectionSubmittedInput?.value === '1';
 
       const derivedStatus = stats.pending > 0 ? 'pending' : (stats.flagged > 0 ? 'needs_revision' : 'verified');
       if (sectionStateInput) sectionStateInput.value = derivedStatus;
+      applySectionBadge(sectionKey, derivedStatus);
 
       const canSubmit = stats.total > 0 && stats.pending === 0 && stats.invalidFlagged === 0;
-      if (submitBtn) {
-        submitBtn.disabled = !canSubmit || isSubmitted;
-        submitBtn.title = canSubmit ? 'Submit section review' : 'All fields must be reviewed before submitting';
-      }
+      if (sectionSubmittedInput) sectionSubmittedInput.value = canSubmit ? '1' : '0';
       controls.forEach((control) => {
-        const disabled = isSubmitted;
-        control.querySelectorAll('button, textarea').forEach((el) => {
-          el.disabled = disabled;
-        });
+        control.querySelectorAll('button').forEach((el) => { el.disabled = false; });
+        const noteInput = control.dataset.noteInputId
+          ? document.getElementById(control.dataset.noteInputId)
+          : control.querySelector('.field-review-note-input');
+        if (noteInput) noteInput.disabled = false;
       });
-      if (badge) {
-        badge.classList.toggle('hidden', !isSubmitted);
-        if (isSubmitted) {
-          if (derivedStatus === 'verified') {
-            badge.className = 'section-submitted-badge inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700';
-            badge.textContent = 'Verified';
-          } else {
-            badge.className = 'section-submitted-badge inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700';
-            badge.textContent = 'Needs Revision';
-          }
-        }
-      }
-      if (editBtn) editBtn.classList.toggle('hidden', !isSubmitted);
     }
 
     function refreshSummary() {
@@ -509,25 +738,154 @@
       progressEl.querySelector('[data-progress="verified"]').textContent = `Verified: ${verified}`;
       progressEl.querySelector('[data-progress="needs_revision"]').textContent = `Needs Revision: ${needsRevision}`;
       progressEl.querySelector('[data-progress="pending"]').textContent = `Pending: ${pending}`;
-      if (pending > 0) {
-        summaryEl.textContent = `${pending} section(s) pending. Submit each section review before finalizing.`;
-        summaryEl.className = 'rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
-      } else if (needsRevision > 0) {
-        summaryEl.textContent = `${needsRevision} section(s) need revision. Submitting review will send this registration back with flagged field notes.`;
-        summaryEl.className = 'rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
-      } else {
-        summaryEl.textContent = 'All sections verified. Registration can be approved.';
-        summaryEl.className = 'rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900';
-      }
     }
 
-    function updateRemarksHint() {
-      const d = selectedDecision();
-      reqReject.classList.toggle('hidden', d !== 'REJECTED');
-      optLabel.classList.toggle('hidden', d === 'REJECTED');
+    function refreshRevisionSummary() {
+      const sectionLabels = {
+        application: 'Application Information',
+        contact: 'Account and Contact Information',
+        organizational: 'Organization Details',
+        requirements: 'Requirements Attached',
+      };
+      const sectionOrder = ['application', 'contact', 'organizational', 'requirements'];
+      const revisionRows = [];
+      const sectionRoots = allSectionRoots();
+      const sectionStates = sectionRoots.map((root) => root.querySelector('.section-review-state')?.value || 'pending');
+      const pendingCount = sectionStates.filter((state) => state === 'pending').length;
+      const verifiedCount = sectionStates.filter((state) => state === 'verified').length;
+      form.querySelectorAll('[data-field-review]').forEach((control) => {
+        const status = normalizeFieldStatus(control.querySelector('.field-review-status')?.value || 'pending');
+        if (status !== 'flagged') return;
+        const sectionKey = control.dataset.sectionKey || '';
+        const fieldLabel = control.dataset.fieldLabel || 'Field';
+        const noteInput = control.dataset.noteInputId
+          ? document.getElementById(control.dataset.noteInputId)
+          : control.querySelector('.field-review-note-input');
+        const note = (noteInput?.value || '').trim();
+        const targetElement = control.closest('.field-review-card') || control.closest('.requirement-review-item');
+        if (targetElement && !targetElement.id) {
+          targetElement.id = `review-target-${sectionKey}-${control.dataset.fieldKey || 'field'}`;
+        }
+        revisionRows.push({
+          sectionKey,
+          section: sectionLabels[sectionKey] || sectionKey,
+          field: fieldLabel,
+          note: note !== '' ? note : 'No note provided yet.',
+          targetId: targetElement?.id || '',
+        });
+      });
+
+      if (pendingCount > 0) {
+        revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+        revisionSummaryHelper.textContent = 'Complete all pending fields first, then finalize the review.';
+        revisionSummaryList.innerHTML = `<li class="text-sm">${pendingCount} section(s) pending. Complete all field reviews first.</li>`;
+        return;
+      }
+
+      if (revisionRows.length === 0 && verifiedCount === sectionRoots.length && sectionRoots.length > 0) {
+        revisionSummaryBox.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900';
+        revisionSummaryHelper.textContent = 'Every section is fully reviewed and verified.';
+        revisionSummaryList.innerHTML = '<li class="text-sm">All sections are verified. This registration is ready for approval.</li>';
+        return;
+      }
+
+      revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+      revisionSummaryHelper.textContent = 'Click a revision item below to jump to the section that needs updates.';
+      revisionSummaryList.innerHTML = '';
+      const grouped = {};
+      revisionRows.forEach((row) => {
+        grouped[row.sectionKey] = grouped[row.sectionKey] || [];
+        grouped[row.sectionKey].push(row);
+      });
+      sectionOrder.forEach((sectionKey) => {
+        const rows = grouped[sectionKey] || [];
+        if (rows.length === 0) return;
+        const item = document.createElement('li');
+        item.className = 'rounded-xl border border-amber-200/70 bg-white/70 px-3 py-2.5';
+        const title = document.createElement('p');
+        title.className = 'font-semibold text-amber-900';
+        title.textContent = `${rows[0].section} (${rows.length})`;
+        item.appendChild(title);
+        const list = document.createElement('ul');
+        list.className = 'mt-1.5 space-y-1.5';
+        rows.forEach((row) => {
+          const listItem = document.createElement('li');
+          const action = document.createElement('button');
+          action.type = 'button';
+          action.className = 'inline-flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-amber-900/95 transition hover:bg-amber-100/70 focus:outline-none focus:ring-2 focus:ring-amber-400/50';
+          if (row.targetId) {
+            action.dataset.targetId = row.targetId;
+          }
+          action.innerHTML = `<span class="font-semibold underline underline-offset-2">${row.field}</span><span class="text-amber-900/80">- ${row.note}</span>`;
+          listItem.appendChild(action);
+          list.appendChild(listItem);
+        });
+        item.appendChild(list);
+        revisionSummaryList.appendChild(item);
+      });
+    }
+
+    let activeFlashTimer = null;
+    function scrollToRevisionTarget(targetId) {
+      if (!targetId) return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
+      if (activeFlashTimer) {
+        window.clearTimeout(activeFlashTimer);
+      }
+      activeFlashTimer = window.setTimeout(() => {
+        target.classList.remove('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
+      }, 1800);
     }
 
     form.querySelectorAll('[data-field-review]').forEach((control) => {
+      const parentCard = control.closest('.field-review-card');
+      const requirementCard = control.closest('.requirement-review-item');
+      const noteWrap = control.querySelector('.field-review-note');
+      const noteInput = control.querySelector('.field-review-note-input');
+      const valueRow = control.parentElement;
+      const fieldLabel = parentCard?.querySelector(':scope > dt');
+      const fieldValue = valueRow?.querySelector(':scope > dd');
+
+      if (parentCard && valueRow && fieldLabel && fieldValue) {
+        const leftCol = document.createElement('div');
+        leftCol.className = 'min-w-0 flex-1';
+        leftCol.appendChild(fieldLabel);
+        leftCol.appendChild(fieldValue);
+
+        valueRow.className = 'field-review-top-row mt-1.5 flex flex-wrap items-start justify-between gap-3';
+        valueRow.insertBefore(leftCol, valueRow.firstChild);
+        control.className = 'field-review-control shrink-0';
+      }
+
+      if (parentCard && noteWrap) {
+        const noteWrapId = `field-review-note-${control.dataset.sectionKey || 'section'}-${control.dataset.fieldKey || 'field'}`;
+        noteWrap.id = noteWrapId;
+        control.dataset.noteWrapId = noteWrapId;
+        if (noteInput) {
+          const noteInputId = `${noteWrapId}-input`;
+          noteInput.id = noteInputId;
+          control.dataset.noteInputId = noteInputId;
+        }
+        noteWrap.classList.add('w-full', 'border-t', 'border-slate-200/70', 'pt-2.5');
+        parentCard.appendChild(noteWrap);
+      }
+      if (requirementCard && noteWrap) {
+        const noteWrapId = `field-review-note-${control.dataset.sectionKey || 'section'}-${control.dataset.fieldKey || 'field'}`;
+        noteWrap.id = noteWrapId;
+        control.dataset.noteWrapId = noteWrapId;
+        if (noteInput) {
+          const noteInputId = `${noteWrapId}-input`;
+          noteInput.id = noteInputId;
+          control.dataset.noteInputId = noteInputId;
+        }
+        noteWrap.classList.add('w-full', 'border-t', 'border-slate-200/70', 'pt-2.5');
+        requirementCard.appendChild(noteWrap);
+        control.className = 'field-review-control shrink-0';
+      }
+
       syncFieldControl(control);
       control.querySelectorAll('.field-review-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -537,47 +895,47 @@
           syncFieldControl(control);
           const sectionRoot = form.querySelector(`[data-section-submit][data-section-key="${control.dataset.sectionKey}"]`);
           if (sectionRoot) {
-            const submitted = sectionRoot.querySelector('.section-review-submitted');
-            if (submitted?.value === '1') return;
             syncSection(sectionRoot);
             refreshSummary();
+            refreshRevisionSummary();
+            updateSaveReviewAvailability();
+            writeDraftState();
+            scheduleDraftPersist();
           }
         });
       });
-      control.querySelector('.field-review-note-input')?.addEventListener('input', () => {
+      const mappedNoteInput = control.dataset.noteInputId
+        ? document.getElementById(control.dataset.noteInputId)
+        : control.querySelector('.field-review-note-input');
+      mappedNoteInput?.addEventListener('input', () => {
         const sectionRoot = form.querySelector(`[data-section-submit][data-section-key="${control.dataset.sectionKey}"]`);
         if (sectionRoot) {
           syncSection(sectionRoot);
           refreshSummary();
+          refreshRevisionSummary();
+          updateSaveReviewAvailability();
+          writeDraftState();
+          scheduleDraftPersist();
         }
       });
     });
 
+    applyDraftState();
     allSectionRoots().forEach((sectionRoot) => {
-      sectionRoot.querySelector('.section-submit-btn')?.addEventListener('click', () => {
-        const stats = computeSection(sectionRoot.dataset.sectionKey || '');
-        if (stats.pending > 0 || stats.invalidFlagged > 0) {
-          return;
-        }
-        const submitted = sectionRoot.querySelector('.section-review-submitted');
-        if (submitted) submitted.value = '1';
-        syncSection(sectionRoot);
-        refreshSummary();
-      });
-      sectionRoot.querySelector('.section-edit-btn')?.addEventListener('click', () => {
-        const submitted = sectionRoot.querySelector('.section-review-submitted');
-        if (submitted) submitted.value = '0';
-        syncSection(sectionRoot);
-        refreshSummary();
-      });
       syncSection(sectionRoot);
     });
-
-    form.querySelectorAll('input[name="decision"]').forEach((el) => el.addEventListener('change', () => {
-      updateRemarksHint();
-    }));
     refreshSummary();
-    updateRemarksHint();
+    refreshRevisionSummary();
+    updateSaveReviewAvailability();
+    remarks.addEventListener('input', writeDraftState);
+    revisionSummaryList.addEventListener('click', (event) => {
+      const action = event.target.closest('button[data-target-id]');
+      if (!action) return;
+      const { targetId } = action.dataset;
+      if (targetId) {
+        scrollToRevisionTarget(targetId);
+      }
+    });
 
     const closeDecision = () => {
       modal.classList.add('hidden');
@@ -595,30 +953,19 @@
       if (form.dataset.confirmed === '1') return;
 
       e.preventDefault();
-      const d = selectedDecision();
-      if (!d) {
-        alert('Please choose Submit review or Reject before saving.');
+      updateSaveReviewAvailability();
+      if (saveReviewBtn.disabled) {
         return;
       }
-      const text = remarks.value.trim();
-      if (d === 'REJECTED' && text.length < 3) {
-        alert('Please provide rejection remarks (at least a few characters).');
-        remarks.focus();
+      const sectionRoots = allSectionRoots();
+      if (sectionRoots.some((root) => root.querySelector('.section-review-submitted')?.value !== '1')) {
+        alert('Review all fields and provide notes for revision-marked fields before saving.');
         return;
       }
-      if (d === 'APPROVED') {
-        const sectionRoots = allSectionRoots();
-        if (sectionRoots.some((root) => root.querySelector('.section-review-submitted')?.value !== '1')) {
-          alert('Submit all section reviews before finalizing.');
-          return;
-        }
-        const states = sectionRoots.map((root) => root.querySelector('.section-review-state')?.value || 'pending');
-        modalText.textContent = states.every((state) => state === 'verified')
-          ? 'Approve this registration? All sections are verified.'
-          : 'Send this registration for revision? Flagged field notes will be shared with the submitter.';
-      } else {
-        modalText.textContent = 'Reject this registration? This cannot be undone from this screen without a new submission flow.';
-      }
+      const states = sectionRoots.map((root) => root.querySelector('.section-review-state')?.value || 'pending');
+      modalText.textContent = states.every((state) => state === 'verified')
+        ? 'Finalize this review and approve the registration?'
+        : 'Finalize this review and return the registration for revision with field notes?';
 
       modal.classList.remove('hidden');
       modal.classList.add('flex');
@@ -626,6 +973,11 @@
 
     confirmBtn.addEventListener('click', () => {
       form.dataset.confirmed = '1';
+      if (saveDraftTimer) {
+        window.clearTimeout(saveDraftTimer);
+        saveDraftTimer = null;
+      }
+      window.localStorage.removeItem(reviewDraftStorageKey);
       closeDecision();
       form.submit();
     });

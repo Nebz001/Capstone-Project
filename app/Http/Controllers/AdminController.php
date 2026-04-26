@@ -17,6 +17,7 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -450,24 +451,16 @@ class AdminController extends Controller
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
 
         $validator = Validator::make($request->all(), [
-            'decision' => ['required', Rule::in(['APPROVED', 'REJECTED'])],
             'field_review' => ['nullable', 'array'],
             'section_review' => ['nullable', 'array'],
             'section_submitted' => ['nullable', 'array'],
-            'remarks' => [
-                Rule::when(
-                    $request->input('decision') === 'REJECTED',
-                    ['required', 'string', 'min:3', 'max:5000'],
-                    ['nullable', 'string', 'max:5000'],
-                ),
-            ],
+            'remarks' => ['nullable', 'string', 'max:5000'],
         ]);
 
         $validated = $validator->validate();
 
         /** @var User $admin */
         $admin = $request->user();
-        $decision = $validated['decision'];
         $fieldReviewInput = is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [];
         $sectionSubmittedInput = is_array($validated['section_submitted'] ?? null) ? $validated['section_submitted'] : [];
         $sectionSchema = $this->registrationReviewFieldSchema();
@@ -523,34 +516,39 @@ class AdminController extends Controller
         $hasNeedsRevision = collect($normalizedSectionReviews)->contains(fn (array $row): bool => ($row['status'] ?? 'pending') === 'needs_revision');
 
         $remarks = trim((string) ($validated['remarks'] ?? ''));
-        if ($decision === 'APPROVED' && (! $allSectionsSubmitted || (! $allSectionsVerified && ! $hasNeedsRevision))) {
+        if (! $allSectionsSubmitted || (! $allSectionsVerified && ! $hasNeedsRevision)) {
             return back()->withErrors([
-                'decision' => 'Submit each section review first before finalizing the registration decision.',
+                'section_review' => 'Review all fields and provide notes for every revision-marked field before finalizing.',
             ])->withInput();
         }
 
         $flaggedNotes = $this->composeRegistrationFlaggedFieldNotes($normalizedFieldReviews);
-        if ($decision === 'APPROVED' && $hasNeedsRevision && $flaggedNotes === null) {
+        if ($hasNeedsRevision && $flaggedNotes === null) {
             return back()->withErrors([
                 'section_review' => 'Flagged fields must include notes before submitting for revision.',
             ])->withInput();
         }
 
-        DB::transaction(function () use ($submission, $decision, $remarks, $admin, $normalizedFieldReviews, $normalizedSectionReviews, $allSectionsVerified, $hasNeedsRevision, $flaggedNotes): void {
+        DB::transaction(function () use ($submission, $remarks, $admin, $normalizedFieldReviews, $normalizedSectionReviews, $allSectionsVerified, $hasNeedsRevision, $flaggedNotes): void {
             $nextStatus = match (true) {
-                $decision === 'REJECTED' => OrganizationSubmission::STATUS_REJECTED,
                 $allSectionsVerified => OrganizationSubmission::STATUS_APPROVED,
                 $hasNeedsRevision => OrganizationSubmission::STATUS_REVISION,
                 default => OrganizationSubmission::STATUS_PENDING,
             };
-            $effectiveRemarks = $nextStatus === OrganizationSubmission::STATUS_REVISION
-                ? ($flaggedNotes ?? $remarks)
-                : $remarks;
+            $effectiveRemarks = $remarks;
+            $effectiveRevisionNotes = $nextStatus === OrganizationSubmission::STATUS_REVISION
+                ? implode("\n\n", array_filter([
+                    $flaggedNotes,
+                    $effectiveRemarks !== '' ? "General remarks\n".$effectiveRemarks : null,
+                ]))
+                : '';
             $submission->update([
                 'status' => $nextStatus,
                 'approval_decision' => $nextStatus === OrganizationSubmission::STATUS_APPROVED ? 'approved' : null,
                 'additional_remarks' => $effectiveRemarks !== '' ? $effectiveRemarks : null,
-                'notes' => $effectiveRemarks !== '' ? $effectiveRemarks : $submission->notes,
+                'notes' => $nextStatus === OrganizationSubmission::STATUS_REVISION
+                    ? ($effectiveRevisionNotes !== '' ? $effectiveRevisionNotes : $submission->notes)
+                    : ($effectiveRemarks !== '' ? $effectiveRemarks : $submission->notes),
                 'current_approval_step' => 0,
                 'registration_field_reviews' => $normalizedFieldReviews,
                 'registration_section_reviews' => $normalizedSectionReviews,
@@ -560,11 +558,11 @@ class AdminController extends Controller
                 $submission->organization?->update(['status' => 'active']);
             }
 
-            if (($nextStatus === OrganizationSubmission::STATUS_REJECTED || $nextStatus === OrganizationSubmission::STATUS_REVISION) && $effectiveRemarks !== '') {
+            if ($nextStatus === OrganizationSubmission::STATUS_REVISION && $effectiveRevisionNotes !== '') {
                 OrganizationProfileRevision::query()->create([
                     'organization_id' => $submission->organization_id,
                     'requested_by' => $admin->id,
-                    'revision_notes' => $effectiveRemarks,
+                    'revision_notes' => $effectiveRevisionNotes,
                     'status' => 'open',
                 ]);
             }
@@ -572,7 +570,77 @@ class AdminController extends Controller
 
         return redirect()
             ->route('admin.registrations.show', $submission)
-            ->with('success', 'Registration decision saved successfully.');
+            ->with('success', 'Registration review saved successfully.')
+            ->with('success_html', 'Registration review saved successfully. <a href="'.route('admin.registrations.index').'" class="ml-1 inline-flex items-center font-semibold underline decoration-emerald-700/50 underline-offset-2 hover:decoration-emerald-900">Back to Registrations</a>');
+    }
+
+    public function saveRegistrationReviewDraft(Request $request, OrganizationSubmission $submission): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+
+        $validated = $request->validate([
+            'field_review' => ['nullable', 'array'],
+        ]);
+
+        /** @var User $admin */
+        $admin = $request->user();
+        $fieldReviewInput = is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [];
+        $sectionSchema = $this->registrationReviewFieldSchema();
+
+        $normalizedFieldReviews = [];
+        $normalizedSectionReviews = [];
+        foreach ($sectionSchema as $sectionKey => $fields) {
+            $sectionInput = is_array($fieldReviewInput[$sectionKey] ?? null) ? $fieldReviewInput[$sectionKey] : [];
+            $fieldStates = [];
+            foreach ($fields as $fieldKey => $fieldLabel) {
+                $row = is_array($sectionInput[$fieldKey] ?? null) ? $sectionInput[$fieldKey] : [];
+                $status = (string) ($row['status'] ?? 'pending');
+                if (in_array($status, ['revision', 'needs_revision'], true)) {
+                    $status = 'flagged';
+                }
+                if (! in_array($status, ['pending', 'passed', 'flagged'], true)) {
+                    $status = 'pending';
+                }
+                $note = trim((string) ($row['note'] ?? ''));
+                if ($status !== 'flagged') {
+                    $note = '';
+                }
+                $fieldStates[$fieldKey] = [
+                    'label' => $fieldLabel,
+                    'status' => $status,
+                    'note' => $note !== '' ? $note : null,
+                    'reviewed_by' => $status === 'pending' ? null : $admin->id,
+                    'reviewed_at' => $status === 'pending' ? null : now()->toDateTimeString(),
+                ];
+            }
+
+            $hasPending = collect($fieldStates)->contains(fn (array $row): bool => ($row['status'] ?? 'pending') === 'pending');
+            $hasFlagged = collect($fieldStates)->contains(fn (array $row): bool => ($row['status'] ?? 'pending') === 'flagged');
+            $missingFlaggedNotes = collect($fieldStates)->contains(
+                fn (array $row): bool => ($row['status'] ?? '') === 'flagged' && trim((string) ($row['note'] ?? '')) === ''
+            );
+            $isSubmitted = ! $hasPending && ! $missingFlaggedNotes;
+
+            $normalizedFieldReviews[$sectionKey] = $fieldStates;
+            $normalizedSectionReviews[$sectionKey] = [
+                'status' => ! $isSubmitted ? 'pending' : ($hasFlagged ? 'needs_revision' : 'verified'),
+                'submitted' => $isSubmitted,
+                'reviewed_by' => $isSubmitted ? $admin->id : null,
+                'reviewed_at' => $isSubmitted ? now()->toDateTimeString() : null,
+            ];
+        }
+
+        $submission->update([
+            'registration_field_reviews' => $normalizedFieldReviews,
+            'registration_section_reviews' => $normalizedSectionReviews,
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'field_reviews' => $normalizedFieldReviews,
+            'section_reviews' => $normalizedSectionReviews,
+        ]);
     }
 
     /**

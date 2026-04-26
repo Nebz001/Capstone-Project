@@ -161,6 +161,7 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
         ->name('registrations.requirement-file')
         ->where('key', '[a-z0-9_]+');
     Route::get('/registrations/{submission}', 'showRegistration')->name('registrations.show');
+    Route::patch('/registrations/{submission}/review-draft', 'saveRegistrationReviewDraft')->name('registrations.review-draft');
     Route::patch('/registrations/{submission}/status', 'updateRegistrationStatus')->name('registrations.update-status');
 
     Route::get('/renewals', 'renewals')->name('renewals.index');
