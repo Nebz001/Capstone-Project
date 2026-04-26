@@ -48,7 +48,7 @@
     $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
 @endphp
 
-<div class="mx-auto max-w-screen-2xl px-4 py-8 pb-24 sm:px-6 lg:px-10">
+<div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
     <header class="mb-6">
         <a href="{{ route('organizations.manage') }}{{ $saQ }}" class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]">
