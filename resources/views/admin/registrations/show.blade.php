@@ -370,7 +370,7 @@
     </div>
     <div class="bg-white px-6 py-5">
     <div id="revision-summary-box" class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900">
-      <p class="text-sm font-bold uppercase tracking-widest text-amber-900">Revision Summary</p>
+      <p id="revision-summary-title" class="text-sm font-bold uppercase tracking-widest text-amber-900">Revision Summary</p>
       <p id="revision-summary-helper" class="mt-1 text-xs text-amber-800/90">Click a revision item below to jump to the section that needs updates.</p>
       <ul id="revision-summary-list" class="mt-3 space-y-3"></ul>
     </div>
@@ -429,6 +429,7 @@
     const remarks = document.getElementById('registration-remarks');
     const progressEl = document.getElementById('registration-review-progress');
     const revisionSummaryBox = document.getElementById('revision-summary-box');
+    const revisionSummaryTitle = document.getElementById('revision-summary-title');
     const revisionSummaryHelper = document.getElementById('revision-summary-helper');
     const revisionSummaryList = document.getElementById('revision-summary-list');
     const saveReviewBtn = document.getElementById('save-review-btn');
@@ -777,6 +778,11 @@
 
       if (pendingCount > 0) {
         revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+        if (revisionSummaryTitle) {
+          revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-amber-900';
+          revisionSummaryTitle.textContent = 'Revision Summary';
+        }
+        revisionSummaryHelper.className = 'mt-1 text-xs text-amber-800/90';
         revisionSummaryHelper.textContent = 'Complete all pending fields first, then finalize the review.';
         revisionSummaryList.innerHTML = `<li class="text-sm">${pendingCount} section(s) pending. Complete all field reviews first.</li>`;
         return;
@@ -784,12 +790,22 @@
 
       if (revisionRows.length === 0 && verifiedCount === sectionRoots.length && sectionRoots.length > 0) {
         revisionSummaryBox.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900';
+        if (revisionSummaryTitle) {
+          revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-emerald-700';
+          revisionSummaryTitle.textContent = 'Review Summary';
+        }
+        revisionSummaryHelper.className = 'mt-1 text-xs text-emerald-600';
         revisionSummaryHelper.textContent = 'Every section is fully reviewed and verified.';
-        revisionSummaryList.innerHTML = '<li class="text-sm">All sections are verified. This registration is ready for approval.</li>';
+        revisionSummaryList.innerHTML = '<li class="text-sm text-emerald-800">All sections are verified. This registration is ready for approval.</li>';
         return;
       }
 
       revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+      if (revisionSummaryTitle) {
+        revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-amber-900';
+        revisionSummaryTitle.textContent = 'Revision Summary';
+      }
+      revisionSummaryHelper.className = 'mt-1 text-xs text-amber-800/90';
       revisionSummaryHelper.textContent = 'Click a revision item below to jump to the section that needs updates.';
       revisionSummaryList.innerHTML = '';
       const grouped = {};

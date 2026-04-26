@@ -275,7 +275,7 @@
       @if ($isProposalReview ?? false)
         <input type="hidden" name="action" value="approve" />
         <div id="revision-summary-box" class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900">
-          <p class="text-sm font-bold uppercase tracking-widest text-amber-900">Revision Summary</p>
+          <p id="revision-summary-title" class="text-sm font-bold uppercase tracking-widest text-amber-900">Revision Summary</p>
           <p id="revision-summary-helper" class="mt-1 text-xs text-amber-800/90">Click a revision item below to jump to the field that needs updates.</p>
           <ul id="revision-summary-list" class="mt-3 space-y-3"></ul>
         </div>
@@ -377,6 +377,7 @@
     const saveReviewBtn = document.getElementById('save-review-btn');
     const saveReviewHelper = document.getElementById('save-review-helper');
     const revisionSummaryBox = document.getElementById('revision-summary-box');
+    const revisionSummaryTitle = document.getElementById('revision-summary-title');
     const revisionSummaryHelper = document.getElementById('revision-summary-helper');
     const revisionSummaryList = document.getElementById('revision-summary-list');
     const reviewForm = document.getElementById('proposal-field-review-form');
@@ -397,6 +398,25 @@
       REVISION_REQUIRED: 'bg-orange-100 text-orange-700 border border-orange-200',
     };
     const knownStatusClasses = Array.from(new Set(Object.values(statusClassMap).join(' ').split(' ')));
+
+    function applyRevisionSummaryState(state) {
+      if (!revisionSummaryTitle) return;
+      if (state === 'success') {
+        revisionSummaryBox.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900';
+        revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-emerald-900';
+        revisionSummaryHelper.className = 'mt-1 text-xs text-emerald-800/90';
+        return;
+      }
+      if (state === 'pending') {
+        revisionSummaryBox.className = 'rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800';
+        revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-slate-800';
+        revisionSummaryHelper.className = 'mt-1 text-xs text-slate-600';
+        return;
+      }
+      revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+      revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-amber-900';
+      revisionSummaryHelper.className = 'mt-1 text-xs text-amber-800/90';
+    }
 
     function syncFieldControl(control) {
       const statusInput = control.querySelector('.field-review-status');
@@ -486,6 +506,17 @@
 
     function refreshRevisionSummary() {
       const rows = [];
+      const sectionRoots = allSectionRoots();
+      const pendingSections = sectionRoots.filter((sectionRoot) => {
+        const sectionKey = sectionRoot.dataset.sectionKey || '';
+        const stats = computeSection(sectionKey);
+        return stats.pending > 0;
+      }).length;
+      const allVerified = sectionRoots.length > 0 && sectionRoots.every((sectionRoot) => {
+        const sectionKey = sectionRoot.dataset.sectionKey || '';
+        const stats = computeSection(sectionKey);
+        return stats.pending === 0 && stats.revision === 0;
+      });
       document.querySelectorAll('[data-field-review]').forEach((control) => {
         const status = normalizeStatus(control.querySelector('.field-review-status')?.value || 'pending');
         if (status !== 'revision') return;
@@ -501,14 +532,21 @@
         rows.push({ section, field, note: note || 'No note provided yet.', targetId: target?.id || '' });
       });
 
-      if (rows.length === 0) {
-        revisionSummaryBox.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900';
-        revisionSummaryHelper.textContent = 'No fields are marked for revision.';
-        revisionSummaryList.innerHTML = '<li class="text-sm">All reviewed fields are marked Passed.</li>';
+      if (pendingSections > 0) {
+        applyRevisionSummaryState('pending');
+        revisionSummaryHelper.textContent = 'Complete all pending fields first, then submit the review.';
+        revisionSummaryList.innerHTML = `<li class="text-sm text-slate-700">${pendingSections} section(s) pending. Complete all field reviews first.</li>`;
         return;
       }
 
-      revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
+      if (rows.length === 0 && allVerified) {
+        applyRevisionSummaryState('success');
+        revisionSummaryHelper.textContent = 'Every section is fully reviewed and verified.';
+        revisionSummaryList.innerHTML = '<li class="text-sm text-emerald-800">All sections are verified. No revision notes required. This submission is ready for finalization.</li>';
+        return;
+      }
+
+      applyRevisionSummaryState('revision');
       revisionSummaryHelper.textContent = 'Click a revision item below to jump to the field that needs updates.';
       revisionSummaryList.innerHTML = '';
       const grouped = {};
