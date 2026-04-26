@@ -12,6 +12,7 @@ export function initOrganizationTypeSchoolToggle() {
         }
 
         const schoolSelect = form.querySelector("#school");
+        const schoolFieldGroup = form.querySelector("#school-field-group");
         const radios = form.querySelectorAll('input[name="organization_type"]');
         const requiredMark = form.querySelector("#school-required-mark");
         const nonAcademicNotice = form.querySelector("#school-non-academic-notice");
@@ -28,6 +29,9 @@ export function initOrganizationTypeSchoolToggle() {
 
             schoolSelect.disabled = isExtra;
             schoolSelect.required = !isExtra;
+            if (schoolFieldGroup) {
+                schoolFieldGroup.classList.toggle("hidden", isExtra);
+            }
 
             if (isExtra) {
                 schoolSelect.value = "";

@@ -220,26 +220,28 @@
             @error('purpose') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </div>
           <div class="md:col-span-2">
-            <label for="school" class="block text-sm font-medium text-slate-900">
-              School
-              <span
-                id="school-required-mark"
-                class="text-rose-600 {{ $orgType === 'extra_curricular' ? 'hidden' : '' }}"
-                aria-hidden="{{ $orgType === 'extra_curricular' ? 'true' : 'false' }}"
-              >*</span>
-            </label>
-            <x-forms.select
-              id="school"
-              name="school"
-              :required="$orgType === 'co_curricular'"
-              :disabled="$orgType === 'extra_curricular'"
-            >
-              <option value="" disabled @unless(old('school')) selected @endunless>Select a school</option>
-              <option value="sace" @selected(old('school') === 'sace')>School of Architecture, Computer and Engineering</option>
-              <option value="sahs" @selected(old('school') === 'sahs')>School of Allied Health and Sciences</option>
-              <option value="sabm" @selected(old('school') === 'sabm')>School of Accounting and Business Management</option>
-              <option value="shs" @selected(old('school') === 'shs')>Senior High School</option>
-            </x-forms.select>
+            <div id="school-field-group" @class(['space-y-2', 'hidden' => $orgType === 'extra_curricular'])>
+              <label for="school" class="block text-sm font-medium text-slate-900">
+                School
+                <span
+                  id="school-required-mark"
+                  class="text-rose-600 {{ $orgType === 'extra_curricular' ? 'hidden' : '' }}"
+                  aria-hidden="{{ $orgType === 'extra_curricular' ? 'true' : 'false' }}"
+                >*</span>
+              </label>
+              <x-forms.select
+                id="school"
+                name="school"
+                :required="$orgType === 'co_curricular'"
+                :disabled="$orgType === 'extra_curricular'"
+              >
+                <option value="" disabled @unless(old('school')) selected @endunless>Select a school</option>
+                <option value="sace" @selected(old('school') === 'sace')>School of Architecture, Computer and Engineering</option>
+                <option value="sahs" @selected(old('school') === 'sahs')>School of Allied Health and Sciences</option>
+                <option value="sabm" @selected(old('school') === 'sabm')>School of Accounting and Business Management</option>
+                <option value="shs" @selected(old('school') === 'shs')>Senior High School</option>
+              </x-forms.select>
+            </div>
             <x-feedback.blocked-message
               id="school-non-academic-notice"
               variant="info"
