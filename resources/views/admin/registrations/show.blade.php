@@ -481,53 +481,55 @@
             ? route('admin.registrations.requirement-file', ['submission' => ($submission ?? $registration), 'key' => $key, 'download' => 1])
             : null;
         @endphp
-        <li class="requirement-review-item flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 lg:flex-row lg:items-center lg:justify-between">
-          <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2">
-              <p class="text-sm font-semibold text-slate-900">{{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}</p>
-              @if (($requirementUpdate['is_updated'] ?? false))
-                <span class="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
-              @endif
-              <span class="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $badgeClass }}">{{ $badgeLabel }}</span>
+        <li class="requirement-review-item rounded-xl border border-slate-200 bg-slate-50/80 p-3.5">
+          <div class="requirement-review-main-row flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="text-sm font-semibold text-slate-900">{{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}</p>
+                @if (($requirementUpdate['is_updated'] ?? false))
+                  <span class="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                @endif
+                <span class="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $badgeClass }}">{{ $badgeLabel }}</span>
+              </div>
+              <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
+              @include('admin.registrations.partials.field-update-inline', ['update' => $requirementUpdate])
             </div>
-            <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
-            @include('admin.registrations.partials.field-update-inline', ['update' => $requirementUpdate])
-          </div>
-          <div class="requirement-review-top-row flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
-            <div class="shrink-0">
-              @if ($hasFile)
-                <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="File actions for {{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}">
-                  <a
-                    href="{{ $fileUrl }}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
-                  >
-                    View file
-                  </a>
-                  <span class="mx-1 h-4 w-px bg-slate-200"></span>
-                  <a
-                    href="{{ $downloadUrl }}"
-                    class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
-                  >
-                    Download
-                  </a>
-                </div>
-              @elseif ($checked)
-                <span class="text-xs font-medium text-amber-700">Marked yes — no file on record</span>
-              @endif
-            </div>
-            <div class="ml-auto shrink-0 lg:ml-0">
-              @php
-                $requirementFieldLabel = (string) (($requirement?->label) ?? ($reqLabels[$key] ?? $key));
-              @endphp
-              @include('admin.registrations.partials.field-review-control', [
-                'sectionKey' => 'requirements',
-                'fieldKey' => $key,
-                'fieldLabel' => $requirementFieldLabel,
-                'persistedFieldReviews' => $persistedFieldReviews,
-                'persistedSectionReviews' => $persistedSectionReviews,
-              ])
+            <div class="requirement-review-top-row flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
+              <div class="shrink-0">
+                @if ($hasFile)
+                  <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="File actions for {{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}">
+                    <a
+                      href="{{ $fileUrl }}"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
+                    >
+                      View file
+                    </a>
+                    <span class="mx-1 h-4 w-px bg-slate-200"></span>
+                    <a
+                      href="{{ $downloadUrl }}"
+                      class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30"
+                    >
+                      Download
+                    </a>
+                  </div>
+                @elseif ($checked)
+                  <span class="text-xs font-medium text-amber-700">Marked yes — no file on record</span>
+                @endif
+              </div>
+              <div class="ml-auto shrink-0 lg:ml-0">
+                @php
+                  $requirementFieldLabel = (string) (($requirement?->label) ?? ($reqLabels[$key] ?? $key));
+                @endphp
+                @include('admin.registrations.partials.field-review-control', [
+                  'sectionKey' => 'requirements',
+                  'fieldKey' => $key,
+                  'fieldLabel' => $requirementFieldLabel,
+                  'persistedFieldReviews' => $persistedFieldReviews,
+                  'persistedSectionReviews' => $persistedSectionReviews,
+                ])
+              </div>
             </div>
           </div>
         </li>
@@ -1078,7 +1080,7 @@
           noteInput.id = noteInputId;
           control.dataset.noteInputId = noteInputId;
         }
-        noteWrap.classList.add('w-full', 'border-t', 'border-slate-200/70', 'pt-2.5');
+        noteWrap.classList.add('mt-2.5', 'w-full', 'border-t', 'border-slate-200/70', 'pt-2.5');
         requirementCard.appendChild(noteWrap);
         control.className = 'field-review-control shrink-0';
       }

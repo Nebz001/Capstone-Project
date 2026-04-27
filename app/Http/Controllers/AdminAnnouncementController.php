@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Announcement;
 use App\Models\User;
+use App\Services\OrganizationNotificationService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,7 +43,8 @@ class AdminAnnouncementController extends Controller
             $data['image_path'] = $request->file('image')->store('announcements', 'public');
         }
 
-        Announcement::query()->create($data);
+        $announcement = Announcement::query()->create($data);
+        $this->broadcastAnnouncementNotification($announcement);
 
         return redirect()
             ->route('admin.announcements.index')
@@ -134,5 +136,24 @@ class AdminAnnouncementController extends Controller
         if (! $user || ! $user->isSdaoAdmin()) {
             abort(403, 'Only authorized SDAO admins can access this section.');
         }
+    }
+
+    private function broadcastAnnouncementNotification(Announcement $announcement): void
+    {
+        if (strtoupper((string) $announcement->status) !== 'ACTIVE') {
+            return;
+        }
+        $officers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'rso_president'))
+            ->whereRaw('UPPER(account_status) = ?', ['ACTIVE'])
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $officers,
+            'New Announcement from SDAO',
+            (string) ($announcement->title ?? 'A new announcement is available.'),
+            'info',
+            route('organizations.notifications.index'),
+            $announcement
+        );
     }
 }

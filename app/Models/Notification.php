@@ -8,8 +8,6 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Notification extends Model
 {
-    public $timestamps = false;
-
     protected $fillable = [
         'user_id',
         'notifiable_type',
@@ -17,8 +15,10 @@ class Notification extends Model
         'type',
         'title',
         'body',
+        'link_url',
         'read_at',
         'created_at',
+        'updated_at',
     ];
 
     protected function casts(): array
@@ -28,7 +28,18 @@ class Notification extends Model
             'notifiable_id' => 'integer',
             'read_at' => 'datetime',
             'created_at' => 'datetime',
+            'updated_at' => 'datetime',
         ];
+    }
+
+    public function scopeUnread($query)
+    {
+        return $query->whereNull('read_at');
+    }
+
+    public function scopeRead($query)
+    {
+        return $query->whereNotNull('read_at');
     }
 
     public function user(): BelongsTo

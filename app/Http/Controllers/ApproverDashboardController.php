@@ -13,6 +13,7 @@ use App\Models\Notification;
 use App\Models\OrganizationSubmission;
 use App\Models\ProposalFieldReview;
 use App\Models\User;
+use App\Services\OrganizationNotificationService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -312,7 +313,8 @@ class ApproverDashboardController extends Controller
         $resultMode = 'final';
         $missingFieldLabels = [];
 
-        DB::transaction(function () use ($approvable, $currentStep, $action, $comments, $fromStatus, $user, $fieldReviews, $reviewableKeys, &$resultMode, &$missingFieldLabels): void {
+        $resolvedToStatus = strtoupper((string) ($approvable->status ?? 'PENDING'));
+        DB::transaction(function () use ($approvable, $currentStep, $action, $comments, $fromStatus, $user, $fieldReviews, $reviewableKeys, &$resultMode, &$missingFieldLabels, &$resolvedToStatus): void {
             if ($approvable instanceof ActivityProposal && Schema::hasTable('proposal_field_reviews')) {
                 if (count($reviewableKeys) === 0) {
                     $resultMode = 'incomplete';
@@ -449,6 +451,7 @@ class ApproverDashboardController extends Controller
                 'comments' => $comments !== '' ? $comments : null,
                 'created_at' => now(),
             ]);
+            $resolvedToStatus = $toStatus;
         });
 
         if ($resultMode === 'incomplete') {
@@ -461,6 +464,8 @@ class ApproverDashboardController extends Controller
                 ->withInput()
                 ->withErrors(['field_reviews' => $message]);
         }
+
+        $this->notifyOrganizationSubmissionResult($approvable, $resolvedToStatus);
 
         return redirect()
             ->route('approver.dashboard')
@@ -985,6 +990,69 @@ class ApproverDashboardController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function notifyOrganizationSubmissionResult(Model $approvable, string $toStatus): void
+    {
+        $status = strtoupper($toStatus);
+        if (! in_array($status, ['APPROVED', 'REVISION', 'REJECTED'], true)) {
+            return;
+        }
+
+        $type = match ($status) {
+            'APPROVED' => 'success',
+            'REVISION' => 'warning',
+            'REJECTED' => 'error',
+            default => 'info',
+        };
+
+        if ($approvable instanceof ActivityProposal) {
+            $title = match ($status) {
+                'APPROVED' => 'Activity Proposal Approved',
+                'REVISION' => 'Activity Proposal Returned for Revision',
+                default => 'Activity Proposal Rejected',
+            };
+            $message = match ($status) {
+                'APPROVED' => 'Your activity proposal has been approved.',
+                'REVISION' => 'Your activity proposal needs updates and was returned for revision.',
+                default => 'Your activity proposal was rejected.',
+            };
+            $link = route('organizations.activity-submission.proposals.show', $approvable);
+        } elseif ($approvable instanceof ActivityCalendar) {
+            $title = match ($status) {
+                'APPROVED' => 'Activity Calendar Approved',
+                'REVISION' => 'Activity Calendar Returned for Revision',
+                default => 'Activity Calendar Rejected',
+            };
+            $message = match ($status) {
+                'APPROVED' => 'Your activity calendar has been approved.',
+                'REVISION' => 'Your activity calendar needs updates and was returned for revision.',
+                default => 'Your activity calendar was rejected.',
+            };
+            $link = route('organizations.submitted-documents.calendars.show', $approvable);
+        } elseif ($approvable instanceof ActivityReport) {
+            $title = match ($status) {
+                'APPROVED' => 'After-Activity Report Approved',
+                'REVISION' => 'After-Activity Report Returned for Revision',
+                default => 'After-Activity Report Rejected',
+            };
+            $message = match ($status) {
+                'APPROVED' => 'Your after-activity report has been approved.',
+                'REVISION' => 'Your after-activity report needs updates and was returned for revision.',
+                default => 'Your after-activity report was rejected.',
+            };
+            $link = route('organizations.submitted-documents.reports.show', $approvable);
+        } else {
+            return;
+        }
+
+        $service = app(OrganizationNotificationService::class);
+        if ($approvable->submittedBy) {
+            $service->createForUser($approvable->submittedBy, $title, $message, $type, $link, $approvable);
+        }
+        if ($approvable->organization) {
+            $service->createForOrganization($approvable->organization, $title, $message, $type, $link, $approvable);
+        }
     }
 
     private function statusClass(string $status): string

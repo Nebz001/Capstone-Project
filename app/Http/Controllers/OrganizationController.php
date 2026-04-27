@@ -21,6 +21,7 @@ use App\Models\Role;
 use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\OrganizationNotificationService;
 use App\Support\SubmissionRoutingProgress;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -687,6 +688,23 @@ class OrganizationController extends Controller
                 ->with('success', 'Registration application submitted successfully. File under the submitting SDAO admin account.');
         }
 
+        $this->createOfficerNotification(
+            $user,
+            'Registration Submitted',
+            'Your organization registration has been submitted for SDAO review.',
+            'info',
+            route('organizations.submitted-documents.registrations.show', $submission),
+            $submission
+        );
+        $this->createOfficerNotification(
+            $user,
+            'Account Linked to Organization',
+            'Your account has been linked to your organization profile.',
+            'success',
+            route('organizations.profile'),
+            $submission->organization ?? null
+        );
+
         return redirect()
             ->route('organizations.register')
             ->with('success', 'Registration application submitted successfully.')
@@ -851,6 +869,15 @@ class OrganizationController extends Controller
                 ->route('admin.renewals.show', $submission)
                 ->with('success', 'Renewal application submitted successfully. Recorded under your SDAO admin account.');
         }
+
+        $this->createOfficerNotification(
+            $user,
+            'Renewal Submitted',
+            'Your organization renewal has been submitted for SDAO review.',
+            'info',
+            route('organizations.submitted-documents.renewals.show', $submission),
+            $submission
+        );
 
         $renewProfileUrl = route('organizations.profile');
         $renewBackUrl = route('organizations.renew');
@@ -1339,6 +1366,15 @@ class OrganizationController extends Controller
                 'addressed_at' => now(),
             ]);
 
+        $this->createOfficerNotification(
+            $user,
+            'Profile Updated',
+            'Your organization profile changes were submitted successfully.',
+            'success',
+            route('organizations.profile'),
+            $organization
+        );
+
         return redirect()
             ->route('organizations.profile')
             ->with('success', 'Organization profile updated successfully.');
@@ -1524,6 +1560,21 @@ class OrganizationController extends Controller
             return redirect()
                 ->route('admin.calendars.index')
                 ->with('success', 'Activity calendar submitted successfully. Recorded under your SDAO admin account.');
+        }
+
+        $latestCalendar = ActivityCalendar::query()
+            ->where('organization_id', $organization->id)
+            ->latest('id')
+            ->first();
+        if ($latestCalendar) {
+            $this->createOfficerNotification(
+                $user,
+                'Activity Calendar Submitted',
+                'Your activity calendar has been submitted for review.',
+                'info',
+                route('organizations.submitted-documents.calendars.show', $latestCalendar),
+                $latestCalendar
+            );
         }
 
         return redirect()
@@ -2342,6 +2393,17 @@ class OrganizationController extends Controller
             ? 'Proposal saved as draft. You can continue editing anytime.'
             : 'Activity proposal submitted successfully for SDAO review.';
 
+        if (! $isAdminProposal && ! $asDraft) {
+            $this->createOfficerNotification(
+                $user,
+                'Activity Proposal Submitted',
+                'Your activity proposal has been submitted for review.',
+                'info',
+                route('organizations.activity-submission.proposals.show', $proposal),
+                $proposal
+            );
+        }
+
         if ($isAdminProposal) {
             return redirect()
                 ->route('admin.proposals.show', $proposal)
@@ -2796,6 +2858,15 @@ class OrganizationController extends Controller
             Attachment::TYPE_REPORT_ATTENDANCE,
             $attendancePath,
             $request->file('attendance_sheet')
+        );
+
+        $this->createOfficerNotification(
+            $user,
+            'After-Activity Report Submitted',
+            'Your after-activity report has been submitted for review.',
+            'info',
+            route('organizations.submitted-documents.reports.show', $report),
+            $report
         );
 
         return redirect()
@@ -3380,5 +3451,23 @@ class OrganizationController extends Controller
         }
 
         return $stored;
+    }
+
+    private function createOfficerNotification(
+        User $user,
+        string $title,
+        ?string $message,
+        string $type = 'info',
+        ?string $linkUrl = null,
+        ?Model $related = null
+    ): void {
+        app(OrganizationNotificationService::class)->createForUser(
+            $user,
+            $title,
+            $message,
+            $type,
+            $linkUrl,
+            $related
+        );
     }
 }

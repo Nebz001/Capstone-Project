@@ -2,25 +2,32 @@
 
 namespace App\View\Composers;
 
-use App\Services\LoginAnnouncementService;
+use App\Models\Notification;
 use Illuminate\View\View;
 
 class OrganizationNavbarComposer
 {
-    public function __construct(
-        private LoginAnnouncementService $loginAnnouncementService
-    ) {}
-
     public function compose(View $view): void
     {
         $user = request()->user();
         if (! $user) {
-            $view->with('navbarAnnouncements', collect());
+            $view->with('navbarNotifications', collect());
+            $view->with('navbarUnreadNotificationCount', 0);
 
             return;
         }
 
-        $items = $this->loginAnnouncementService->pendingForUser($user)->take(10);
-        $view->with('navbarAnnouncements', $items);
+        $notifications = Notification::query()
+            ->where('user_id', $user->id)
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get();
+        $unreadCount = Notification::query()
+            ->where('user_id', $user->id)
+            ->unread()
+            ->count();
+
+        $view->with('navbarNotifications', $notifications);
+        $view->with('navbarUnreadNotificationCount', $unreadCount);
     }
 }

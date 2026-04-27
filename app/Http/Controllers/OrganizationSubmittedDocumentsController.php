@@ -11,15 +11,18 @@ use App\Models\Organization;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
+use App\Models\OrganizationRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
 use App\Models\SubmissionRequirement;
 use App\Models\User;
+use App\Services\OrganizationNotificationService;
 use App\Support\SubmissionRoutingProgress;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -196,7 +199,8 @@ class OrganizationSubmittedDocumentsController extends Controller
         $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
         $sp = $this->submissionStatusPresentation($submission->legacyStatus());
-        $fileLinks = $this->registrationFileLinksFromSubmission($submission);
+        $revisionSections = $this->moduleRevisionSections(is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
+        $fileLinks = $this->registrationFileLinksFromSubmission($submission, $revisionSections);
 
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $this->submittedDocumentsListUrl($request),
@@ -205,7 +209,8 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
             'metaRows' => $this->registrationMetaRowsFromSubmission($submission),
-            'remarkHighlight' => $this->registrationOfficerRevisionNotesPreview($submission),
+            'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 220),
+            'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.register')),
             'calendarEntries' => null,
@@ -225,6 +230,82 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $this->streamSubmissionRequirementAttachment($submission, $key);
+    }
+
+    public function replaceSubmittedRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): RedirectResponse
+    {
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
+        abort_unless(in_array($key, self::REGISTRATION_FILE_KEYS, true), 404);
+
+        $fieldReviews = is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [];
+        $status = (string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending');
+        abort_unless($status === 'flagged', 403);
+
+        $validated = $request->validate([
+            'replacement_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png,webp', 'max:10240'],
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $upload = $validated['replacement_file'];
+        $fileType = Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key;
+        $oldAttachment = $submission->attachments()
+            ->where('file_type', $fileType)
+            ->latest('id')
+            ->first();
+        $oldMeta = $oldAttachment ? $this->attachmentMeta($oldAttachment) : null;
+        $storedPath = $upload->store('organization-requirements/'.$submission->organization_id.'/registration', 'public');
+
+        DB::transaction(function () use ($submission, $user, $key, $fileType, $upload, $storedPath, $oldMeta): void {
+            Attachment::query()->create([
+                'attachable_type' => OrganizationSubmission::class,
+                'attachable_id' => (int) $submission->id,
+                'uploaded_by' => (int) $user->id,
+                'file_type' => $fileType,
+                'original_name' => (string) $upload->getClientOriginalName(),
+                'stored_path' => (string) $storedPath,
+                'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+            ]);
+
+            OrganizationRevisionFieldUpdate::query()->updateOrCreate(
+                [
+                    'organization_submission_id' => (int) $submission->id,
+                    'section_key' => 'requirements',
+                    'field_key' => $key,
+                ],
+                [
+                    'old_file_meta' => $oldMeta,
+                    'new_file_meta' => [
+                        'original_name' => (string) $upload->getClientOriginalName(),
+                        'stored_path' => (string) $storedPath,
+                        'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                        'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+                    ],
+                    'resubmitted_at' => now(),
+                    'resubmitted_by' => (int) $user->id,
+                    'acknowledged_at' => null,
+                    'acknowledged_by' => null,
+                ]
+            );
+
+            $submission->touch();
+        });
+
+        $adminUsers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $adminUsers,
+            'Registration File Replaced',
+            'A revised registration requirement file was uploaded and is ready for review.',
+            'info',
+            route('admin.registrations.show', $submission),
+            $submission
+        );
+
+        return back()->with('success', 'Replacement file uploaded successfully.');
     }
 
     public function showSubmittedRenewal(Request $request, OrganizationSubmission $submission): View
@@ -805,7 +886,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 continue;
             }
             $items = [];
-            foreach ($fields as $row) {
+            foreach ($fields as $fieldKey => $row) {
                 if (! is_array($row) || ($row['status'] ?? null) !== 'flagged') {
                     continue;
                 }
@@ -816,11 +897,21 @@ class OrganizationSubmittedDocumentsController extends Controller
                 $items[] = [
                     'field' => trim((string) ($row['label'] ?? 'Field')) ?: 'Field',
                     'note' => $note,
+                    'section_key' => (string) $sectionKey,
+                    'field_key' => (string) $fieldKey,
+                    'anchor_id' => (string) $sectionKey === 'requirements'
+                        ? $this->revisionTargetAnchorId((string) $sectionKey, (string) $fieldKey)
+                        : '',
                 ];
             }
             if ($items !== []) {
+                $title = match ((string) $sectionKey) {
+                    'requirements' => 'Requirements Attached',
+                    default => ucwords(str_replace('_', ' ', (string) $sectionKey)),
+                };
                 $sections[] = [
-                    'title' => ucwords(str_replace('_', ' ', (string) $sectionKey)),
+                    'title' => $title,
+                    'section_key' => (string) $sectionKey,
                     'items' => $items,
                 ];
             }
@@ -1061,14 +1152,16 @@ class OrganizationSubmittedDocumentsController extends Controller
     /**
      * @return list<array{label: string, url: ?string, missing?: bool}>
      */
-    private function registrationFileLinksFromSubmission(OrganizationSubmission $submission): array
+    private function registrationFileLinksFromSubmission(OrganizationSubmission $submission, array $revisionSections = []): array
     {
+        $revisionByKey = $this->revisionNoteMapByRequirementKey($revisionSections);
         return $this->submissionRequirementFileLinks(
             $submission,
             self::REGISTRATION_FILE_KEYS,
             self::REGISTRATION_FILE_LABELS,
             Attachment::TYPE_REGISTRATION_REQUIREMENT,
-            'organizations.submitted-documents.registrations.file'
+            'organizations.submitted-documents.registrations.file',
+            $revisionByKey
         );
     }
 
@@ -1104,7 +1197,8 @@ class OrganizationSubmittedDocumentsController extends Controller
         array $requirementKeys,
         array $labelMap,
         string $fileTypePrefix,
-        string $routeName
+        string $routeName,
+        array $revisionByKey = []
     ): array {
         $submittedKeys = SubmissionRequirement::query()
             ->where('submission_id', $submission->id)
@@ -1126,12 +1220,26 @@ class OrganizationSubmittedDocumentsController extends Controller
                 $links[] = [
                     'label' => $label,
                     'url' => route($routeName, [$submission, $key]),
+                    'key' => $key,
+                    'anchor_id' => $this->revisionTargetAnchorId('requirements', $key),
+                    'is_revised' => isset($revisionByKey[$key]),
+                    'revision_note' => $revisionByKey[$key] ?? null,
+                    'replace_url' => $submission->type === OrganizationSubmission::TYPE_REGISTRATION
+                        ? route('organizations.submitted-documents.registrations.file.replace', ['submission' => $submission, 'key' => $key])
+                        : null,
                 ];
             } elseif ($isSubmitted) {
                 $links[] = [
                     'label' => $label,
                     'url' => null,
                     'missing' => true,
+                    'key' => $key,
+                    'anchor_id' => $this->revisionTargetAnchorId('requirements', $key),
+                    'is_revised' => isset($revisionByKey[$key]),
+                    'revision_note' => $revisionByKey[$key] ?? null,
+                    'replace_url' => $submission->type === OrganizationSubmission::TYPE_REGISTRATION
+                        ? route('organizations.submitted-documents.registrations.file.replace', ['submission' => $submission, 'key' => $key])
+                        : null,
                 ];
             }
         }
@@ -1988,6 +2096,47 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return implode(', ', $labels);
+    }
+
+    private function revisionTargetAnchorId(string $sectionKey, string $fieldKey): string
+    {
+        return 'revision-file-'.$sectionKey.'-'.$fieldKey;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $revisionSections
+     * @return array<string, string>
+     */
+    private function revisionNoteMapByRequirementKey(array $revisionSections): array
+    {
+        $map = [];
+        foreach ($revisionSections as $section) {
+            if (($section['section_key'] ?? '') !== 'requirements') {
+                continue;
+            }
+            foreach ((array) ($section['items'] ?? []) as $item) {
+                $key = (string) ($item['field_key'] ?? '');
+                $note = trim((string) ($item['note'] ?? ''));
+                if ($key !== '' && $note !== '') {
+                    $map[$key] = $note;
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function attachmentMeta(Attachment $attachment): array
+    {
+        return [
+            'original_name' => (string) ($attachment->original_name ?? ''),
+            'stored_path' => (string) ($attachment->stored_path ?? ''),
+            'mime_type' => (string) ($attachment->mime_type ?? ''),
+            'file_size_kb' => (int) ($attachment->file_size_kb ?? 0),
+        ];
     }
 
     /**

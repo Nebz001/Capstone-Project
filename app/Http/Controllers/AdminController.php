@@ -17,6 +17,7 @@ use App\Models\Role;
 use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\OrganizationNotificationService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -372,6 +373,7 @@ class AdminController extends Controller
             'officer_validated_at' => now(),
             'officer_validated_by' => $request->user()?->id,
         ]);
+        $this->notifyOfficerValidationResult($user, (string) $validated['validation_status']);
 
         return redirect()
             ->route('admin.accounts.show', $user)
@@ -657,6 +659,7 @@ class AdminController extends Controller
         });
 
         $this->autoAcknowledgeReviewedRegistrationFieldUpdates($submission, $normalizedFieldReviews, (int) $admin->id);
+        $this->notifyRegistrationStatusChange($submission);
 
         return redirect()
             ->route('admin.registrations.show', $submission)
@@ -876,6 +879,14 @@ class AdminController extends Controller
             'revision_notes' => (string) $validated['profile_revision_notes'],
             'status' => 'open',
         ]);
+        $this->notifyOrganizationOfficers(
+            $organization,
+            'Profile Update Requested',
+            'SDAO requested updates to your organization profile.',
+            'warning',
+            route('organizations.profile'),
+            $organization
+        );
 
         return back()->with(
             'success',
@@ -1422,6 +1433,7 @@ class AdminController extends Controller
             $payload['approval_decision'] = $nextStatus === 'approved' ? 'approved' : null;
         }
         $record->update($payload);
+        $this->notifyModuleReviewResult($record, $nextStatus);
 
         return redirect()
             ->to($showRoute)
@@ -2065,6 +2077,141 @@ class AdminController extends Controller
         }
 
         return $legacyPath;
+    }
+
+    private function notificationService(): OrganizationNotificationService
+    {
+        return app(OrganizationNotificationService::class);
+    }
+
+    private function notifyOrganizationOfficers(
+        Organization $organization,
+        string $title,
+        ?string $message,
+        string $type = 'info',
+        ?string $linkUrl = null,
+        ?Model $related = null
+    ): void {
+        $this->notificationService()->createForOrganization(
+            $organization,
+            $title,
+            $message,
+            $type,
+            $linkUrl,
+            $related
+        );
+    }
+
+    private function notifyOfficerValidationResult(User $user, string $status): void
+    {
+        $normalized = strtoupper($status);
+        $title = match ($normalized) {
+            'APPROVED', 'ACTIVE' => 'Officer Validation Approved',
+            'REJECTED' => 'Officer Validation Rejected',
+            default => 'Officer Validation Updated',
+        };
+        $type = match ($normalized) {
+            'APPROVED', 'ACTIVE' => 'success',
+            'REJECTED' => 'error',
+            default => 'info',
+        };
+        $message = match ($normalized) {
+            'APPROVED', 'ACTIVE' => 'Your officer account has been approved by SDAO.',
+            'REJECTED' => 'Your officer account was rejected. Please review the validation notes.',
+            'REVISION_REQUIRED' => 'SDAO requested additional updates for your officer validation.',
+            default => 'Your officer validation status has changed.',
+        };
+
+        $this->notificationService()->createForUser(
+            $user,
+            $title,
+            $message,
+            $type,
+            route('organizations.profile'),
+            $user
+        );
+    }
+
+    private function notifyRegistrationStatusChange(OrganizationSubmission $submission): void
+    {
+        $status = strtoupper((string) $submission->status);
+        $title = match ($status) {
+            'APPROVED' => 'Registration Approved',
+            'REVISION' => 'Registration Returned for Revision',
+            default => 'Registration Review Updated',
+        };
+        $message = match ($status) {
+            'APPROVED' => 'Your organization registration has been approved by SDAO.',
+            'REVISION' => 'Your organization registration needs updates and was returned for revision.',
+            default => 'Your registration review status has changed.',
+        };
+        $type = match ($status) {
+            'APPROVED' => 'success',
+            'REVISION' => 'warning',
+            default => 'info',
+        };
+        $link = route('organizations.submitted-documents.registrations.show', $submission);
+
+        if ($submission->submittedBy) {
+            $this->notificationService()->createForUser($submission->submittedBy, $title, $message, $type, $link, $submission);
+        }
+        if ($submission->organization) {
+            $this->notifyOrganizationOfficers($submission->organization, $title, $message, $type, $link, $submission);
+        }
+    }
+
+    private function notifyModuleReviewResult(Model $record, string $nextStatus): void
+    {
+        $normalized = strtoupper($nextStatus);
+        $type = $normalized === 'APPROVED' ? 'success' : ($normalized === 'REVISION' ? 'warning' : 'info');
+
+        if ($record instanceof OrganizationSubmission) {
+            $label = $record->type === OrganizationSubmission::TYPE_RENEWAL ? 'Renewal' : 'Registration';
+            $title = $label.' '.($normalized === 'APPROVED' ? 'Approved' : 'Returned for Revision');
+            $message = $normalized === 'APPROVED'
+                ? "Your {$label} has been approved by SDAO."
+                : "Your {$label} needs updates and was returned for revision.";
+            $link = $record->type === OrganizationSubmission::TYPE_RENEWAL
+                ? route('organizations.submitted-documents.renewals.show', $record)
+                : route('organizations.submitted-documents.registrations.show', $record);
+            if ($record->submittedBy) {
+                $this->notificationService()->createForUser($record->submittedBy, $title, $message, $type, $link, $record);
+            }
+            if ($record->organization) {
+                $this->notifyOrganizationOfficers($record->organization, $title, $message, $type, $link, $record);
+            }
+
+            return;
+        }
+
+        if ($record instanceof ActivityCalendar) {
+            $title = $normalized === 'APPROVED' ? 'Activity Calendar Approved' : 'Activity Calendar Returned for Revision';
+            $message = $normalized === 'APPROVED'
+                ? 'Your activity calendar has been approved by SDAO.'
+                : 'Your activity calendar needs updates and was returned for revision.';
+            $link = route('organizations.submitted-documents.calendars.show', $record);
+        } elseif ($record instanceof ActivityProposal) {
+            $title = $normalized === 'APPROVED' ? 'Activity Proposal Approved' : 'Activity Proposal Returned for Revision';
+            $message = $normalized === 'APPROVED'
+                ? 'Your activity proposal has been approved by SDAO.'
+                : 'Your activity proposal needs updates and was returned for revision.';
+            $link = route('organizations.activity-submission.proposals.show', $record);
+        } elseif ($record instanceof ActivityReport) {
+            $title = $normalized === 'APPROVED' ? 'After-Activity Report Approved' : 'After-Activity Report Returned for Revision';
+            $message = $normalized === 'APPROVED'
+                ? 'Your after-activity report has been approved by SDAO.'
+                : 'Your after-activity report needs updates and was returned for revision.';
+            $link = route('organizations.submitted-documents.reports.show', $record);
+        } else {
+            return;
+        }
+
+        if ($record->submittedBy) {
+            $this->notificationService()->createForUser($record->submittedBy, $title, $message, $type, $link, $record);
+        }
+        if ($record->organization) {
+            $this->notifyOrganizationOfficers($record->organization, $title, $message, $type, $link, $record);
+        }
     }
 
     private function ensureProposalWorkflow(ActivityProposal $proposal): void
