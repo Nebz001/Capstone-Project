@@ -453,7 +453,11 @@ class AdminController extends Controller
             abort(404);
         }
 
-        $filename = basename($relativePath);
+        $filename = (string) ($attachment->original_name ?: basename($relativePath));
+
+        if ($request->boolean('download')) {
+            return $disk->download($relativePath, $filename);
+        }
 
         return $disk->response($relativePath, $filename, [], 'inline');
     }
