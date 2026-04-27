@@ -10,7 +10,16 @@
   $note = old("field_review.$sectionKey.$fieldKey.note", $saved['note'] ?? '');
   $locked = data_get($persistedSectionReviews ?? [], "$sectionKey.submitted", false) ? '1' : '0';
 @endphp
-<div class="field-review-control flex flex-wrap items-center justify-end gap-2" data-field-review data-section-key="{{ $sectionKey }}" data-field-key="{{ $fieldKey }}" data-field-label="{{ $fieldLabel }}" data-locked="{{ $locked }}">
+<div
+  id="updated-field-{{ $sectionKey }}-{{ $fieldKey }}"
+  class="field-review-control flex flex-wrap items-center justify-end gap-2"
+  data-field-review
+  data-section-key="{{ $sectionKey }}"
+  data-field-key="{{ $fieldKey }}"
+  data-field-label="{{ $fieldLabel }}"
+  data-anchor-id="updated-field-{{ $sectionKey }}-{{ $fieldKey }}"
+  data-locked="{{ $locked }}"
+>
   <div class="inline-flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="Field review for {{ $fieldLabel }}">
     <button
       type="button"

@@ -8,6 +8,7 @@
     return match ($status) {
       'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
       'UNDER_REVIEW', 'REVIEWED' => 'bg-blue-100 text-blue-700 border border-blue-200',
+      'UPDATED' => 'bg-sky-100 text-sky-700 border border-sky-200',
       'APPROVED' => 'bg-emerald-100 text-emerald-700 border border-emerald-200',
       'REJECTED' => 'bg-rose-100 text-rose-700 border border-rose-200',
       'REVISION', 'REVISION_REQUIRED' => 'bg-orange-100 text-orange-700 border border-orange-200',
@@ -34,30 +35,32 @@
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Organization Name</th>
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Submitted By</th>
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Submission Date</th>
+          <th class="whitespace-nowrap px-4 py-3 sm:px-5">Last Updated</th>
           <th class="whitespace-nowrap px-4 py-3 sm:px-5">Status</th>
           <th class="whitespace-nowrap px-4 py-3 text-right sm:px-5">Action</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100 bg-white">
         @forelse ($rows as $row)
-          <tr class="align-top hover:bg-slate-50/80">
+          <tr class="align-top hover:bg-slate-50/80 {{ ! empty($row['is_updated'] ?? false) ? 'bg-sky-50/50' : '' }}">
             <td class="px-4 py-3.5 font-semibold text-slate-900 sm:px-5">{{ $row['organization'] }}</td>
             <td class="px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $row['submitted_by'] }}</td>
             <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $row['submission_date'] }}</td>
+            <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $row['last_updated'] ?? '—' }}</td>
             <td class="px-4 py-3.5 sm:px-5">
               <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusClass($row['status']) }}">
-                {{ $statusLabel($row['status']) }}
+                {{ $row['status_label'] ?? $statusLabel($row['status']) }}
               </span>
             </td>
             <td class="px-4 py-3.5 text-right sm:px-5">
               <a href="{{ route($routeBase, $row['id']) }}" class="inline-flex rounded-xl border border-[#003E9F] px-3.5 py-2 text-xs font-semibold text-[#003E9F] transition hover:bg-[#003E9F] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30">
-                View
+                {{ $row['action_label'] ?? 'View' }}
               </a>
             </td>
           </tr>
         @empty
           <tr>
-            <td colspan="5" class="px-5 py-12 text-center sm:px-6">
+            <td colspan="6" class="px-5 py-12 text-center sm:px-6">
               <div class="flex flex-col items-center gap-2">
                 <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
                   <svg class="h-7 w-7 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">

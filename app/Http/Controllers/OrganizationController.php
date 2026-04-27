@@ -14,6 +14,7 @@ use App\Models\Attachment;
 use App\Models\Organization;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationProfileRevision;
+use App\Models\OrganizationRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
 use App\Models\ProposalBudgetItem;
 use App\Models\Role;
@@ -1205,6 +1206,20 @@ class OrganizationController extends Controller
     }
 
     /**
+     * @return array<string, array{section_key: string, field_key: string}>
+     */
+    private function profileFieldToRevisionKeyMap(): array
+    {
+        return [
+            'organization_name' => ['section_key' => 'application', 'field_key' => 'organization'],
+            'organization_type' => ['section_key' => 'organizational', 'field_key' => 'organization_type'],
+            'college_department' => ['section_key' => 'organizational', 'field_key' => 'school'],
+            'purpose' => ['section_key' => 'organizational', 'field_key' => 'purpose'],
+            'founded_date' => ['section_key' => 'organizational', 'field_key' => 'date_organized'],
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $validated
      * @param  array<int, string>  $fields
      */
@@ -1253,6 +1268,8 @@ class OrganizationController extends Controller
             'founded_date' => ['nullable', 'date'],
         ];
         $validated = [];
+        $latestRevisionSubmission = null;
+        $editableComparedFields = [];
         if ($organization->isProfileRevisionRequested()) {
             $latestRevisionSubmission = $organization->submissions()
                 ->where('status', OrganizationSubmission::STATUS_REVISION)
@@ -1284,7 +1301,35 @@ class OrganizationController extends Controller
             $validated = $request->validate($defaultRules);
         }
 
+        $beforeValues = [];
+        foreach (array_keys($validated) as $field) {
+            $beforeValues[$field] = $this->profileCurrentFieldValue($organization, $field);
+        }
+
         $organization->update($validated);
+
+        if ($latestRevisionSubmission && $editableComparedFields !== []) {
+            $map = $this->profileFieldToRevisionKeyMap();
+            foreach ($editableComparedFields as $field) {
+                if (! array_key_exists($field, $validated) || ! isset($map[$field])) {
+                    continue;
+                }
+                $oldValue = (string) ($beforeValues[$field] ?? '');
+                $newValue = (string) $this->profileCurrentFieldValue($organization, $field);
+                if ($this->normalizeRevisionComparableValue($oldValue) === $this->normalizeRevisionComparableValue($newValue)) {
+                    continue;
+                }
+                OrganizationRevisionFieldUpdate::query()->create([
+                    'organization_submission_id' => $latestRevisionSubmission->id,
+                    'section_key' => $map[$field]['section_key'],
+                    'field_key' => $map[$field]['field_key'],
+                    'old_value' => $oldValue !== '' ? $oldValue : null,
+                    'new_value' => $newValue !== '' ? $newValue : null,
+                    'resubmitted_at' => now(),
+                    'resubmitted_by' => $user->id,
+                ]);
+            }
+        }
 
         OrganizationProfileRevision::query()
             ->where('organization_id', $organization->id)

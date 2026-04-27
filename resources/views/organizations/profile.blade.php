@@ -63,6 +63,20 @@
     };
     $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
     $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
+    $isProfileRevisionRequested = (bool) ($organization?->isProfileRevisionRequested());
+    $reviewWorkflowStatus = strtoupper((string) ($applicationWorkflowStatus ?? ''));
+    $isPendingReviewState = ! $isProfileRevisionRequested
+        && (
+            $status === 'PENDING'
+            || in_array($reviewWorkflowStatus, ['PENDING', 'UNDER_REVIEW', 'REVIEWED'], true)
+        );
+    $isActiveFinalizedState = ! $isProfileRevisionRequested && $status === 'ACTIVE';
+    $profileBlockedMessageVariant = $isActiveFinalizedState ? 'success' : ($isPendingReviewState ? 'warning' : 'info');
+    $profileBlockedMessageText = $isActiveFinalizedState
+        ? 'Your organization profile is active and finalized. Editing is locked unless SDAO requests updates.'
+        : ($isPendingReviewState
+            ? 'Profile editing is unavailable while your organization is under pending review, unless SDAO requests profile updates.'
+            : $profileEditBlockedMessage);
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -116,10 +130,10 @@
         </div>
 
         @if ($organization && ! $editing && ! $canEditProfile)
-            <x-feedback.blocked-message :message="$profileEditBlockedMessage" class="mt-4" />
+            <x-feedback.blocked-message variant="{{ $profileBlockedMessageVariant }}" :message="$profileBlockedMessageText" class="mt-4" />
         @endif
 
-        @if ($organization && ! $editing && $organization->isProfileRevisionRequested())
+        @if ($organization && ! $editing && $isProfileRevisionRequested)
             <x-feedback.blocked-message variant="warning" :icon="false" class="mt-4">
                 <div class="flex items-start gap-3">
                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-yellow-100/90" aria-hidden="true">

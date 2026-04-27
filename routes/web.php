@@ -179,6 +179,7 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
         ->where('key', '[a-z0-9_]+');
     Route::get('/registrations/{submission}', 'showRegistration')->name('registrations.show');
     Route::patch('/registrations/{submission}/review-draft', 'saveRegistrationReviewDraft')->name('registrations.review-draft');
+    Route::patch('/registrations/{submission}/field-updates/{fieldUpdate}/acknowledge', 'acknowledgeRegistrationFieldUpdate')->name('registrations.field-updates.acknowledge');
     Route::patch('/registrations/{submission}/status', 'updateRegistrationStatus')->name('registrations.update-status');
 
     Route::get('/renewals', 'renewals')->name('renewals.index');

@@ -58,6 +58,57 @@
   $readonlyValueClass = 'mt-1.5 text-sm font-semibold text-slate-900';
   $persistedFieldReviews = is_array($persistedFieldReviews ?? null) ? $persistedFieldReviews : [];
   $persistedSectionReviews = is_array($persistedSectionReviews ?? null) ? $persistedSectionReviews : [];
+  $fieldUpdateDiffs = is_array($fieldUpdateDiffs ?? null) ? $fieldUpdateDiffs : [];
+  $fieldUpdateFor = static fn (string $sectionKey, string $fieldKey): ?array => data_get($fieldUpdateDiffs, $sectionKey.'.'.$fieldKey);
+  $sectionTitles = [
+    'application' => 'Application Information',
+    'contact' => 'Contact Information',
+    'organizational' => 'Organizational Information',
+    'requirements' => 'Requirements Attached',
+  ];
+  $fieldLabelsBySection = [
+    'application' => [
+      'academic_year' => 'Academic Year',
+      'submission_date' => 'Submission Date',
+      'submitted_by' => 'Submitted By',
+      'organization' => 'Organization',
+    ],
+    'contact' => [
+      'contact_person' => 'Contact Person',
+      'contact_no' => 'Contact Number',
+      'contact_email' => 'Email Address',
+    ],
+    'organizational' => [
+      'date_organized' => 'Date Organized',
+      'organization_type' => 'Type of Organization',
+      'school' => 'School',
+      'purpose' => 'Purpose of Organization',
+    ],
+    'requirements' => $reqLabels,
+  ];
+  $updatedFieldSummary = [];
+  foreach ($fieldUpdateDiffs as $sectionKey => $fields) {
+    if (! is_array($fields)) {
+      continue;
+    }
+    foreach ($fields as $fieldKey => $update) {
+      if (! ((bool) data_get($update, 'is_updated', false))) {
+        continue;
+      }
+      $updatedFieldSummary[$sectionKey][] = [
+        'field_key' => (string) $fieldKey,
+        'label' => (string) data_get($fieldLabelsBySection, $sectionKey.'.'.$fieldKey, ucwords(str_replace('_', ' ', (string) $fieldKey))),
+        'anchor_id' => 'updated-field-'.$sectionKey.'-'.$fieldKey,
+      ];
+    }
+  }
+  $updatedFieldKeys = collect($updatedFieldSummary)
+    ->flatMap(fn (array $items, string $sectionKey): array => array_map(
+      fn (array $item): string => $sectionKey.'.'.$item['field_key'],
+      $items
+    ))
+    ->values()
+    ->all();
   $reviewStatusFromState = static function (string $state): string {
     return match ($state) {
       'validated' => 'verified',
@@ -134,6 +185,7 @@
   data-confirmed="0"
   data-submission-id="{{ $registration?->id }}"
   data-review-draft-url="{{ route('admin.registrations.review-draft', $submission ?? $registration) }}"
+  data-updated-fields='@json($updatedFieldKeys)'
 >
   @csrf
   @method('PATCH')
@@ -144,6 +196,42 @@
   @error('field_review')
     <x-feedback.blocked-message variant="error" :message="$message" />
   @enderror
+
+  @if ($updatedFieldSummary !== [])
+    <x-feedback.blocked-message variant="info" :icon="false" class="mb-6">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100/90" aria-hidden="true">
+          <svg class="h-4.5 w-4.5 text-sky-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25 11.25 16.5M12 7.5h.008v.008H12V7.5Zm0 13.5c-4.97 0-9-4.03-9-9s4.03-9 9-9 9 4.03 9 9-4.03 9-9 9Z" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <p class="font-semibold">Updated information submitted</p>
+          <p class="mt-1 text-sm font-normal">The organization officer has updated the fields below. Review each updated field and provide a new response.</p>
+        </div>
+      </div>
+      <div class="mt-4 space-y-3">
+        @foreach ($updatedFieldSummary as $sectionKey => $items)
+          <div class="rounded-lg border border-sky-200/90 bg-white/60 px-3 py-3">
+            <p class="text-xs font-bold uppercase tracking-wide text-sky-950">{{ strtoupper($sectionTitles[$sectionKey] ?? ucwords(str_replace('_', ' ', (string) $sectionKey))) }} ({{ count($items) }})</p>
+            <ul class="mt-2 space-y-1.5">
+              @foreach ($items as $item)
+                <li>
+                  <button
+                    type="button"
+                    class="updated-summary-link inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-sky-950 transition hover:bg-sky-100/70 focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                    data-scroll-target="{{ $item['anchor_id'] }}"
+                  >
+                    <span class="font-semibold underline underline-offset-2">{{ $item['label'] }}</span>
+                  </button>
+                </li>
+              @endforeach
+            </ul>
+          </div>
+        @endforeach
+      </div>
+    </x-feedback.blocked-message>
+  @endif
 
   <x-ui.card padding="p-5" class="border border-slate-200 bg-slate-50/70">
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -176,32 +264,52 @@
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Academic Year</dt>
+        <dt class="{{ $readonlyLabelClass }}">Academic Year
+          @if (($update = $fieldUpdateFor('application', 'academic_year')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $registration->academicTerm?->academic_year ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'academic_year', 'fieldLabel' => 'Academic Year', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'academic_year')])
       </div>
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Submission Date</dt>
+        <dt class="{{ $readonlyLabelClass }}">Submission Date
+          @if (($update = $fieldUpdateFor('application', 'submission_date')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submission_date', 'fieldLabel' => 'Submission Date', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'submission_date')])
       </div>
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Submitted By</dt>
+        <dt class="{{ $readonlyLabelClass }}">Submitted By
+          @if (($update = $fieldUpdateFor('application', 'submitted_by')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submitted_by', 'fieldLabel' => 'Submitted By', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'submitted_by')])
       </div>
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Organization</dt>
+        <dt class="{{ $readonlyLabelClass }}">Organization
+          @if (($update = $fieldUpdateFor('application', 'organization')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'organization', 'fieldLabel' => 'Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'organization')])
       </div>
     </dl>
     </div>
@@ -225,25 +333,40 @@
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Contact Person</dt>
+        <dt class="{{ $readonlyLabelClass }}">Contact Person
+          @if (($update = $fieldUpdateFor('contact', 'contact_person')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $registration->contact_person ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_person', 'fieldLabel' => 'Contact Person', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('contact', 'contact_person')])
       </div>
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Contact No.</dt>
+        <dt class="{{ $readonlyLabelClass }}">Contact No.
+          @if (($update = $fieldUpdateFor('contact', 'contact_no')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $registration->contact_no ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_no', 'fieldLabel' => 'Contact Number', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('contact', 'contact_no')])
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
-        <dt class="{{ $readonlyLabelClass }}">Email Address</dt>
+        <dt class="{{ $readonlyLabelClass }}">Email Address
+          @if (($update = $fieldUpdateFor('contact', 'contact_email')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $registration->contact_email ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'contact_email', 'fieldLabel' => 'Email Address', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('contact', 'contact_email')])
       </div>
     </dl>
     </div>
@@ -267,32 +390,52 @@
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Date Organized</dt>
+        <dt class="{{ $readonlyLabelClass }}">Date Organized
+          @if (($update = $fieldUpdateFor('organizational', 'date_organized')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'date_organized', 'fieldLabel' => 'Date Organized', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('organizational', 'date_organized')])
       </div>
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Type of Organization</dt>
+        <dt class="{{ $readonlyLabelClass }}">Type of Organization
+          @if (($update = $fieldUpdateFor('organizational', 'organization_type')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $orgTypeLabel }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'organization_type', 'fieldLabel' => 'Type of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('organizational', 'organization_type')])
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
-        <dt class="{{ $readonlyLabelClass }}">School</dt>
+        <dt class="{{ $readonlyLabelClass }}">School
+          @if (($update = $fieldUpdateFor('organizational', 'school')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $org?->college_department ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'school', 'fieldLabel' => 'School', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('organizational', 'school')])
       </div>
       <div class="{{ $readonlyItemClass }} md:col-span-2">
-        <dt class="{{ $readonlyLabelClass }}">Purpose of Organization</dt>
+        <dt class="{{ $readonlyLabelClass }}">Purpose of Organization
+          @if (($update = $fieldUpdateFor('organizational', 'purpose')) && ($update['is_updated'] ?? false))
+            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+          @endif
+        </dt>
         <div class="mt-1.5 flex flex-wrap items-start justify-between gap-2">
           <dd class="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">{{ $org?->purpose ?? 'N/A' }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'purpose', 'fieldLabel' => 'Purpose of Organization', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
+        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('organizational', 'purpose')])
       </div>
     </dl>
     </div>
@@ -321,6 +464,7 @@
           $checked = (bool) ($requirement?->is_submitted ?? false);
           $hasFile = $checked && in_array($key, $requirementAttachmentKeys, true);
           $attachment = $requirementAttachmentsByKey->get($key);
+          $requirementUpdate = $fieldUpdateFor('requirements', (string) $key);
           $extension = strtoupper((string) pathinfo((string) ($attachment?->original_name ?: $attachment?->stored_path ?: ''), PATHINFO_EXTENSION));
           $badgeLabel = in_array($extension, ['PDF', 'DOCX', 'PNG', 'JPG', 'JPEG'], true) ? $extension : 'FILE';
           $badgeClass = match ($badgeLabel) {
@@ -341,9 +485,13 @@
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <p class="text-sm font-semibold text-slate-900">{{ $requirement?->label ?? ($reqLabels[$key] ?? $key) }}</p>
+              @if (($requirementUpdate['is_updated'] ?? false))
+                <span class="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+              @endif
               <span class="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $badgeClass }}">{{ $badgeLabel }}</span>
             </div>
             <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
+            @include('admin.registrations.partials.field-update-inline', ['update' => $requirementUpdate])
           </div>
           <div class="requirement-review-top-row flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
             <div class="shrink-0">
@@ -466,6 +614,15 @@
     const submissionId = form?.dataset.submissionId || 'unknown';
     const reviewDraftUrl = form?.dataset.reviewDraftUrl || '';
     const reviewDraftStorageKey = `registration-review-draft:${submissionId}`;
+    const updatedFieldKeys = (() => {
+      try {
+        const parsed = JSON.parse(form?.dataset.updatedFields || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    })();
+    const updatedFieldKeySet = new Set(updatedFieldKeys);
 
     if (!form || !modal || !modalText || !cancel || !confirmBtn || !remarks || !progressEl || !revisionSummaryBox || !revisionSummaryList || !revisionSummaryHelper || !saveReviewBtn || !saveReviewHelper) return;
 
@@ -858,9 +1015,31 @@
       }, 1800);
     }
 
+    function scrollToUpdatedTarget(targetId) {
+      if (!targetId) return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      const highlightTarget = target.closest('.field-review-card') || target.closest('.requirement-review-item') || target;
+      highlightTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlightTarget.classList.add('ring-2', 'ring-sky-300', 'bg-sky-50/70', 'transition');
+      if (activeFlashTimer) {
+        window.clearTimeout(activeFlashTimer);
+      }
+      activeFlashTimer = window.setTimeout(() => {
+        highlightTarget.classList.remove('ring-2', 'ring-sky-300', 'bg-sky-50/70', 'transition');
+      }, 1800);
+    }
+
     form.querySelectorAll('[data-field-review]').forEach((control) => {
       const parentCard = control.closest('.field-review-card');
       const requirementCard = control.closest('.requirement-review-item');
+      const anchorId = control.dataset.anchorId || '';
+      if (anchorId) {
+        const anchorTarget = parentCard || requirementCard || control;
+        if (anchorTarget && (!anchorTarget.id || anchorTarget.id === anchorId)) {
+          anchorTarget.id = anchorId;
+        }
+      }
       const noteWrap = control.querySelector('.field-review-note');
       const noteInput = control.querySelector('.field-review-note-input');
       const valueRow = control.parentElement;
@@ -938,7 +1117,27 @@
       });
     });
 
+    function resetUpdatedFieldControls() {
+      if (updatedFieldKeySet.size === 0) return;
+      form.querySelectorAll('[data-field-review]').forEach((control) => {
+        const sectionKey = control.dataset.sectionKey || '';
+        const fieldKey = control.dataset.fieldKey || '';
+        if (!updatedFieldKeySet.has(`${sectionKey}.${fieldKey}`)) return;
+        const statusInput = control.querySelector('.field-review-status');
+        if (statusInput) {
+          statusInput.value = 'pending';
+        }
+        const noteInput = control.dataset.noteInputId
+          ? document.getElementById(control.dataset.noteInputId)
+          : control.querySelector('.field-review-note-input');
+        if (noteInput) {
+          noteInput.value = '';
+        }
+      });
+    }
+
     applyDraftState();
+    resetUpdatedFieldControls();
     allSectionRoots().forEach((sectionRoot) => {
       syncSection(sectionRoot);
     });
@@ -953,6 +1152,12 @@
       if (targetId) {
         scrollToRevisionTarget(targetId);
       }
+    });
+    form.querySelectorAll('.updated-summary-link').forEach((action) => {
+      action.addEventListener('click', () => {
+        const targetId = action.dataset.scrollTarget || '';
+        scrollToUpdatedTarget(targetId);
+      });
     });
 
     const closeDecision = () => {

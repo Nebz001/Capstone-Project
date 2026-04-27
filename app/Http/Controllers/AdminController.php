@@ -11,6 +11,7 @@ use App\Models\ApprovalWorkflowStep;
 use App\Models\Attachment;
 use App\Models\Organization;
 use App\Models\OrganizationProfileRevision;
+use App\Models\OrganizationRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
 use App\Models\Role;
 use App\Models\SubmissionRequirement;
@@ -169,17 +170,38 @@ class AdminController extends Controller
             ->latest('submission_date')
             ->latest('id')
             ->paginate(10);
+        $submissionIds = $records->getCollection()->pluck('id')->all();
+        $updateAggregates = OrganizationRevisionFieldUpdate::query()
+            ->selectRaw('organization_submission_id, COUNT(*) as pending_updates_count, MAX(resubmitted_at) as last_resubmitted_at')
+            ->whereIn('organization_submission_id', $submissionIds)
+            ->whereNull('acknowledged_at')
+            ->groupBy('organization_submission_id')
+            ->get()
+            ->keyBy('organization_submission_id');
 
         return view('admin.review-index', [
             'pageTitle' => 'Registration Review',
             'pageSubtitle' => 'Monitor submitted RSO registration applications.',
             'routeBase' => 'admin.registrations.show',
-            'rows' => $records->through(function (OrganizationSubmission $record): array {
+            'rows' => $records->through(function (OrganizationSubmission $record) use ($updateAggregates): array {
+                $legacyStatus = $record->legacyStatus();
+                $update = $updateAggregates->get($record->id);
+                $pendingUpdatesCount = $update ? (int) ($update->pending_updates_count ?? 0) : 0;
+                $isUpdated = $legacyStatus === 'REVISION' && $pendingUpdatesCount > 0;
+                $status = $isUpdated ? 'UPDATED' : $legacyStatus;
+                $statusLabel = $isUpdated ? 'UPDATED' : str_replace('_', ' ', $legacyStatus);
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
-                    'status' => $record->legacyStatus(),
+                    'last_updated' => $update && $update->last_resubmitted_at
+                        ? optional(\Illuminate\Support\Carbon::parse((string) $update->last_resubmitted_at))->format('M d, Y g:i A')
+                        : '—',
+                    'status' => $status,
+                    'status_label' => $statusLabel,
+                    'is_updated' => $isUpdated,
+                    'updates_count' => $pendingUpdatesCount,
+                    'action_label' => $isUpdated ? 'View Updates' : 'View',
                     'id' => $record->id,
                 ];
             }),
@@ -417,12 +439,61 @@ class AdminController extends Controller
 
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
         $submission->load(['organization', 'submittedBy', 'academicTerm', 'requirements', 'attachments']);
+        $latestUpdates = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->with(['resubmittedBy:id,first_name,last_name', 'acknowledgedBy:id,first_name,last_name'])
+            ->orderByDesc('id')
+            ->get()
+            ->unique(fn (OrganizationRevisionFieldUpdate $row): string => $row->section_key.'.'.$row->field_key)
+            ->values();
+        $updatesByField = [];
+        $storedFieldReviews = is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [];
+        foreach ($latestUpdates as $row) {
+            if (! isset($updatesByField[$row->section_key])) {
+                $updatesByField[$row->section_key] = [];
+            }
+            $updatesByField[$row->section_key][$row->field_key] = [
+                'id' => (int) $row->id,
+                'section_key' => (string) $row->section_key,
+                'field_key' => (string) $row->field_key,
+                'old_value' => $row->old_value,
+                'new_value' => $row->new_value,
+                'old_file_meta' => $row->old_file_meta,
+                'new_file_meta' => $row->new_file_meta,
+                'resubmitted_at' => optional($row->resubmitted_at)->toDateTimeString(),
+                'resubmitted_by' => $row->resubmittedBy?->full_name ?? 'Unknown',
+                'acknowledged_at' => optional($row->acknowledged_at)->toDateTimeString(),
+                'acknowledged_by' => $row->acknowledgedBy?->full_name ?? null,
+                'is_updated' => $row->acknowledged_at === null,
+            ];
+        }
+        $effectiveFieldReviews = $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField);
         return view('admin.registrations.show', [
             'registration' => $submission,
             'submission' => $submission,
             'initialSectionReviewState' => $this->initialRegistrationSectionReviewState($submission),
-            'persistedFieldReviews' => is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [],
+            'persistedFieldReviews' => $effectiveFieldReviews,
             'persistedSectionReviews' => is_array($submission->registration_section_reviews) ? $submission->registration_section_reviews : [],
+            'fieldUpdateDiffs' => $updatesByField,
+        ]);
+    }
+
+    public function acknowledgeRegistrationFieldUpdate(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        abort_unless((int) $fieldUpdate->organization_submission_id === (int) $submission->id, 404);
+        if ($fieldUpdate->acknowledged_at === null) {
+            $fieldUpdate->update([
+                'acknowledged_at' => now(),
+                'acknowledged_by' => (int) $request->user()->id,
+            ]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'id' => (int) $fieldUpdate->id,
+            'acknowledged_at' => optional($fieldUpdate->fresh()->acknowledged_at)->toDateTimeString(),
         ]);
     }
 
@@ -585,6 +656,8 @@ class AdminController extends Controller
             }
         });
 
+        $this->autoAcknowledgeReviewedRegistrationFieldUpdates($submission, $normalizedFieldReviews, (int) $admin->id);
+
         return redirect()
             ->route('admin.registrations.show', $submission)
             ->with('success', 'Registration review saved successfully.')
@@ -657,6 +730,7 @@ class AdminController extends Controller
             'registration_field_reviews' => $normalizedFieldReviews,
             'registration_section_reviews' => $normalizedSectionReviews,
         ]);
+        $this->autoAcknowledgeReviewedRegistrationFieldUpdates($submission, $normalizedFieldReviews, (int) $admin->id);
 
         return response()->json([
             'ok' => true,
@@ -1441,6 +1515,59 @@ class AdminController extends Controller
         }
 
         return $merged;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldReviews
+     * @param  array<string, mixed>  $updatesByField
+     * @return array<string, mixed>
+     */
+    private function resetUpdatedFieldReviewStates(array $fieldReviews, array $updatesByField): array
+    {
+        foreach ($updatesByField as $sectionKey => $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            foreach ($fields as $fieldKey => $update) {
+                if (! ((bool) data_get($update, 'is_updated', false))) {
+                    continue;
+                }
+                if (! isset($fieldReviews[$sectionKey]) || ! is_array($fieldReviews[$sectionKey])) {
+                    $fieldReviews[$sectionKey] = [];
+                }
+                $label = (string) data_get($fieldReviews, $sectionKey.'.'.$fieldKey.'.label', ucwords(str_replace('_', ' ', (string) $fieldKey)));
+                $fieldReviews[$sectionKey][$fieldKey] = [
+                    'label' => $label,
+                    'status' => 'pending',
+                    'note' => null,
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                ];
+            }
+        }
+
+        return $fieldReviews;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldReviews
+     */
+    private function autoAcknowledgeReviewedRegistrationFieldUpdates(OrganizationSubmission $submission, array $fieldReviews, int $adminId): void
+    {
+        $pendingUpdates = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->whereNull('acknowledged_at')
+            ->get();
+        foreach ($pendingUpdates as $update) {
+            $status = (string) data_get($fieldReviews, $update->section_key.'.'.$update->field_key.'.status', 'pending');
+            if ($status === 'pending') {
+                continue;
+            }
+            $update->update([
+                'acknowledged_at' => now(),
+                'acknowledged_by' => $adminId,
+            ]);
+        }
     }
 
     private function composeGenericFlaggedNotes(array $fieldReviews): ?string
