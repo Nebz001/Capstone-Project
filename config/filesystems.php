@@ -17,6 +17,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Submissions Disk
+    |--------------------------------------------------------------------------
+    |
+    | Disk used for organization submission attachments (registration / renewal
+    | requirement files, activity proposal files, after-activity report files,
+    | etc.). Defaults to the local `public` disk so the app works out-of-the-box
+    | with `php artisan storage:link`. Set SUBMISSIONS_STORAGE_DISK=supabase
+    | (or any other configured disk) to switch storage backends without
+    | touching application code.
+    |
+    */
+
+    'submissions_disk' => env('SUBMISSIONS_STORAGE_DISK', 'public'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |
@@ -56,6 +72,27 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+            'report' => false,
+        ],
+
+        /*
+        | Supabase Storage exposes an S3-compatible API. Keep the bucket
+        | private; the app should never embed bucket credentials in the
+        | frontend — the file-streaming controller proxies bytes to the
+        | browser instead. When enabled, set SUBMISSIONS_STORAGE_DISK=supabase
+        | so submission attachments land in this bucket.
+        */
+        'supabase' => [
+            'driver' => 's3',
+            'key' => env('SUPABASE_S3_KEY'),
+            'secret' => env('SUPABASE_S3_SECRET'),
+            'region' => env('SUPABASE_S3_REGION', 'us-east-1'),
+            'bucket' => env('SUPABASE_S3_BUCKET'),
+            'endpoint' => env('SUPABASE_S3_ENDPOINT'),
+            'url' => env('SUPABASE_S3_PUBLIC_URL'),
+            'use_path_style_endpoint' => env('SUPABASE_S3_USE_PATH_STYLE', true),
+            'visibility' => 'private',
             'throw' => false,
             'report' => false,
         ],

@@ -2880,13 +2880,44 @@ class OrganizationController extends Controller
     }
 
     /**
-     * @param  array<string, string>  $filePaths
+     * Persist (or refresh) one Attachment row per uploaded requirement file.
+     *
+     * Accepts either the legacy `[key => path]` shape or the richer
+     * `[key => ['path' => string, 'file' => UploadedFile]]` shape returned by
+     * `storeRequirementFilesForKeys`. The richer shape is preferred because it
+     * preserves the original filename, mime type, and size — all of which the
+     * file-streaming controller relies on for sane Content-Disposition and
+     * Content-Type headers when serving the file back.
+     *
+     * @param  array<string, string|array{path: string, file?: UploadedFile}>  $filePaths
      */
     private function attachRequirementFiles(OrganizationSubmission $submission, array $filePaths, int $uploadedBy): void
     {
-        foreach ($filePaths as $requirementKey => $storedPath) {
-            if (! is_string($storedPath) || trim($storedPath) === '') {
+        foreach ($filePaths as $requirementKey => $entry) {
+            if (is_string($entry)) {
+                $storedPath = $entry;
+                $uploadedFile = null;
+            } elseif (is_array($entry)) {
+                $storedPath = (string) ($entry['path'] ?? '');
+                $candidate = $entry['file'] ?? null;
+                $uploadedFile = $candidate instanceof UploadedFile ? $candidate : null;
+            } else {
                 continue;
+            }
+
+            if (trim($storedPath) === '') {
+                continue;
+            }
+
+            $originalName = $uploadedFile?->getClientOriginalName() ?: basename($storedPath);
+            $mimeType = null;
+            $fileSizeKb = null;
+            if ($uploadedFile !== null) {
+                $mimeType = $uploadedFile->getClientMimeType() ?: $uploadedFile->getMimeType();
+                $size = (int) $uploadedFile->getSize();
+                if ($size > 0) {
+                    $fileSizeKb = (int) ceil($size / 1024);
+                }
             }
 
             Attachment::query()->updateOrCreate(
@@ -2894,13 +2925,13 @@ class OrganizationController extends Controller
                     'attachable_type' => OrganizationSubmission::class,
                     'attachable_id' => $submission->id,
                     'file_type' => Attachment::fileTypeForSubmissionRequirementKey($submission->type, $requirementKey),
-                    'stored_path' => $storedPath,
                 ],
                 [
                     'uploaded_by' => $uploadedBy,
-                    'original_name' => basename($storedPath),
-                    'mime_type' => null,
-                    'file_size_kb' => null,
+                    'original_name' => $originalName,
+                    'stored_path' => $storedPath,
+                    'mime_type' => $mimeType,
+                    'file_size_kb' => $fileSizeKb,
                 ]
             );
         }
@@ -3057,7 +3088,7 @@ class OrganizationController extends Controller
             $rules["requirement_files.$key"] = [
                 'required',
                 'file',
-                'mimes:pdf,doc,docx,jpg,jpeg,png',
+                'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png',
                 'max:10240',
             ];
         }
@@ -3066,9 +3097,14 @@ class OrganizationController extends Controller
     }
 
     /**
+     * Stores each uploaded requirement file on the public disk and returns
+     * both the resulting relative path AND the originating UploadedFile so
+     * the caller can persist the original filename, mime type, and size on
+     * the matching attachment row.
+     *
      * @param  Collection<int, string>  $reqs
      * @param  array<int, string>  $allowedKeys
-     * @return array<string, string>
+     * @return array<string, array{path: string, file: UploadedFile}>
      */
     private function storeRequirementFilesForKeys(
         Request $request,
@@ -3076,17 +3112,20 @@ class OrganizationController extends Controller
         array $allowedKeys,
         string $storageBasePath
     ): array {
-        $paths = [];
+        $stored = [];
         foreach ($allowedKeys as $key) {
             if (! $reqs->contains($key)) {
                 continue;
             }
             $file = $request->file("requirement_files.$key");
             if ($file && $file->isValid()) {
-                $paths[$key] = $file->store($storageBasePath, 'public');
+                $path = $file->store($storageBasePath, 'public');
+                if (is_string($path) && $path !== '') {
+                    $stored[$key] = ['path' => $path, 'file' => $file];
+                }
             }
         }
 
-        return $paths;
+        return $stored;
     }
 }

@@ -12,13 +12,18 @@ use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\OrganizationSubmission;
+use App\Models\SubmissionRequirement;
 use App\Models\User;
 use App\Support\SubmissionRoutingProgress;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrganizationSubmittedDocumentsController extends Controller
@@ -210,13 +215,13 @@ class OrganizationSubmittedDocumentsController extends Controller
         ]);
     }
 
-    public function streamSubmittedRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
+    public function streamSubmittedRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
     {
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
-        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
+        $this->authorizeSubmissionFileView($request, $submission);
 
         if (! in_array($key, self::REGISTRATION_FILE_KEYS, true)) {
-            abort(404);
+            abort(404, 'Unknown registration requirement.');
         }
 
         return $this->streamSubmissionRequirementAttachment($submission, $key);
@@ -249,13 +254,13 @@ class OrganizationSubmittedDocumentsController extends Controller
         ]);
     }
 
-    public function streamSubmittedRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
+    public function streamSubmittedRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
     {
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
-        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
+        $this->authorizeSubmissionFileView($request, $submission);
 
         if (! in_array($key, self::RENEWAL_FILE_KEYS, true)) {
-            abort(404);
+            abort(404, 'Unknown renewal requirement.');
         }
 
         return $this->streamSubmissionRequirementAttachment($submission, $key);
@@ -1054,79 +1059,262 @@ class OrganizationSubmittedDocumentsController extends Controller
     }
 
     /**
-     * @return list<array{label: string, url: string}>
+     * @return list<array{label: string, url: ?string, missing?: bool}>
      */
     private function registrationFileLinksFromSubmission(OrganizationSubmission $submission): array
     {
+        return $this->submissionRequirementFileLinks(
+            $submission,
+            self::REGISTRATION_FILE_KEYS,
+            self::REGISTRATION_FILE_LABELS,
+            Attachment::TYPE_REGISTRATION_REQUIREMENT,
+            'organizations.submitted-documents.registrations.file'
+        );
+    }
+
+    /**
+     * @return list<array{label: string, url: ?string, missing?: bool}>
+     */
+    private function renewalFileLinksFromSubmission(OrganizationSubmission $submission): array
+    {
+        return $this->submissionRequirementFileLinks(
+            $submission,
+            self::RENEWAL_FILE_KEYS,
+            self::RENEWAL_FILE_LABELS,
+            Attachment::TYPE_RENEWAL_REQUIREMENT,
+            'organizations.submitted-documents.renewals.file'
+        );
+    }
+
+    /**
+     * Build the read-only "Submitted files" list. For each requirement we
+     * either include a working file URL or a `missing => true` row so the
+     * Blade view can render "No file uploaded" instead of a broken link.
+     *
+     * Only requirements that the submitter actually selected (is_submitted) or
+     * that have a real attachment row are included — purely-unselected
+     * requirements stay hidden from the list.
+     *
+     * @param  array<int, string>  $requirementKeys
+     * @param  array<string, string>  $labelMap
+     * @return list<array{label: string, url: ?string, missing?: bool}>
+     */
+    private function submissionRequirementFileLinks(
+        OrganizationSubmission $submission,
+        array $requirementKeys,
+        array $labelMap,
+        string $fileTypePrefix,
+        string $routeName
+    ): array {
+        $submittedKeys = SubmissionRequirement::query()
+            ->where('submission_id', $submission->id)
+            ->where('is_submitted', true)
+            ->pluck('requirement_key')
+            ->all();
+
         $links = [];
-        foreach (self::REGISTRATION_FILE_KEYS as $key) {
+        foreach ($requirementKeys as $key) {
             $attachment = $submission->attachments()
-                ->where('file_type', Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key)
+                ->where('file_type', $fileTypePrefix.':'.$key)
                 ->latest('id')
                 ->first();
-            if (! $attachment) {
-                continue;
+
+            $isSubmitted = in_array($key, $submittedKeys, true);
+            $label = $labelMap[$key] ?? $key;
+
+            if ($attachment) {
+                $links[] = [
+                    'label' => $label,
+                    'url' => route($routeName, [$submission, $key]),
+                ];
+            } elseif ($isSubmitted) {
+                $links[] = [
+                    'label' => $label,
+                    'url' => null,
+                    'missing' => true,
+                ];
             }
-            $label = self::REGISTRATION_FILE_LABELS[$key] ?? $key;
-            $links[] = [
-                'label' => $label,
-                'url' => route('organizations.submitted-documents.registrations.file', [$submission, $key]),
-            ];
         }
 
         return $links;
     }
 
     /**
-     * @return list<array{label: string, url: string}>
+     * Shared streaming helper for registration / renewal requirement files.
+     *
+     * Resolves the attachment via two indexes:
+     *   1. submission_requirements (submission_id, requirement_key) — used to
+     *      detect the "uploaded but missing" / "not yet uploaded" cases so we
+     *      can return a user-friendly 404 message instead of a bare error.
+     *   2. attachments (attachable_type, attachable_id, file_type) — the
+     *      authoritative pointer to the stored file.
+     *
+     * Inline disposition is used for browser-renderable types (PDF, images);
+     * everything else (Word, Excel, etc.) is sent as an attachment so the user
+     * gets a real download. The original uploaded filename is preserved in the
+     * Content-Disposition so users see "by-laws.pdf" rather than the random
+     * disk basename.
      */
-    private function renewalFileLinksFromSubmission(OrganizationSubmission $submission): array
+    private function streamSubmissionRequirementAttachment(OrganizationSubmission $submission, string $requirementKey): Response
     {
-        $links = [];
-        foreach (self::RENEWAL_FILE_KEYS as $key) {
-            $attachment = $submission->attachments()
-                ->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)
-                ->latest('id')
-                ->first();
-            if (! $attachment) {
-                continue;
-            }
-            $label = self::RENEWAL_FILE_LABELS[$key] ?? $key;
-            $links[] = [
-                'label' => $label,
-                'url' => route('organizations.submitted-documents.renewals.file', [$submission, $key]),
-            ];
-        }
+        $requirement = SubmissionRequirement::query()
+            ->where('submission_id', $submission->id)
+            ->where('requirement_key', $requirementKey)
+            ->first();
 
-        return $links;
-    }
-
-    private function streamSubmissionRequirementAttachment(OrganizationSubmission $submission, string $requirementKey): StreamedResponse
-    {
-        $prefix = $submission->type === OrganizationSubmission::TYPE_RENEWAL
-            ? Attachment::TYPE_RENEWAL_REQUIREMENT
-            : Attachment::TYPE_REGISTRATION_REQUIREMENT;
+        $fileType = Attachment::fileTypeForSubmissionRequirementKey($submission->type, $requirementKey);
 
         $attachment = $submission->attachments()
-            ->where('file_type', $prefix.':'.$requirementKey)
+            ->where('file_type', $fileType)
             ->latest('id')
             ->first();
 
         if (! $attachment) {
-            abort(404);
+            $message = $requirement && ! $requirement->is_submitted
+                ? 'No file was uploaded for this requirement.'
+                : 'File not found for this requirement.';
+
+            abort(404, $message);
         }
 
-        $relativePath = $attachment->stored_path;
-        if (! is_string($relativePath) || $relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
-            abort(404);
+        $relativePath = (string) $attachment->stored_path;
+        if ($relativePath === ''
+            || str_contains($relativePath, '..')
+            || str_starts_with($relativePath, '/')
+        ) {
+            Log::warning('Submission attachment has an invalid stored_path.', [
+                'attachment_id' => $attachment->id,
+                'submission_id' => $submission->id,
+                'requirement_key' => $requirementKey,
+                'stored_path' => $attachment->stored_path,
+            ]);
+
+            abort(404, 'File not found.');
         }
 
-        $disk = Storage::disk('public');
+        $disk = Storage::disk(self::submissionStorageDisk());
         if (! $disk->exists($relativePath)) {
-            abort(404);
+            Log::warning('Submission attachment is missing on disk.', [
+                'attachment_id' => $attachment->id,
+                'submission_id' => $submission->id,
+                'requirement_key' => $requirementKey,
+                'stored_path' => $relativePath,
+                'disk' => self::submissionStorageDisk(),
+            ]);
+
+            abort(404, 'The requested file is no longer available. Please contact your SDAO admin.');
         }
 
-        return $disk->response($relativePath, basename($relativePath), [], 'inline');
+        $mimeType = $this->resolveAttachmentMimeType($attachment, $disk, $relativePath);
+        $filename = $this->resolveAttachmentDownloadName($attachment, $relativePath);
+        $disposition = $this->isInlineRenderableMimeType($mimeType) ? 'inline' : 'attachment';
+
+        return $disk->response($relativePath, $filename, [
+            'Content-Type' => $mimeType,
+        ], $disposition);
+    }
+
+    /**
+     * Resolve which filesystem disk holds submission attachments.
+     *
+     * Defaults to the local `public` disk (where files are uploaded by the
+     * organization controllers). Operators that move uploads to Supabase
+     * Storage / S3 just have to set SUBMISSIONS_STORAGE_DISK in .env without
+     * touching application code.
+     */
+    private static function submissionStorageDisk(): string
+    {
+        $disk = (string) config('filesystems.submissions_disk', env('SUBMISSIONS_STORAGE_DISK', 'public'));
+
+        return $disk !== '' ? $disk : 'public';
+    }
+
+    private function resolveAttachmentMimeType(Attachment $attachment, $disk, string $relativePath): string
+    {
+        $mime = trim((string) ($attachment->mime_type ?? ''));
+        if ($mime !== '') {
+            return $mime;
+        }
+
+        try {
+            $detected = method_exists($disk, 'mimeType') ? (string) $disk->mimeType($relativePath) : '';
+            if ($detected !== '') {
+                return $detected;
+            }
+        } catch (\Throwable $e) {
+            // Fall through to extension-based guess.
+        }
+
+        return $this->mimeFromExtension($relativePath);
+    }
+
+    private function resolveAttachmentDownloadName(Attachment $attachment, string $relativePath): string
+    {
+        $original = trim((string) ($attachment->original_name ?? ''));
+        if ($original !== '') {
+            return $original;
+        }
+
+        return basename($relativePath);
+    }
+
+    private function isInlineRenderableMimeType(string $mimeType): bool
+    {
+        $mimeType = strtolower(trim($mimeType));
+        if ($mimeType === '') {
+            return false;
+        }
+
+        if (str_starts_with($mimeType, 'image/')) {
+            return true;
+        }
+
+        return in_array($mimeType, [
+            'application/pdf',
+            'text/plain',
+        ], true);
+    }
+
+    private function mimeFromExtension(string $path): string
+    {
+        $ext = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+
+        return match ($ext) {
+            'pdf' => 'application/pdf',
+            'png' => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'doc' => 'application/msword',
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls' => 'application/vnd.ms-excel',
+            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'csv' => 'text/csv',
+            'txt' => 'text/plain',
+            default => 'application/octet-stream',
+        };
+    }
+
+    /**
+     * Gate-check submission file viewing using OrganizationSubmissionPolicy.
+     *
+     * Replaces the old officer-only `ensureOfficerOwnsOrganization` check for
+     * the file-stream routes so admins, advisers, and officers (each within
+     * their proper scope) can all reach the file. Falls back to a 403 for
+     * unauthorized users instead of a misleading 404 / redirect.
+     */
+    private function authorizeSubmissionFileView(Request $request, OrganizationSubmission $submission): void
+    {
+        $user = $request->user();
+        if (! $user) {
+            abort(401, 'You must be logged in to view this file.');
+        }
+
+        try {
+            Gate::forUser($user)->authorize('viewFile', $submission);
+        } catch (AuthorizationException $e) {
+            abort(403, 'You do not have permission to view this file.');
+        }
     }
 
     /**

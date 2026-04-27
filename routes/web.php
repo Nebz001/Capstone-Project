@@ -34,29 +34,46 @@ Route::get('dashboard', function (Request $request) {
     return redirect()->route('organizations.index');
 })->middleware('auth')->name('dashboard');
 
+/*
+ * File-streaming routes for submitted documents.
+ *
+ * These deliberately sit OUTSIDE the `officer.portal` middleware group so that
+ * authenticated non-officer roles (admins, advisers, etc.) can still resolve
+ * the file URLs generated for officer-facing screens. Authorization is
+ * enforced inside each controller action via the OrganizationSubmissionPolicy
+ * (and the equivalent ownership checks for activity calendars / proposals /
+ * reports), so widening the route group does not loosen access — it just
+ * stops the middleware from redirecting non-officers away with a 302 (which
+ * surfaces to the user as a broken / 404-looking "View file" link).
+ */
+Route::prefix('organizations')->name('organizations.')->middleware(['auth'])->group(function () {
+    Route::controller(OrganizationSubmittedDocumentsController::class)->group(function () {
+        Route::get('/submitted-documents/registrations/{submission}/files/{key}', 'streamSubmittedRegistrationRequirementFile')
+            ->name('submitted-documents.registrations.file')
+            ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/renewals/{submission}/files/{key}', 'streamSubmittedRenewalRequirementFile')
+            ->name('submitted-documents.renewals.file')
+            ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/activity-calendars/{calendar}/file', 'streamSubmittedActivityCalendarMainFile')->name('submitted-documents.calendars.file');
+        Route::get('/submitted-documents/activity-proposals/{proposal}/files/{key}', 'streamSubmittedActivityProposalFile')
+            ->name('submitted-documents.proposals.file')
+            ->where('key', '[a-z]+');
+        Route::get('/submitted-documents/after-activity-reports/{report}/files/{key}', 'streamSubmittedAfterActivityReportFile')
+            ->name('submitted-documents.reports.file')
+            ->where('key', '[a-z0-9_]+');
+    });
+});
+
 Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'officer.portal'])->group(function () {
     Route::controller(OrganizationSubmittedDocumentsController::class)->group(function () {
         Route::get('/submitted-documents', 'index')->name('submitted-documents');
         Route::get('/submitted-documents/registrations/{submission}', 'showSubmittedRegistration')->name('submitted-documents.registrations.show');
-        Route::get('/submitted-documents/registrations/{submission}/files/{key}', 'streamSubmittedRegistrationRequirementFile')
-            ->name('submitted-documents.registrations.file')
-            ->where('key', '[a-z0-9_]+');
         Route::get('/submitted-documents/renewals/{submission}', 'showSubmittedRenewal')->name('submitted-documents.renewals.show');
-        Route::get('/submitted-documents/renewals/{submission}/files/{key}', 'streamSubmittedRenewalRequirementFile')
-            ->name('submitted-documents.renewals.file')
-            ->where('key', '[a-z0-9_]+');
         Route::get('/submitted-documents/activity-calendars/{calendar}', 'showSubmittedActivityCalendar')->name('submitted-documents.calendars.show');
-        Route::get('/submitted-documents/activity-calendars/{calendar}/file', 'streamSubmittedActivityCalendarMainFile')->name('submitted-documents.calendars.file');
         Route::get('/submitted-documents/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('submitted-documents.proposals.show');
-        Route::get('/submitted-documents/activity-proposals/{proposal}/files/{key}', 'streamSubmittedActivityProposalFile')
-            ->name('submitted-documents.proposals.file')
-            ->where('key', '[a-z]+');
         Route::get('/activity-submission/activity-calendars/{calendar}', 'showSubmittedActivityCalendar')->name('activity-submission.calendars.show');
         Route::get('/activity-submission/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('activity-submission.proposals.show');
         Route::get('/submitted-documents/after-activity-reports/{report}', 'showSubmittedAfterActivityReport')->name('submitted-documents.reports.show');
-        Route::get('/submitted-documents/after-activity-reports/{report}/files/{key}', 'streamSubmittedAfterActivityReportFile')
-            ->name('submitted-documents.reports.file')
-            ->where('key', '[a-z0-9_]+');
     });
 
     Route::controller(OrganizationController::class)->group(function () {
