@@ -492,7 +492,6 @@
                 <span class="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $badgeClass }}">{{ $badgeLabel }}</span>
               </div>
               <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ $checked ? 'Yes' : 'No' }}</span></p>
-              @include('admin.registrations.partials.field-update-inline', ['update' => $requirementUpdate])
             </div>
             <div class="requirement-review-top-row flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
               <div class="shrink-0">
@@ -532,6 +531,7 @@
               </div>
             </div>
           </div>
+          @include('admin.registrations.partials.field-update-inline', ['update' => $requirementUpdate])
         </li>
       @endforeach
     </ul>

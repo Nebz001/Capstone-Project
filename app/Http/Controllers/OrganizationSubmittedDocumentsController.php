@@ -198,29 +198,37 @@ class OrganizationSubmittedDocumentsController extends Controller
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
         $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
-        $pendingRequirementUpdateKeys = OrganizationRevisionFieldUpdate::query()
+        $pendingUpdateRows = OrganizationRevisionFieldUpdate::query()
             ->where('organization_submission_id', $submission->id)
-            ->where('section_key', 'requirements')
-            ->whereNotNull('new_file_meta')
             ->whereNull('acknowledged_at')
+            ->get(['section_key', 'field_key', 'new_file_meta']);
+        $pendingRequirementUpdateKeys = $pendingUpdateRows
+            ->filter(fn ($row): bool => (string) $row->section_key === 'requirements' && is_array($row->new_file_meta))
             ->pluck('field_key')
             ->filter(fn ($key): bool => is_string($key) && $key !== '')
             ->values()
             ->all();
+        $pendingRevisionItemSet = [];
+        foreach ($pendingUpdateRows as $row) {
+            $pendingRevisionItemSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
         $pendingRequirementUpdateKeySet = array_fill_keys($pendingRequirementUpdateKeys, true);
         $rawRevisionSections = $this->moduleRevisionSections(is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
         $revisionSections = [];
         foreach ($rawRevisionSections as $section) {
             $sectionKey = (string) ($section['section_key'] ?? '');
             $items = collect((array) ($section['items'] ?? []))
-                ->filter(function ($item) use ($sectionKey, $pendingRequirementUpdateKeySet): bool {
+                ->filter(function ($item) use ($sectionKey, $pendingRequirementUpdateKeySet, $pendingRevisionItemSet): bool {
                     if (! is_array($item)) {
+                        return false;
+                    }
+                    $fieldKey = (string) ($item['field_key'] ?? '');
+                    if ($fieldKey !== '' && isset($pendingRevisionItemSet[$sectionKey.'.'.$fieldKey])) {
                         return false;
                     }
                     if ($sectionKey !== 'requirements') {
                         return true;
                     }
-                    $fieldKey = (string) ($item['field_key'] ?? '');
 
                     return $fieldKey === '' || ! isset($pendingRequirementUpdateKeySet[$fieldKey]);
                 })
@@ -233,7 +241,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             $revisionSections[] = $section;
         }
         $hasOpenRevisionItems = $revisionSections !== [];
-        $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingRequirementUpdateKeys !== [];
+        $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingRevisionItemSet !== [];
         $statusForView = $isResubmittedPendingReview ? 'UNDER_REVIEW' : $submission->legacyStatus();
         $sp = $this->submissionStatusPresentation($statusForView);
         $savedUpdatedKeys = OrganizationRevisionFieldUpdate::query()
@@ -250,8 +258,10 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->all();
         $fileLinks = $this->registrationFileLinksFromSubmission($submission, $revisionSections, $savedUpdatedKeys, $recentlyReplacedKeys, $pendingRequirementUpdateKeys);
 
+        $backNav = $this->registrationDetailBackNavigation($request);
         return view('organizations.submitted-documents.detail', [
-            'backRoute' => $this->submittedDocumentsListUrl($request),
+            'backRoute' => $backNav['route'],
+            'backLabel' => $backNav['label'],
             'pageTitle' => 'Registration submission',
             'subtitle' => 'Organization registration application on file with SDAO.',
             'statusLabel' => $sp['label'],
@@ -1611,6 +1621,25 @@ class OrganizationSubmittedDocumentsController extends Controller
     private function submittedDocumentsListUrl(Request $request): string
     {
         return $this->withSuperAdminOrgQuery($request, route('organizations.submitted-documents'));
+    }
+
+    /**
+     * @return array{route:string,label:string}
+     */
+    private function registrationDetailBackNavigation(Request $request): array
+    {
+        $source = strtolower((string) $request->query('from', ''));
+        if ($source === 'dashboard') {
+            return [
+                'route' => route('organizations.index'),
+                'label' => 'Back to Organization Dashboard',
+            ];
+        }
+
+        return [
+            'route' => $this->submittedDocumentsListUrl($request),
+            'label' => 'Back to Submitted Documents',
+        ];
     }
 
     private function buildSubmittedDocumentRows(Organization $organization, Request $request): Collection

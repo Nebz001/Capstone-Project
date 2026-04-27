@@ -191,6 +191,9 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
         ->name('registrations.requirement-file')
         ->where('key', '[a-z0-9_]+');
     Route::get('/registrations/{submission}', 'showRegistration')->name('registrations.show');
+    Route::get('/registrations/{submission}/field-updates/{fieldUpdate}/{version}/file', 'showRegistrationFieldUpdateFile')
+        ->name('registrations.field-updates.file')
+        ->where('version', 'old|new');
     Route::patch('/registrations/{submission}/review-draft', 'saveRegistrationReviewDraft')->name('registrations.review-draft');
     Route::patch('/registrations/{submission}/field-updates/{fieldUpdate}/acknowledge', 'acknowledgeRegistrationFieldUpdate')->name('registrations.field-updates.acknowledge');
     Route::patch('/registrations/{submission}/status', 'updateRegistrationStatus')->name('registrations.update-status');

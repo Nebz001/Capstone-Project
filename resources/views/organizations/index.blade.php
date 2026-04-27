@@ -39,59 +39,137 @@
         </div>
     </header>
 
-    {{-- Activity proposal — primary dashboard focus (8-step routing) --}}
     @php
-        $pd = $proposalDashboard ?? ['empty' => true];
-        $pdEmpty = ! empty($pd['empty']);
-        $pdProposal = $pd['proposal'] ?? null;
-        $proposalTertiary = [['href' => route('organizations.activity-proposal-request').$saQ, 'label' => 'New proposal']];
-        $selectorOptions = is_array($pd['selector_options'] ?? null) ? $pd['selector_options'] : [];
-        $selectorHidden = collect(request()->query())
-            ->except(['proposal_id'])
-            ->all();
-        $proposalSelector = count($selectorOptions) > 1
-            ? [
-                'action' => route('organizations.index'),
-                'label' => 'Choose proposal',
-                'name' => 'proposal_id',
-                'options' => $selectorOptions,
-                'selected' => (int) ($pd['selected_proposal_id'] ?? 0),
-                'hidden' => $selectorHidden,
-            ]
-            : null;
+        $sd = $submissionDashboard ?? ['empty' => true];
+        $sdEmpty = ! empty($sd['empty']);
+        $infoRevisions = is_array($sd['info_revisions'] ?? null) ? $sd['info_revisions'] : [];
+        $fileRevisions = is_array($sd['file_revisions'] ?? null) ? $sd['file_revisions'] : [];
+        $updatedInfo = is_array($sd['info_updated_under_review'] ?? null) ? $sd['info_updated_under_review'] : [];
+        $updatedFiles = is_array($sd['file_updated_under_review'] ?? null) ? $sd['file_updated_under_review'] : [];
     @endphp
 
-    <section class="mb-6" @if (! $pdEmpty) aria-labelledby="dashboard-proposal-heading" @endif>
-        @if ($pdEmpty)
-            <x-submission-progress-card
-                mode="empty"
-                document-label="Activity proposal"
-                title="No proposal on file yet"
-                subtitle="Start an activity proposal to see the full eight-step campus routing and Student Development and Activities Office review progress here."
-                :primary-action="$pd['primary_action'] ?? null"
-                :secondary-action="$pd['secondary_action'] ?? null"
-                heading-id="dashboard-proposal-heading"
-            />
-        @else
-            <x-submission-progress-card
-                document-label="Activity proposal"
-                :hub-href="route('organizations.activity-submission').$saQ"
-                hub-label="Activity submission hub"
-                :title="$pdProposal->activity_title ?: 'Activity proposal'"
-                :subtitle="$pd['subtitle'] ?? null"
-                :status-label="$pd['status_label'] ?? 'Status'"
-                :status-badge-class="$pd['status_badge_class'] ?? 'bg-slate-100 text-slate-700 border border-slate-200'"
-                :stages="$pd['stages'] ?? []"
-                :summary="$pd['summary'] ?? ''"
-                :meta="$pd['meta'] ?? []"
-                :primary-action="$pd['primary_action'] ?? null"
-                :secondary-action="$pd['secondary_action'] ?? null"
-                :tertiary-links="$proposalTertiary"
-                :selector="$proposalSelector"
-                :helper-note="$pd['default_note'] ?? null"
-                heading-id="dashboard-proposal-heading"
-            />
-        @endif
+    <section class="mb-6" aria-labelledby="dashboard-submission-status-heading">
+        <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-300/35">
+            <div class="border-b border-slate-100 px-5 py-4 sm:px-6">
+                <h2 id="dashboard-submission-status-heading" class="text-base font-bold text-slate-900">Submission Status &amp; Required Actions</h2>
+                <p class="mt-1 text-xs text-slate-500">Track your submitted forms and complete required revisions in one place.</p>
+            </div>
+
+            @if ($sdEmpty)
+                <div class="px-5 py-5 sm:px-6">
+                    <p class="text-sm font-semibold text-slate-900">No registration submission on file yet</p>
+                    <p class="mt-1 text-xs text-slate-600">Start registration to view approval routing and revision requests in this dashboard card.</p>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        <a href="{{ route('organizations.register') }}{{ $saQ }}" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00327F]">Start registration</a>
+                        <a href="{{ route('organizations.manage') }}{{ $saQ }}" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Manage Organization</a>
+                    </div>
+                </div>
+            @else
+                <div class="space-y-4 px-5 py-4.5 sm:px-6">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <p class="text-sm font-bold text-slate-900">{{ $sd['title'] ?? 'Organization Registration' }}</p>
+                        <span class="inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide {{ $sd['status_badge_class'] ?? 'bg-slate-100 text-slate-700 border border-slate-200' }}">
+                            {{ $sd['status_label'] ?? 'Status' }}
+                        </span>
+                    </div>
+
+                    <x-submission-progress-card
+                        variant="embed"
+                        :document-label="strtoupper(($sd['title'] ?? 'Organization Registration').' · Approval Routing')"
+                        :stages="$sd['stages'] ?? []"
+                        :summary="$sd['status_message'] ?? ''"
+                    />
+
+                    @php
+                        $hasInfoPending = count($infoRevisions) > 0;
+                        $hasInfoUpdated = count($updatedInfo) > 0;
+                        $hasFilePending = count($fileRevisions) > 0;
+                        $hasFileUpdated = count($updatedFiles) > 0;
+                        $showInfoPanel = $hasInfoPending || $hasInfoUpdated;
+                        $showFilePanel = $hasFilePending || $hasFileUpdated;
+                    @endphp
+
+                    @if ($showInfoPanel || $showFilePanel)
+                        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                            @if ($showInfoPanel)
+                            <div class="rounded-xl border bg-white px-3.5 py-3 {{ $hasInfoPending ? 'border-yellow-300 border-l-4 border-l-yellow-400' : 'border-emerald-300 border-l-4 border-l-emerald-400' }}">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-[11px] font-bold uppercase tracking-wide {{ $hasInfoPending ? 'text-yellow-900' : 'text-emerald-800' }}">
+                                        {{ $hasInfoPending ? 'Information to Update' : 'Information Updated' }}
+                                    </p>
+                                    <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $hasInfoPending ? 'bg-yellow-100 text-yellow-800' : 'bg-emerald-100 text-emerald-800' }}">
+                                        @if ($hasInfoPending)
+                                            Pending
+                                        @else
+                                            <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                                            Updated
+                                        @endif
+                                    </span>
+                                </div>
+                                <ul class="mt-2 space-y-1.5">
+                                    @foreach (($hasInfoPending ? $infoRevisions : $updatedInfo) as $item)
+                                        <li class="rounded-md px-2 py-1 text-xs {{ $hasInfoPending ? 'text-yellow-950 bg-yellow-50/60' : 'text-emerald-900 bg-emerald-50/60' }}">
+                                            <a href="{{ $item['href'] ?? '#' }}" class="inline-flex w-full items-start gap-1 text-left">
+                                                <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
+                                                @if ($hasInfoPending)
+                                                    <span>— {{ $item['note'] ?? '' }}</span>
+                                                @else
+                                                    @php
+                                                        $oldVal = trim((string) ($item['old_value'] ?? ''));
+                                                        $newVal = trim((string) ($item['new_value'] ?? ''));
+                                                    @endphp
+                                                    <span>— {{ $oldVal !== '' || $newVal !== '' ? ($oldVal !== '' ? $oldVal.' → '.$newVal : $newVal) : 'Updated value submitted' }}</span>
+                                                @endif
+                                            </a>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                                @if (! $hasInfoPending && $hasInfoUpdated)
+                                    <p class="mt-2 text-xs text-emerald-800">Your updated information has been submitted and is now awaiting SDAO review.</p>
+                                @endif
+                            </div>
+                            @endif
+
+                            @if ($showFilePanel)
+                            <div class="rounded-xl border bg-white px-3.5 py-3 {{ $hasFilePending ? 'border-yellow-300 border-l-4 border-l-yellow-400' : 'border-emerald-300 border-l-4 border-l-emerald-400' }}">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-[11px] font-bold uppercase tracking-wide {{ $hasFilePending ? 'text-yellow-900' : 'text-emerald-800' }}">
+                                        {{ $hasFilePending ? 'Files to Replace' : 'Files Updated' }}
+                                    </p>
+                                    <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $hasFilePending ? 'bg-yellow-100 text-yellow-800' : 'bg-emerald-100 text-emerald-800' }}">
+                                        @if ($hasFilePending)
+                                            Pending
+                                        @else
+                                            <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                                            Updated
+                                        @endif
+                                    </span>
+                                </div>
+                                <ul class="mt-2 space-y-1.5">
+                                    @foreach (($hasFilePending ? $fileRevisions : $updatedFiles) as $item)
+                                        <li class="rounded-md px-2 py-1 text-xs {{ $hasFilePending ? 'text-yellow-950 bg-yellow-50/60' : 'text-emerald-900 bg-emerald-50/60' }}">
+                                            <a href="{{ $item['href'] ?? '#' }}" class="inline-flex w-full items-start gap-1 text-left">
+                                                <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'File' }}</span>
+                                                @if ($hasFilePending)
+                                                    <span>— {{ $item['note'] ?? '' }}</span>
+                                                @else
+                                                    <span>— {{ $item['file_name'] ?? 'New file uploaded' }}</span>
+                                                @endif
+                                            </a>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                                @if (! $hasFilePending && $hasFileUpdated)
+                                    <p class="mt-2 text-xs text-emerald-800">Your updated file has been submitted and is now awaiting SDAO review.</p>
+                                @endif
+                            </div>
+                            @endif
+                        </div>
+                    @endif
+
+                </div>
+            @endif
+        </div>
     </section>
 
     {{-- ── Two-column Grid ──────────────────────────────────────────── --}}
@@ -178,7 +256,7 @@
             {{-- ── Activity Submission (accent / main action) ──────── --}}
             <a
                 href="{{ route('organizations.activity-submission') }}{{ $saQ }}"
-                class="group flex items-start gap-4 rounded-3xl border border-[#E7C663]/60 bg-gradient-to-br from-[#FFF8DF] via-[#FFFBF0] to-[#FFFEF8] p-5 shadow-xl shadow-amber-200/50 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
+                class="group flex items-start gap-4 rounded-3xl border border-[#E7C663]/60 bg-linear-to-br from-[#FFF8DF] via-[#FFFBF0] to-[#FFFEF8] p-5 shadow-xl shadow-amber-200/50 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15"
             >
                 <div class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-[#F5C400]/25 text-[#8A6500] transition group-hover:bg-[#F5C400]/35">
                     <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">

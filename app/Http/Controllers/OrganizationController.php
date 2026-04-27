@@ -245,11 +245,13 @@ class OrganizationController extends Controller
 
         $calendarEvents = [];
         $proposalDashboard = ['empty' => true];
+        $submissionDashboard = ['empty' => true];
         $user = $request->user();
         if ($user) {
             $organization = $user->currentOrganization();
             if ($organization) {
                 $calendarEvents = $this->buildOrganizationDashboardCalendarEvents($organization);
+                $submissionDashboard = $this->buildSubmissionStatusDashboard($organization);
                 $selectedProposalId = (int) $request->integer('proposal_id');
                 [$featuredProposal, $usedDefaultOldestActive] = $this->resolveDashboardFeaturedProposal($organization, $selectedProposalId);
                 $proposalDashboard = $this->buildProposalDashboardProgress($featuredProposal);
@@ -264,7 +266,193 @@ class OrganizationController extends Controller
         return view('organizations.index', [
             'calendarEvents' => $calendarEvents,
             'proposalDashboard' => $proposalDashboard,
+            'submissionDashboard' => $submissionDashboard,
         ]);
+    }
+
+    /**
+     * @return array{
+     *   empty: bool,
+     *   title?: string,
+     *   status_label?: string,
+     *   status_badge_class?: string,
+     *   stages?: list<array{label:string,state:string}>,
+     *   status_message?: string,
+     *   info_revisions?: list<array{field:string,note:string,href:string}>,
+     *   file_revisions?: list<array{field:string,note:string,href:string}>,
+     *   info_updated_under_review?: list<array{field:string,href:string,old_value:string,new_value:string}>,
+     *   file_updated_under_review?: list<array{field:string,href:string,file_name:string}>,
+     *   actions?: list<array{label:string,href:string,variant:string}>
+     * }
+     */
+    private function buildSubmissionStatusDashboard(Organization $organization): array
+    {
+        $submission = $organization->submissions()
+            ->whereIn('type', [OrganizationSubmission::TYPE_REGISTRATION, OrganizationSubmission::TYPE_RENEWAL])
+            ->whereNotIn('status', [OrganizationSubmission::STATUS_DRAFT])
+            ->latest('submission_date')
+            ->latest('id')
+            ->first();
+        if (! $submission) {
+            return ['empty' => true];
+        }
+
+        $fieldReviews = $submission->isRenewal()
+            ? (is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [])
+            : (is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
+        $pendingUpdateRows = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->whereNull('acknowledged_at')
+            ->get(['section_key', 'field_key', 'old_value', 'new_value', 'new_file_meta']);
+        $pendingSet = [];
+        $pendingMetaByKey = [];
+        foreach ($pendingUpdateRows as $row) {
+            $compound = (string) $row->section_key.'.'.(string) $row->field_key;
+            $pendingSet[$compound] = true;
+            $pendingMetaByKey[$compound] = [
+                'old_value' => trim((string) ($row->old_value ?? '')),
+                'new_value' => trim((string) ($row->new_value ?? '')),
+                'new_file_meta' => is_array($row->new_file_meta) ? $row->new_file_meta : [],
+            ];
+        }
+
+        $infoRevisionsByKey = [];
+        $fileRevisionsByKey = [];
+        $infoUpdatedByKey = [];
+        $fileUpdatedByKey = [];
+        foreach ($fieldReviews as $sectionKey => $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            foreach ($fields as $fieldKey => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
+                if (! in_array($status, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
+                    continue;
+                }
+                $note = trim((string) ($row['note'] ?? ''));
+                if ($note === '') {
+                    continue;
+                }
+                $label = trim((string) ($row['label'] ?? ucwords(str_replace('_', ' ', (string) $fieldKey))));
+                $anchor = 'revision-field-'.$this->sanitizeAnchorSegment((string) $sectionKey).'-'.$this->sanitizeAnchorSegment((string) $fieldKey);
+                $compoundKey = (string) $sectionKey.'.'.(string) $fieldKey;
+
+                if ((string) $sectionKey === 'requirements') {
+                    $fileHref = route('organizations.submitted-documents.registrations.show', $submission).'?from=dashboard&revision_target=revision-file-'.$this->sanitizeAnchorSegment((string) $fieldKey);
+                    if (isset($pendingSet[$compoundKey])) {
+                        $meta = $pendingMetaByKey[$compoundKey] ?? ['new_file_meta' => []];
+                        $newFileMeta = is_array($meta['new_file_meta'] ?? null) ? $meta['new_file_meta'] : [];
+                        $newFileName = trim((string) ($newFileMeta['original_name'] ?? $newFileMeta['file_name'] ?? $newFileMeta['filename'] ?? ''));
+                        $fileUpdatedByKey[(string) $fieldKey] = [
+                            'field' => $label,
+                            'href' => $fileHref,
+                            'file_name' => $newFileName !== '' ? $newFileName : 'Updated file uploaded',
+                        ];
+                    } else {
+                        $fileRevisionsByKey[(string) $fieldKey] = [
+                            'field' => $label,
+                            'note' => $note,
+                            'href' => $fileHref,
+                        ];
+                    }
+                    continue;
+                }
+
+                $infoHref = route('organizations.profile', ['edit' => 1, 'from' => 'dashboard']).'#'.$anchor;
+                if (isset($pendingSet[$compoundKey])) {
+                    $meta = $pendingMetaByKey[$compoundKey] ?? ['old_value' => '', 'new_value' => ''];
+                    $infoUpdatedByKey[$compoundKey] = [
+                        'field' => $label,
+                        'href' => $infoHref,
+                        'old_value' => (string) ($meta['old_value'] ?? ''),
+                        'new_value' => (string) ($meta['new_value'] ?? ''),
+                    ];
+                } else {
+                    $infoRevisionsByKey[$compoundKey] = [
+                        'field' => $label,
+                        'note' => $note,
+                        'href' => $infoHref,
+                    ];
+                }
+            }
+        }
+
+        $hasActiveInfo = $infoRevisionsByKey !== [];
+        $hasActiveFiles = $fileRevisionsByKey !== [];
+        $hasUpdatedUnderReview = $infoUpdatedByKey !== [] || $fileUpdatedByKey !== [];
+        $statusKey = strtoupper((string) $submission->legacyStatus());
+        if ($hasActiveInfo || $hasActiveFiles) {
+            $statusKey = 'REVISION';
+        } elseif ($hasUpdatedUnderReview) {
+            // Persisted officer resubmissions exist, so this remains in SDAO review
+            // until an admin saves a new review decision.
+            $statusKey = 'RESUBMITTED';
+        }
+        $presentation = $this->submissionDashboardStatusPresentation($statusKey);
+        $routingKey = $statusKey === 'RESUBMITTED' ? 'UNDER_REVIEW' : $statusKey;
+
+        $actions = [];
+        if ($hasActiveInfo) {
+            $actions[] = [
+                'label' => 'Edit Required Information',
+                'href' => route('organizations.profile', ['edit' => 1, 'from' => 'dashboard']),
+                'variant' => 'primary',
+            ];
+        }
+        if ($hasActiveFiles) {
+            $firstFileHref = reset($fileRevisionsByKey)['href'] ?? route('organizations.submitted-documents.registrations.show', $submission).'?from=dashboard';
+            $actions[] = [
+                'label' => 'Replace Required Files',
+                'href' => $firstFileHref,
+                'variant' => 'secondary',
+            ];
+        }
+        $actions[] = [
+            'label' => 'View Submission Details',
+            'href' => route($submission->isRenewal() ? 'organizations.submitted-documents.renewals.show' : 'organizations.submitted-documents.registrations.show', $submission).'?from=dashboard',
+            'variant' => $actions === [] ? 'primary' : 'secondary',
+        ];
+
+        return [
+            'empty' => false,
+            'title' => $submission->isRenewal() ? 'Organization Renewal' : 'Organization Registration',
+            'status_label' => $presentation['label'],
+            'status_badge_class' => $presentation['badge_class'],
+            'stages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($routingKey),
+            'status_message' => $this->submissionDashboardStatusMessage($statusKey),
+            'info_revisions' => array_values($infoRevisionsByKey),
+            'file_revisions' => array_values($fileRevisionsByKey),
+            'info_updated_under_review' => array_values($infoUpdatedByKey),
+            'file_updated_under_review' => array_values($fileUpdatedByKey),
+            'actions' => $actions,
+        ];
+    }
+
+    /**
+     * @return array{label:string,badge_class:string}
+     */
+    private function submissionDashboardStatusPresentation(string $raw): array
+    {
+        return match (strtoupper(trim($raw))) {
+            'REVISION', 'REVISION_REQUIRED' => ['label' => 'For Revision', 'badge_class' => 'bg-orange-100 text-orange-800 border border-orange-200'],
+            'RESUBMITTED' => ['label' => 'Resubmitted', 'badge_class' => 'bg-blue-100 text-blue-800 border border-blue-200'],
+            'PENDING', 'UNDER_REVIEW' => ['label' => 'Pending SDAO Review', 'badge_class' => 'bg-amber-100 text-amber-800 border border-amber-200'],
+            'APPROVED' => ['label' => 'Approved', 'badge_class' => 'bg-emerald-100 text-emerald-800 border border-emerald-200'],
+            default => ['label' => 'Pending SDAO Review', 'badge_class' => 'bg-slate-100 text-slate-700 border border-slate-200'],
+        };
+    }
+
+    private function submissionDashboardStatusMessage(string $status): string
+    {
+        return match (strtoupper(trim($status))) {
+            'REVISION', 'REVISION_REQUIRED' => 'SDAO requested changes. Update the listed fields or files and resubmit for review.',
+            'RESUBMITTED' => 'SDAO is currently reviewing your updated submission.',
+            'APPROVED' => 'Your organization registration has been approved.',
+            default => 'SDAO is reviewing your submission.',
+        };
     }
 
     /**
@@ -1405,9 +1593,11 @@ class OrganizationController extends Controller
             $organization
         );
 
-        return redirect()
-            ->route('organizations.profile')
-            ->with('success', 'Organization profile updated successfully.');
+        $fromDashboard = strtolower((string) $request->query('from', '')) === 'dashboard';
+        $redirectUrl = $fromDashboard ? route('organizations.index') : route('organizations.profile');
+
+        return redirect($redirectUrl)
+            ->with('success', $fromDashboard ? 'Profile updates submitted. Returning to dashboard.' : 'Organization profile updated successfully.');
     }
 
     // ── Activity Calendar Submission ─────────────────────────

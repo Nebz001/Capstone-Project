@@ -454,14 +454,20 @@ class AdminController extends Controller
             if (! isset($updatesByField[$row->section_key])) {
                 $updatesByField[$row->section_key] = [];
             }
+            $oldFileMeta = is_array($row->old_file_meta) ? $row->old_file_meta : [];
+            $newFileMeta = is_array($row->new_file_meta) ? $row->new_file_meta : [];
+            $oldFile = $this->fileMetaViewPayload($oldFileMeta, $submission, $row, 'old');
+            $newFile = $this->fileMetaViewPayload($newFileMeta, $submission, $row, 'new');
             $updatesByField[$row->section_key][$row->field_key] = [
                 'id' => (int) $row->id,
                 'section_key' => (string) $row->section_key,
                 'field_key' => (string) $row->field_key,
-                'old_value' => $row->old_value,
-                'new_value' => $row->new_value,
-                'old_file_meta' => $row->old_file_meta,
-                'new_file_meta' => $row->new_file_meta,
+                'old_value' => $row->old_value ?? ($oldFile['name'] ?: null),
+                'new_value' => $row->new_value ?? ($newFile['name'] ?: null),
+                'old_file_meta' => $oldFileMeta,
+                'new_file_meta' => $newFileMeta,
+                'old_file' => $oldFile,
+                'new_file' => $newFile,
                 'resubmitted_at' => optional($row->resubmitted_at)->toDateTimeString(),
                 'resubmitted_by' => $row->resubmittedBy?->full_name ?? 'Unknown',
                 'acknowledged_at' => optional($row->acknowledged_at)->toDateTimeString(),
@@ -478,6 +484,75 @@ class AdminController extends Controller
             'persistedSectionReviews' => is_array($submission->registration_section_reviews) ? $submission->registration_section_reviews : [],
             'fieldUpdateDiffs' => $updatesByField,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array{name:string,view_url:?string,download_url:?string}
+     */
+    private function fileMetaViewPayload(array $meta, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $update, string $version): array
+    {
+        $storedPath = trim((string) ($meta['stored_path'] ?? ''));
+        $name = trim((string) ($meta['original_name'] ?? ''));
+        if ($name === '' && $storedPath !== '') {
+            $name = basename($storedPath);
+        }
+        if ($storedPath === '') {
+            return [
+                'name' => $name,
+                'view_url' => null,
+                'download_url' => null,
+            ];
+        }
+
+        return [
+            'name' => $name,
+            'view_url' => route('admin.registrations.field-updates.file', [
+                'submission' => $submission,
+                'fieldUpdate' => $update,
+                'version' => $version,
+            ]),
+            'download_url' => route('admin.registrations.field-updates.file', [
+                'submission' => $submission,
+                'fieldUpdate' => $update,
+                'version' => $version,
+                'download' => 1,
+            ]),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array{name:string,view_url:?string,download_url:?string}
+     */
+    public function showRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): StreamedResponse
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        abort_unless((int) $fieldUpdate->organization_submission_id === (int) $submission->id, 404);
+        abort_unless((string) $fieldUpdate->section_key === 'requirements', 404);
+
+        $meta = $version === 'old'
+            ? (is_array($fieldUpdate->old_file_meta) ? $fieldUpdate->old_file_meta : [])
+            : (is_array($fieldUpdate->new_file_meta) ? $fieldUpdate->new_file_meta : []);
+        $storedPath = trim((string) ($meta['stored_path'] ?? ''));
+        if ($storedPath === '') {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($storedPath)) {
+            abort(404);
+        }
+        $name = trim((string) ($meta['original_name'] ?? ''));
+        if ($name === '') {
+            $name = basename($storedPath);
+        }
+        if ($request->boolean('download')) {
+            return $disk->download($storedPath, $name);
+        }
+
+        return $disk->response($storedPath, $name, [], 'inline');
     }
 
     public function acknowledgeRegistrationFieldUpdate(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate): JsonResponse

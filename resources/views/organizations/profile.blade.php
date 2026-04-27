@@ -71,33 +71,49 @@
     };
     $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
     $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
+    $fromDashboard = strtolower((string) request()->query('from', '')) === 'dashboard';
+    $backHref = $fromDashboard
+        ? route('organizations.index')
+        : ($editing
+            ? route('organizations.profile', array_filter(['organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null]))
+            : route('organizations.manage').$saQ);
+    $backLabel = $fromDashboard
+        ? 'Back to Organization Dashboard'
+        : ($editing ? 'Back to Organization Profile' : 'Back to Manage Organization');
     $isProfileRevisionRequested = (bool) ($organization?->isProfileRevisionRequested());
     $reviewWorkflowStatus = strtoupper((string) ($applicationWorkflowStatus ?? ''));
-    $isPendingReviewState = ! $isProfileRevisionRequested
+    $isApprovedActiveState = $status === 'ACTIVE' && $reviewWorkflowStatus === 'APPROVED';
+    $isRevisionReviewState = ! $isApprovedActiveState
+        && (
+            in_array($reviewWorkflowStatus, ['REVISION', 'REVISION_REQUIRED'], true)
+            || $isProfileRevisionRequested
+        );
+    $isPendingReviewState = ! $isApprovedActiveState
+        && ! $isRevisionReviewState
         && (
             $status === 'PENDING'
             || in_array($reviewWorkflowStatus, ['PENDING', 'UNDER_REVIEW', 'REVIEWED'], true)
         );
-    $isActiveFinalizedState = ! $isProfileRevisionRequested && $status === 'ACTIVE';
-    $profileBlockedMessageVariant = $isActiveFinalizedState ? 'success' : ($isPendingReviewState ? 'warning' : 'info');
-    $profileBlockedMessageText = $isActiveFinalizedState
-        ? 'Your organization profile is active and finalized. Editing is locked unless SDAO requests updates.'
+    $profileBlockedMessageVariant = $isApprovedActiveState ? 'success' : ($isPendingReviewState ? 'info' : 'info');
+    $profileBlockedMessageText = $isApprovedActiveState
+        ? 'Your organization profile has been approved and is now active.'
         : ($isPendingReviewState
-            ? 'Profile editing is unavailable while your organization is under pending review, unless SDAO requests profile updates.'
+            ? 'Your updated information has been submitted and is now under SDAO review. Editing is temporarily locked while SDAO verifies your updates.'
             : $profileEditBlockedMessage);
+    $approvedGeneralRemarks = 'Organization Approved!';
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
 
     <header class="mb-6">
         <a
-            href="{{ $editing ? route('organizations.profile', array_filter(['organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null])) : route('organizations.manage').$saQ }}"
+            href="{{ $backHref }}"
             class="inline-flex items-center gap-1 text-xs font-medium text-[#003E9F] transition hover:text-[#00327F]"
         >
             <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
             </svg>
-            {{ $editing ? 'Back to Organization Profile' : 'Back to Manage Organization' }}
+            {{ $backLabel }}
         </a>
         <div class="mt-2 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
             <div class="min-w-0">
@@ -137,11 +153,31 @@
             @endif
         </div>
 
-        @if ($organization && ! $editing && ! $canEditProfile)
+        @if ($organization && ! $editing && ! $canEditProfile && ! $isApprovedActiveState)
             <x-feedback.blocked-message variant="{{ $profileBlockedMessageVariant }}" :message="$profileBlockedMessageText" class="mt-4" />
         @endif
 
-        @if ($organization && ! $editing && $isProfileRevisionRequested)
+        @if ($organization && ! $editing && $isApprovedActiveState)
+            <x-feedback.blocked-message variant="success" :icon="false" class="mt-4">
+                <div class="flex items-start gap-3">
+                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100/90" aria-hidden="true">
+                        <svg class="h-4.5 w-4.5 text-emerald-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                        </svg>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="font-semibold">Organization profile approved</p>
+                        <p class="mt-1 text-sm font-normal">Your organization profile has been approved and is now active.</p>
+                    </div>
+                </div>
+                <div class="mt-4 rounded-lg border border-emerald-300/90 bg-white px-3 py-3">
+                    <p class="text-xs font-bold uppercase tracking-wide text-emerald-900">General Remarks</p>
+                    <p class="mt-1.5 whitespace-pre-wrap text-sm font-semibold leading-relaxed text-emerald-900">{{ $approvedGeneralRemarks }}</p>
+                </div>
+            </x-feedback.blocked-message>
+        @endif
+
+        @if ($organization && ! $editing && $isRevisionReviewState)
             <x-feedback.blocked-message variant="warning" :icon="false" class="mt-4">
                 <div class="flex items-start gap-3">
                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-yellow-100/90" aria-hidden="true">
@@ -446,7 +482,7 @@
                 </x-feedback.blocked-message>
             @endif
 
-            <form method="POST" action="{{ route('organizations.profile.update') }}" class="space-y-4" data-revision-edit-mode="{{ $revisionEditMode ? '1' : '0' }}">
+            <form method="POST" action="{{ route('organizations.profile.update', array_filter(['from' => $fromDashboard ? 'dashboard' : null])) }}" class="space-y-4" data-revision-edit-mode="{{ $revisionEditMode ? '1' : '0' }}">
                 @csrf
                 @method('PUT')
                 @if (auth()->user()->isSuperAdmin() && $organization)
@@ -665,7 +701,7 @@
 
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                     <a
-                        href="{{ route('organizations.profile', array_filter(['organization_id' => auth()->user()->isSuperAdmin() && $organization ? $organization->id : null])) }}"
+                        href="{{ $backHref }}"
                         class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20"
                     >
                         Cancel
