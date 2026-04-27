@@ -158,6 +158,7 @@
                                                 type="button"
                                                 class="inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-yellow-950 transition hover:bg-yellow-100/70 focus:outline-none focus:ring-2 focus:ring-yellow-400/60"
                                                 data-revision-target-id="{{ $item['anchor_id'] ?? '' }}"
+                                                data-revision-href="{{ $item['href'] ?? '' }}"
                                             >
                                                 <span class="font-semibold underline underline-offset-2">{{ $item['field_label'] ?? 'Field' }}</span>
                                                 <span>— {{ $item['note'] ?? '' }}</span>
@@ -654,6 +655,11 @@
     const flashClass = ['ring-2', 'ring-amber-300', 'bg-amber-50/80'];
     actions.forEach((button) => {
         button.addEventListener('click', () => {
+            const href = button.getAttribute('data-revision-href') || '';
+            if (href) {
+                window.location.href = href;
+                return;
+            }
             const targetId = button.getAttribute('data-revision-target-id') || '';
             if (!targetId) return;
             const target = document.getElementById(targetId);

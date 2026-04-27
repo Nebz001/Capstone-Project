@@ -1183,6 +1183,9 @@ class OrganizationController extends Controller
                     'field_label' => $fieldLabel,
                     'note' => $note,
                     'anchor_id' => $anchorId,
+                    'href' => ((string) $sectionKey === 'requirements' && ! $submission->isRenewal())
+                        ? route('organizations.submitted-documents.registrations.show', $submission).'?revision_target=revision-file-requirements-'.(string) $fieldKey
+                        : null,
                 ];
                 $fieldNotes[(string) $sectionKey.'.'.(string) $fieldKey] = $note;
             }

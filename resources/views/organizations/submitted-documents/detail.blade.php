@@ -39,7 +39,21 @@
     />
   @endif
 
-  @if (! empty($revisionSections ?? []))
+  @if (! empty($isResubmittedPendingReview ?? false))
+    <x-feedback.blocked-message variant="info" :icon="false" class="mb-5">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100/90" aria-hidden="true">
+          <svg class="h-4.5 w-4.5 text-sky-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 0 1 1.06.852l-.708 2.836a.75.75 0 0 0 1.06.852l.041-.02M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <p class="font-semibold">Submission resubmitted successfully.</p>
+          <p class="mt-1 text-sm font-normal">Your updated file is now under review by SDAO.</p>
+        </div>
+      </div>
+    </x-feedback.blocked-message>
+  @elseif (! empty($revisionSections ?? []))
     <x-feedback.blocked-message variant="warning" :icon="false" class="mb-5">
       <div class="flex items-start gap-3">
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-yellow-100/90" aria-hidden="true">
@@ -238,10 +252,19 @@
       @if (count($fileLinks) === 0)
         <p class="text-sm text-slate-500">No file attachments are stored for this submission, or the submission did not include uploads.</p>
       @else
-        <ul class="space-y-2">
+        <form id="registration-revision-resubmit-form" method="POST" action="{{ $submitActionUrl ?? '#' }}" enctype="multipart/form-data" data-has-revision-files="{{ ! empty($canSubmitFileRevision ?? false) ? '1' : '0' }}">
+          @csrf
+          <ul class="space-y-2">
           @foreach ($fileLinks as $link)
             @php $isMissing = ! empty($link['missing'] ?? false) || empty($link['url'] ?? ''); @endphp
-            <li @if(! empty($link['anchor_id'])) id="{{ $link['anchor_id'] }}" @endif class="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 sm:px-4">
+            <li
+              @if(! empty($link['anchor_id'])) id="{{ $link['anchor_id'] }}" @endif
+              class="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 sm:px-4"
+              data-file-row
+              data-revision-key="{{ $link['key'] ?? '' }}"
+              data-file-label="{{ $link['label'] ?? '' }}"
+              data-previous-file-name="{{ $link['previous_file_name'] ?? 'No previous file' }}"
+            >
               <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0 flex items-start gap-2.5">
                   <span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg {{ $isMissing ? 'bg-slate-200 text-slate-500' : 'bg-[#003E9F]/10 text-[#003E9F]' }}">
@@ -250,9 +273,22 @@
                     </svg>
                   </span>
                   <div class="min-w-0">
-                    <p class="wrap-break-word text-sm font-semibold leading-relaxed text-slate-800">{{ $link['label'] }}</p>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="wrap-break-word text-sm font-semibold leading-relaxed text-slate-800">{{ $link['label'] }}</p>
+                      @if (! empty($link['is_changed_saved']) || ! empty($link['is_changed_recent']))
+                        <span class="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-changed-badge data-revision-key="{{ $link['key'] ?? '' }}">
+                          Updated
+                        </span>
+                      @elseif (! empty($link['is_revised']))
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-changed-badge data-revision-key="{{ $link['key'] ?? '' }}">
+                          New file selected
+                        </span>
+                      @endif
+                    </div>
                     @if (! empty($link['is_revised']) && ! empty($link['revision_note']))
-                      <p class="mt-1 text-xs text-amber-700">{{ $link['revision_note'] }}</p>
+                      <p class="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                        <span class="font-semibold">Revision notes:</span> {{ $link['revision_note'] }}
+                      </p>
                     @endif
                   </div>
                 </div>
@@ -261,14 +297,11 @@
                     <span class="inline-flex w-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 sm:w-auto sm:min-w-29">
                       No file uploaded
                     </span>
-                    @if (! empty($link['is_revised']) && ! empty($link['replace_url']))
-                      <form method="POST" action="{{ $link['replace_url'] }}" enctype="multipart/form-data" class="inline-flex w-full items-center gap-2 sm:w-auto">
-                        @csrf
-                        <input type="file" name="replacement_file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input>
-                        <button type="button" class="inline-flex w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto" data-replace-file-trigger>
+                    @if (! empty($link['can_replace']) && ! empty($link['replace_url']))
+                        <input type="file" name="replacement_files[{{ $link['key'] }}]" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input data-revision-key="{{ $link['key'] }}">
+                        <button type="button" class="inline-flex h-8 w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto sm:min-w-29" data-replace-file-trigger>
                           Replace file
                         </button>
-                      </form>
                     @endif
                   </div>
                 @else
@@ -277,25 +310,41 @@
                       href="{{ $link['url'] }}"
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="inline-flex w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F] sm:w-auto sm:min-w-29"
+                      data-view-file-link
+                      data-revision-key="{{ $link['key'] ?? '' }}"
+                      data-original-href="{{ $link['url'] }}"
+                      class="inline-flex h-8 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F] sm:w-auto sm:min-w-29"
                     >
                       View file
                     </a>
-                    @if (! empty($link['is_revised']) && ! empty($link['replace_url']))
-                      <form method="POST" action="{{ $link['replace_url'] }}" enctype="multipart/form-data" class="inline-flex w-full items-center gap-2 sm:w-auto">
-                        @csrf
-                        <input type="file" name="replacement_file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input>
-                        <button type="button" class="inline-flex w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto" data-replace-file-trigger>
+                    @if (! empty($link['can_replace']) && ! empty($link['replace_url']))
+                      <input type="file" name="replacement_files[{{ $link['key'] }}]" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input data-revision-key="{{ $link['key'] }}">
+                        <button type="button" class="inline-flex h-8 w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto sm:min-w-29" data-replace-file-trigger>
                           Replace file
                         </button>
-                      </form>
                     @endif
                   </div>
                 @endif
               </div>
+              @if ($isMissing && ! empty($link['can_replace']))
+                <div class="mt-2 hidden" data-local-view-wrap data-revision-key="{{ $link['key'] ?? '' }}">
+                  <a
+                    href="#"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-view-file-link
+                    data-revision-key="{{ $link['key'] ?? '' }}"
+                    data-original-href=""
+                    class="inline-flex h-8 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F] sm:w-auto sm:min-w-29"
+                  >
+                    View file
+                  </a>
+                </div>
+              @endif
             </li>
           @endforeach
-        </ul>
+          </ul>
+        </form>
       @endif
     </div>
   </x-ui.card>
@@ -316,11 +365,49 @@
     </div>
   @endif
 
+  @if (! empty($canSubmitFileRevision ?? false))
+    <div class="mt-5 flex justify-end">
+      <button
+        type="button"
+        id="registration-revision-submit-btn"
+        class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#003E9F]"
+        disabled
+      >
+        Submit
+      </button>
+    </div>
+  @endif
+
+  @if (! empty($canSubmitFileRevision ?? false))
+    <div id="registration-file-confirm-modal" class="fixed inset-0 z-90 hidden items-center justify-center bg-slate-950/60 px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="registration-file-confirm-title">
+      <div class="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-900/20">
+        <div class="border-b border-slate-100 px-6 py-5">
+          <h3 id="registration-file-confirm-title" class="text-xl font-bold tracking-tight text-slate-900">Confirm File Changes</h3>
+          <p class="mt-1.5 text-sm leading-relaxed text-slate-500">Review the replaced files below before submitting your revised registration.</p>
+        </div>
+        <div class="border-b border-slate-100 bg-slate-50/40 px-6 py-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-600">Changes Summary</p>
+          <div class="mt-3 max-h-[52vh] overflow-y-auto pr-1">
+            <div id="registration-file-confirm-list" class="space-y-3"></div>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 border-t border-slate-100 px-6 py-4">
+          <button type="button" id="registration-file-confirm-cancel" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-sky-500/20">
+            Cancel
+          </button>
+          <button type="button" id="registration-file-confirm-submit" class="inline-flex items-center justify-center rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-sky-800/25 transition hover:bg-sky-800 focus:outline-none focus:ring-4 focus:ring-sky-500/25">
+            Confirm Submit
+          </button>
+        </div>
+      </div>
+    </div>
+  @endif
+
 </div>
 
 @endsection
 
-@if (! empty($revisionSections ?? []))
+@if (! empty($revisionSections ?? []) || ! empty($canSubmitFileRevision ?? false))
   @section('scripts')
     <script>
       (() => {
@@ -336,6 +423,10 @@
             target.classList.remove('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
           }, 1800);
         };
+        const initialTarget = new URLSearchParams(window.location.search).get('revision_target');
+        if (initialTarget) {
+          window.setTimeout(() => scrollToTarget(initialTarget), 120);
+        }
 
         document.querySelectorAll('[data-revision-target-id]').forEach((button) => {
           button.addEventListener('click', () => {
@@ -345,21 +436,143 @@
 
         document.querySelectorAll('[data-replace-file-trigger]').forEach((trigger) => {
           trigger.addEventListener('click', () => {
-            const form = trigger.closest('form');
-            const input = form?.querySelector('[data-replace-file-input]');
+            const input = trigger.parentElement?.querySelector('[data-replace-file-input]');
             if (!(input instanceof HTMLInputElement)) return;
             input.click();
           });
         });
 
+        const selectedRevisionKeys = new Set();
+        const submitBtn = document.getElementById('registration-revision-submit-btn');
+        const submitForm = document.getElementById('registration-revision-resubmit-form');
+        const confirmModal = document.getElementById('registration-file-confirm-modal');
+        const confirmList = document.getElementById('registration-file-confirm-list');
+        const confirmCancel = document.getElementById('registration-file-confirm-cancel');
+        const confirmSubmit = document.getElementById('registration-file-confirm-submit');
+        const selectedReplacementNames = new Map();
+        let submitting = false;
+        let pendingChanges = [];
+        const escapeHtml = (value) => String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+        const closeConfirmModal = () => {
+          if (!confirmModal) return;
+          confirmModal.classList.add('hidden');
+          confirmModal.classList.remove('flex');
+        };
+        const setConfirmLoadingState = (loading) => {
+          if (!confirmSubmit || !confirmCancel || !submitBtn) return;
+          if (loading) {
+            confirmSubmit.disabled = true;
+            confirmSubmit.textContent = 'Submitting...';
+            confirmSubmit.classList.add('opacity-75', 'cursor-not-allowed');
+            confirmCancel.disabled = true;
+            confirmCancel.classList.add('opacity-60', 'cursor-not-allowed');
+            submitBtn.disabled = true;
+          } else {
+            confirmSubmit.disabled = false;
+            confirmSubmit.textContent = 'Confirm Submit';
+            confirmSubmit.classList.remove('opacity-75', 'cursor-not-allowed');
+            confirmCancel.disabled = false;
+            confirmCancel.classList.remove('opacity-60', 'cursor-not-allowed');
+            syncSubmitState();
+          }
+        };
+        const buildChangedFileSummary = () => {
+          return Array.from(selectedRevisionKeys)
+            .map((key) => {
+              const row = document.querySelector(`[data-file-row][data-revision-key="${key}"]`);
+              if (!(row instanceof HTMLElement)) return null;
+              const next = selectedReplacementNames.get(key);
+              if (!next) return null;
+              return {
+                key,
+                label: row.dataset.fileLabel || 'Requirement',
+                previous: row.dataset.previousFileName || 'No previous file',
+                next,
+              };
+            })
+            .filter((entry) => entry !== null);
+        };
+        const openConfirmModal = (changes) => {
+          if (!confirmModal || !confirmList) return;
+          const blocks = changes.map((change) => `
+            <article class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 shadow-sm">
+              <p class="text-sm font-semibold text-slate-900">${escapeHtml(change.label)}</p>
+              <div class="mt-2 space-y-1.5">
+                <p class="text-xs text-slate-600">Previous: <span class="font-medium text-slate-800">${escapeHtml(change.previous)}</span></p>
+                <p class="text-xs text-sky-700">New: <span class="font-semibold text-sky-800">${escapeHtml(change.next)}</span></p>
+              </div>
+            </article>
+          `).join('');
+          confirmList.innerHTML = blocks;
+          confirmModal.classList.remove('hidden');
+          confirmModal.classList.add('flex');
+        };
+        const syncSubmitState = () => {
+          if (!submitBtn) return;
+          submitBtn.disabled = submitting || selectedRevisionKeys.size === 0;
+        };
+
         document.querySelectorAll('[data-replace-file-input]').forEach((input) => {
           input.addEventListener('change', () => {
             const fileInput = input;
-            if (!fileInput.files || fileInput.files.length === 0) return;
-            const form = fileInput.closest('form');
-            if (!form) return;
-            form.submit();
+            const key = fileInput.getAttribute('data-revision-key') || '';
+            const file = fileInput.files && fileInput.files.length > 0 ? fileInput.files[0] : null;
+            if (key && file) {
+              selectedRevisionKeys.add(key);
+              selectedReplacementNames.set(key, file.name || 'Selected file');
+              document.querySelectorAll(`[data-changed-badge][data-revision-key="${key}"]`).forEach((badge) => {
+                badge.classList.remove('hidden');
+                badge.classList.add('inline-flex');
+                badge.textContent = 'New file selected';
+              });
+              const blobUrl = URL.createObjectURL(file);
+              document.querySelectorAll(`[data-view-file-link][data-revision-key="${key}"]`).forEach((link) => {
+                if (!(link instanceof HTMLAnchorElement)) return;
+                link.href = blobUrl;
+              });
+              document.querySelectorAll(`[data-local-view-wrap][data-revision-key="${key}"]`).forEach((wrap) => {
+                wrap.classList.remove('hidden');
+              });
+            } else if (key) {
+              selectedRevisionKeys.delete(key);
+              selectedReplacementNames.delete(key);
+            }
+            syncSubmitState();
           });
+        });
+
+        submitBtn?.addEventListener('click', () => {
+          if (!submitForm || submitting || selectedRevisionKeys.size === 0) return;
+          pendingChanges = buildChangedFileSummary();
+          if (pendingChanges.length === 0) {
+            syncSubmitState();
+            return;
+          }
+          openConfirmModal(pendingChanges);
+        });
+
+        submitForm?.addEventListener('submit', (event) => {
+          if (!submitting) {
+            event.preventDefault();
+          }
+        });
+
+        confirmCancel?.addEventListener('click', () => {
+          if (submitting) return;
+          closeConfirmModal();
+          syncSubmitState();
+        });
+
+        confirmSubmit?.addEventListener('click', () => {
+          if (!submitForm || submitting || pendingChanges.length === 0) return;
+          submitting = true;
+          setConfirmLoadingState(true);
+          submitForm.submit();
         });
       })();
     </script>

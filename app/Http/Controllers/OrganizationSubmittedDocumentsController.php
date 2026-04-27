@@ -198,9 +198,57 @@ class OrganizationSubmittedDocumentsController extends Controller
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
         $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
-        $sp = $this->submissionStatusPresentation($submission->legacyStatus());
-        $revisionSections = $this->moduleRevisionSections(is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
-        $fileLinks = $this->registrationFileLinksFromSubmission($submission, $revisionSections);
+        $pendingRequirementUpdateKeys = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->where('section_key', 'requirements')
+            ->whereNotNull('new_file_meta')
+            ->whereNull('acknowledged_at')
+            ->pluck('field_key')
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+        $pendingRequirementUpdateKeySet = array_fill_keys($pendingRequirementUpdateKeys, true);
+        $rawRevisionSections = $this->moduleRevisionSections(is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
+        $revisionSections = [];
+        foreach ($rawRevisionSections as $section) {
+            $sectionKey = (string) ($section['section_key'] ?? '');
+            $items = collect((array) ($section['items'] ?? []))
+                ->filter(function ($item) use ($sectionKey, $pendingRequirementUpdateKeySet): bool {
+                    if (! is_array($item)) {
+                        return false;
+                    }
+                    if ($sectionKey !== 'requirements') {
+                        return true;
+                    }
+                    $fieldKey = (string) ($item['field_key'] ?? '');
+
+                    return $fieldKey === '' || ! isset($pendingRequirementUpdateKeySet[$fieldKey]);
+                })
+                ->values()
+                ->all();
+            if ($items === []) {
+                continue;
+            }
+            $section['items'] = $items;
+            $revisionSections[] = $section;
+        }
+        $hasOpenRevisionItems = $revisionSections !== [];
+        $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingRequirementUpdateKeys !== [];
+        $statusForView = $isResubmittedPendingReview ? 'UNDER_REVIEW' : $submission->legacyStatus();
+        $sp = $this->submissionStatusPresentation($statusForView);
+        $savedUpdatedKeys = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->where('section_key', 'requirements')
+            ->whereNotNull('new_file_meta')
+            ->pluck('field_key')
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+        $recentlyReplacedKeys = collect((array) $request->session()->get('replaced_requirement_keys', []))
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+        $fileLinks = $this->registrationFileLinksFromSubmission($submission, $revisionSections, $savedUpdatedKeys, $recentlyReplacedKeys, $pendingRequirementUpdateKeys);
 
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $this->submittedDocumentsListUrl($request),
@@ -211,14 +259,15 @@ class OrganizationSubmittedDocumentsController extends Controller
             'metaRows' => $this->registrationMetaRowsFromSubmission($submission),
             'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 220),
             'revisionSections' => $revisionSections,
+            'isResubmittedPendingReview' => $isResubmittedPendingReview,
             'fileLinks' => $fileLinks,
             'workflowLinks' => [],
             'submitActionUrl' => route('organizations.submitted-documents.registrations.resubmit', $submission),
-            'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['is_revised'] ?? false)),
+            'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Organization registration',
-            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($submission->legacyStatus()),
-            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($submission->legacyStatus()),
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($statusForView),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($statusForView),
         ]);
     }
 
@@ -251,63 +300,12 @@ class OrganizationSubmittedDocumentsController extends Controller
         /** @var User $user */
         $user = $request->user();
         $upload = $validated['replacement_file'];
-        $fileType = Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key;
-        $oldAttachment = $submission->attachments()
-            ->where('file_type', $fileType)
-            ->latest('id')
-            ->first();
-        $oldMeta = $oldAttachment ? $this->attachmentMeta($oldAttachment) : null;
-        $storedPath = $upload->store('organization-requirements/'.$submission->organization_id.'/registration', 'public');
+        $this->applyRegistrationRequirementReplacement($submission, $user, $key, $upload);
+        $this->notifyRegistrationFileReplacementToAdmins($submission);
 
-        DB::transaction(function () use ($submission, $user, $key, $fileType, $upload, $storedPath, $oldMeta): void {
-            Attachment::query()->create([
-                'attachable_type' => OrganizationSubmission::class,
-                'attachable_id' => (int) $submission->id,
-                'uploaded_by' => (int) $user->id,
-                'file_type' => $fileType,
-                'original_name' => (string) $upload->getClientOriginalName(),
-                'stored_path' => (string) $storedPath,
-                'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
-                'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
-            ]);
-
-            OrganizationRevisionFieldUpdate::query()->updateOrCreate(
-                [
-                    'organization_submission_id' => (int) $submission->id,
-                    'section_key' => 'requirements',
-                    'field_key' => $key,
-                ],
-                [
-                    'old_file_meta' => $oldMeta,
-                    'new_file_meta' => [
-                        'original_name' => (string) $upload->getClientOriginalName(),
-                        'stored_path' => (string) $storedPath,
-                        'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
-                        'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
-                    ],
-                    'resubmitted_at' => now(),
-                    'resubmitted_by' => (int) $user->id,
-                    'acknowledged_at' => null,
-                    'acknowledged_by' => null,
-                ]
-            );
-
-            $submission->touch();
-        });
-
-        $adminUsers = User::query()
-            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
-            ->get();
-        app(OrganizationNotificationService::class)->createForUsers(
-            $adminUsers,
-            'Registration File Replaced',
-            'A revised registration requirement file was uploaded and is ready for review.',
-            'info',
-            route('admin.registrations.show', $submission),
-            $submission
-        );
-
-        return back()->with('success', 'Replacement file uploaded successfully.');
+        return back()
+            ->with('success', 'Replacement file uploaded successfully.')
+            ->with('replaced_requirement_keys', [$key]);
     }
 
     public function resubmitRegistrationRevisionFiles(Request $request, OrganizationSubmission $submission): RedirectResponse
@@ -342,7 +340,9 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
         $this->notifyRegistrationFileReplacementToAdmins($submission);
 
-        return back()->with('success', 'Updated file(s) submitted for review.');
+        return back()
+            ->with('success', 'Updated file(s) submitted for review.')
+            ->with('replaced_requirement_keys', $changedKeys);
     }
 
     public function showSubmittedRenewal(Request $request, OrganizationSubmission $submission): View
@@ -1189,7 +1189,13 @@ class OrganizationSubmittedDocumentsController extends Controller
     /**
      * @return list<array{label: string, url: ?string, missing?: bool}>
      */
-    private function registrationFileLinksFromSubmission(OrganizationSubmission $submission, array $revisionSections = []): array
+    private function registrationFileLinksFromSubmission(
+        OrganizationSubmission $submission,
+        array $revisionSections = [],
+        array $savedUpdatedKeys = [],
+        array $recentlyReplacedKeys = [],
+        array $pendingRequirementUpdateKeys = []
+    ): array
     {
         $revisionByKey = $this->revisionNoteMapByRequirementKey($revisionSections);
         return $this->submissionRequirementFileLinks(
@@ -1198,7 +1204,10 @@ class OrganizationSubmittedDocumentsController extends Controller
             self::REGISTRATION_FILE_LABELS,
             Attachment::TYPE_REGISTRATION_REQUIREMENT,
             'organizations.submitted-documents.registrations.file',
-            $revisionByKey
+            $revisionByKey,
+            $savedUpdatedKeys,
+            $recentlyReplacedKeys,
+            $pendingRequirementUpdateKeys
         );
     }
 
@@ -1235,7 +1244,10 @@ class OrganizationSubmittedDocumentsController extends Controller
         array $labelMap,
         string $fileTypePrefix,
         string $routeName,
-        array $revisionByKey = []
+        array $revisionByKey = [],
+        array $savedUpdatedKeys = [],
+        array $recentlyReplacedKeys = [],
+        array $pendingRequirementUpdateKeys = []
     ): array {
         $submittedKeys = SubmissionRequirement::query()
             ->where('submission_id', $submission->id)
@@ -1252,18 +1264,30 @@ class OrganizationSubmittedDocumentsController extends Controller
 
             $isSubmitted = in_array($key, $submittedKeys, true);
             $label = $labelMap[$key] ?? $key;
+            $isPendingReviewAfterResubmit = in_array($key, $pendingRequirementUpdateKeys, true);
+            $isRevised = isset($revisionByKey[$key]);
+            $canReplace = $isRevised && ! $isPendingReviewAfterResubmit;
 
             if ($attachment) {
+                $storedPath = (string) ($attachment->file_path ?? '');
+                $previousFileName = trim((string) ($attachment->original_name ?? ''));
+                if ($previousFileName === '' && $storedPath !== '') {
+                    $previousFileName = basename($storedPath);
+                }
                 $links[] = [
                     'label' => $label,
                     'url' => route($routeName, [$submission, $key]),
                     'key' => $key,
+                    'previous_file_name' => $previousFileName !== '' ? $previousFileName : 'No previous file',
                     'anchor_id' => $this->revisionTargetAnchorId('requirements', $key),
-                    'is_revised' => isset($revisionByKey[$key]),
-                    'revision_note' => $revisionByKey[$key] ?? null,
+                    'is_revised' => $isRevised,
+                    'revision_note' => $canReplace ? ($revisionByKey[$key] ?? null) : null,
+                    'can_replace' => $canReplace,
                     'replace_url' => $submission->type === OrganizationSubmission::TYPE_REGISTRATION
                         ? route('organizations.submitted-documents.registrations.file.replace', ['submission' => $submission, 'key' => $key])
                         : null,
+                    'is_changed_saved' => in_array($key, $savedUpdatedKeys, true),
+                    'is_changed_recent' => in_array($key, $recentlyReplacedKeys, true),
                 ];
             } elseif ($isSubmitted) {
                 $links[] = [
@@ -1271,12 +1295,16 @@ class OrganizationSubmittedDocumentsController extends Controller
                     'url' => null,
                     'missing' => true,
                     'key' => $key,
+                    'previous_file_name' => 'No previous file',
                     'anchor_id' => $this->revisionTargetAnchorId('requirements', $key),
-                    'is_revised' => isset($revisionByKey[$key]),
-                    'revision_note' => $revisionByKey[$key] ?? null,
+                    'is_revised' => $isRevised,
+                    'revision_note' => $canReplace ? ($revisionByKey[$key] ?? null) : null,
+                    'can_replace' => $canReplace,
                     'replace_url' => $submission->type === OrganizationSubmission::TYPE_REGISTRATION
                         ? route('organizations.submitted-documents.registrations.file.replace', ['submission' => $submission, 'key' => $key])
                         : null,
+                    'is_changed_saved' => in_array($key, $savedUpdatedKeys, true),
+                    'is_changed_recent' => in_array($key, $recentlyReplacedKeys, true),
                 ];
             }
         }
@@ -2174,6 +2202,72 @@ class OrganizationSubmittedDocumentsController extends Controller
             'mime_type' => (string) ($attachment->mime_type ?? ''),
             'file_size_kb' => (int) ($attachment->file_size_kb ?? 0),
         ];
+    }
+
+    private function applyRegistrationRequirementReplacement(
+        OrganizationSubmission $submission,
+        User $user,
+        string $key,
+        \Illuminate\Http\UploadedFile $upload
+    ): void {
+        $fileType = Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key;
+        $oldAttachment = $submission->attachments()
+            ->where('file_type', $fileType)
+            ->latest('id')
+            ->first();
+        $oldMeta = $oldAttachment ? $this->attachmentMeta($oldAttachment) : null;
+        $storedPath = $upload->store('organization-requirements/'.$submission->organization_id.'/registration', 'public');
+
+        DB::transaction(function () use ($submission, $user, $key, $fileType, $upload, $storedPath, $oldMeta): void {
+            Attachment::query()->create([
+                'attachable_type' => OrganizationSubmission::class,
+                'attachable_id' => (int) $submission->id,
+                'uploaded_by' => (int) $user->id,
+                'file_type' => $fileType,
+                'original_name' => (string) $upload->getClientOriginalName(),
+                'stored_path' => (string) $storedPath,
+                'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+            ]);
+
+            OrganizationRevisionFieldUpdate::query()->updateOrCreate(
+                [
+                    'organization_submission_id' => (int) $submission->id,
+                    'section_key' => 'requirements',
+                    'field_key' => $key,
+                ],
+                [
+                    'old_file_meta' => $oldMeta,
+                    'new_file_meta' => [
+                        'original_name' => (string) $upload->getClientOriginalName(),
+                        'stored_path' => (string) $storedPath,
+                        'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                        'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+                    ],
+                    'resubmitted_at' => now(),
+                    'resubmitted_by' => (int) $user->id,
+                    'acknowledged_at' => null,
+                    'acknowledged_by' => null,
+                ]
+            );
+
+            $submission->touch();
+        });
+    }
+
+    private function notifyRegistrationFileReplacementToAdmins(OrganizationSubmission $submission): void
+    {
+        $adminUsers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $adminUsers,
+            'Registration File Replaced',
+            'A revised registration requirement file was uploaded and is ready for review.',
+            'info',
+            route('admin.registrations.show', $submission),
+            $submission
+        );
     }
 
     /**
