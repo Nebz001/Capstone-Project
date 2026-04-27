@@ -173,9 +173,8 @@ class AdminController extends Controller
             ->paginate(10);
         $submissionIds = $records->getCollection()->pluck('id')->all();
         $updateAggregates = OrganizationRevisionFieldUpdate::query()
-            ->selectRaw('organization_submission_id, COUNT(*) as pending_updates_count, MAX(resubmitted_at) as last_resubmitted_at')
+            ->selectRaw('organization_submission_id, SUM(CASE WHEN acknowledged_at IS NULL THEN 1 ELSE 0 END) as pending_updates_count, MAX(resubmitted_at) as last_resubmitted_at')
             ->whereIn('organization_submission_id', $submissionIds)
-            ->whereNull('acknowledged_at')
             ->groupBy('organization_submission_id')
             ->get()
             ->keyBy('organization_submission_id');
@@ -191,12 +190,21 @@ class AdminController extends Controller
                 $isUpdated = $legacyStatus === 'REVISION' && $pendingUpdatesCount > 0;
                 $status = $isUpdated ? 'UPDATED' : $legacyStatus;
                 $statusLabel = $isUpdated ? 'UPDATED' : str_replace('_', ' ', $legacyStatus);
+                $lastResubmittedAt = $update && $update->last_resubmitted_at
+                    ? \Illuminate\Support\Carbon::parse((string) $update->last_resubmitted_at)
+                    : null;
+                $latestAdminReviewedAt = $this->latestRegistrationReviewTimestamp(
+                    is_array($record->registration_section_reviews) ? $record->registration_section_reviews : []
+                );
+                $lastUpdatedAt = $lastResubmittedAt
+                    ?: $latestAdminReviewedAt
+                    ?: $record->updated_at;
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
-                    'last_updated' => $update && $update->last_resubmitted_at
-                        ? optional(\Illuminate\Support\Carbon::parse((string) $update->last_resubmitted_at))->format('M d, Y g:i A')
+                    'last_updated' => $lastUpdatedAt
+                        ? $lastUpdatedAt->format('M d, Y, g:i A')
                         : '—',
                     'status' => $status,
                     'status_label' => $statusLabel,
@@ -207,6 +215,33 @@ class AdminController extends Controller
                 ];
             }),
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $sectionReviews
+     */
+    private function latestRegistrationReviewTimestamp(array $sectionReviews): ?\Illuminate\Support\Carbon
+    {
+        $latest = null;
+        foreach ($sectionReviews as $section) {
+            if (! is_array($section)) {
+                continue;
+            }
+            $reviewedAt = trim((string) ($section['reviewed_at'] ?? ''));
+            if ($reviewedAt === '') {
+                continue;
+            }
+            try {
+                $ts = \Illuminate\Support\Carbon::parse($reviewedAt);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($latest === null || $ts->gt($latest)) {
+                $latest = $ts;
+            }
+        }
+
+        return $latest;
     }
 
     public function renewals(Request $request): View
