@@ -973,6 +973,8 @@ class OrganizationController extends Controller
         $applicationWorkflowStatus = $this->workflowStatusFromApplication($activeApplication);
 
         $revisionRegistration = null;
+        $profileRevisionSummary = ['groups' => [], 'field_notes' => [], 'general_remarks' => null];
+        $revisionEditableFields = [];
         if ($organization && $organization->isProfileRevisionRequested()) {
             $revisionRegistration = $organization->submissions()
                 ->registrations()
@@ -980,17 +982,34 @@ class OrganizationController extends Controller
                 ->latest('updated_at')
                 ->latest('id')
                 ->first();
+            $latestRevisionSubmission = $organization->submissions()
+                ->where('status', OrganizationSubmission::STATUS_REVISION)
+                ->latest('updated_at')
+                ->latest('id')
+                ->first();
+            $profileRevisionSummary = $this->buildProfileRevisionSummary($latestRevisionSubmission);
+            $revisionEditableFields = $this->profileRevisionEditableFieldsFromNotes(
+                is_array($profileRevisionSummary['field_notes'] ?? null) ? $profileRevisionSummary['field_notes'] : []
+            );
         }
+        $editingRequested = (bool) $request->query('edit');
+        $editingAllowed = $editingRequested && $canEditProfile && $organization;
+        $revisionEditMode = $editingAllowed
+            && (bool) ($organization?->isProfileRevisionRequested() ?? false)
+            && count($revisionEditableFields) > 0;
 
         return view('organizations.profile', [
             'organization' => $organization,
-            'editing' => (bool) ($request->query('edit') && $canEditProfile && $organization),
+            'editing' => (bool) $editingAllowed,
+            'revisionEditMode' => $revisionEditMode,
+            'revisionEditableFields' => $revisionEditableFields,
             'canEditProfile' => $organization ? $canEditProfile : false,
             'profileEditBlockedMessage' => $organization ? $profileEditBlockedMessage : '',
             'activeApplication' => $activeApplication,
             'applicationTypeLabel' => $applicationTypeLabel,
             'applicationWorkflowStatus' => $applicationWorkflowStatus,
             'revisionRegistration' => $revisionRegistration,
+            'profileRevisionSummary' => $profileRevisionSummary,
         ]);
     }
 
@@ -1047,6 +1066,164 @@ class OrganizationController extends Controller
         return $application->legacyStatus();
     }
 
+    /**
+     * @param  array<string, string>  $fieldNotes
+     * @return array<int, string>
+     */
+    private function profileRevisionEditableFieldsFromNotes(array $fieldNotes): array
+    {
+        $map = [
+            'application.organization' => 'organization_name',
+            'contact.organization_name' => 'organization_name',
+            'organizational.organization_type' => 'organization_type',
+            'organizational.school' => 'college_department',
+            'organizational.date_organized' => 'founded_date',
+            'organizational.purpose' => 'purpose',
+        ];
+        $editable = [];
+        foreach ($fieldNotes as $fieldPath => $note) {
+            if (trim((string) $note) === '') {
+                continue;
+            }
+            if (isset($map[$fieldPath])) {
+                $editable[] = $map[$fieldPath];
+            }
+        }
+
+        return array_values(array_unique($editable));
+    }
+
+    /**
+     * @return array{
+     *   groups: array<int, array{section_key: string, section_title: string, items: array<int, array{field_key: string, field_label: string, note: string, anchor_id: string}>}>,
+     *   field_notes: array<string, string>,
+     *   general_remarks: string|null
+     * }
+     */
+    private function buildProfileRevisionSummary(?OrganizationSubmission $submission): array
+    {
+        if (! $submission) {
+            return ['groups' => [], 'field_notes' => [], 'general_remarks' => null];
+        }
+
+        $fieldReviews = $submission->isRenewal()
+            ? (is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [])
+            : (is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
+        $sectionTitles = $submission->isRenewal()
+            ? [
+                'overview' => 'Application Information',
+                'contact' => 'Account and Contact Information',
+                'requirements' => 'Requirements Attached',
+            ]
+            : [
+                'application' => 'Application Information',
+                'contact' => 'Account and Contact Information',
+                'organizational' => 'Organization Information',
+                'requirements' => 'Requirements Attached',
+            ];
+
+        $groups = [];
+        $fieldNotes = [];
+        foreach ($fieldReviews as $sectionKey => $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            $items = [];
+            foreach ($fields as $fieldKey => $row) {
+                if ((string) $sectionKey === 'contact' && (string) $fieldKey === 'organization_name') {
+                    // Legacy duplicate field no longer shown in admin UI.
+                    continue;
+                }
+                if (! is_array($row)) {
+                    continue;
+                }
+                $status = (string) ($row['status'] ?? 'pending');
+                if (! in_array($status, ['flagged', 'revision', 'needs_revision'], true)) {
+                    continue;
+                }
+                $note = trim((string) ($row['note'] ?? ''));
+                if ($note === '') {
+                    continue;
+                }
+                $fieldLabel = trim((string) ($row['label'] ?? ''));
+                if ($fieldLabel === '') {
+                    $fieldLabel = ucwords(str_replace('_', ' ', (string) $fieldKey));
+                }
+                $anchorId = 'revision-field-'.$this->sanitizeAnchorSegment((string) $sectionKey).'-'.$this->sanitizeAnchorSegment((string) $fieldKey);
+                $items[] = [
+                    'field_key' => (string) $fieldKey,
+                    'field_label' => $fieldLabel,
+                    'note' => $note,
+                    'anchor_id' => $anchorId,
+                ];
+                $fieldNotes[(string) $sectionKey.'.'.(string) $fieldKey] = $note;
+            }
+            if ($items !== []) {
+                $groups[] = [
+                    'section_key' => (string) $sectionKey,
+                    'section_title' => $sectionTitles[(string) $sectionKey] ?? ucwords(str_replace('_', ' ', (string) $sectionKey)),
+                    'items' => $items,
+                ];
+            }
+        }
+
+        return [
+            'groups' => $groups,
+            'field_notes' => $fieldNotes,
+            'general_remarks' => filled($submission->additional_remarks) ? trim((string) $submission->additional_remarks) : null,
+        ];
+    }
+
+    private function sanitizeAnchorSegment(string $value): string
+    {
+        $value = strtolower(trim($value));
+        $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?: 'field';
+
+        return trim($value, '-') ?: 'field';
+    }
+
+    private function normalizeRevisionComparableValue(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        $string = preg_replace('/\s+/', ' ', trim((string) $value)) ?? '';
+
+        return mb_strtolower($string);
+    }
+
+    private function profileCurrentFieldValue(Organization $organization, string $field): mixed
+    {
+        return match ($field) {
+            'organization_name' => (string) ($organization->organization_name ?? ''),
+            'organization_type' => (string) ($organization->organization_type ?? ''),
+            'college_department' => (string) ($organization->college_department ?? ''),
+            'purpose' => (string) ($organization->purpose ?? ''),
+            'founded_date' => $organization->founded_date?->format('Y-m-d') ?? '',
+            default => '',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  array<int, string>  $fields
+     */
+    private function hasMeaningfulProfileChanges(Organization $organization, array $validated, array $fields): bool
+    {
+        foreach ($fields as $field) {
+            if (! array_key_exists($field, $validated)) {
+                continue;
+            }
+            $before = $this->normalizeRevisionComparableValue($this->profileCurrentFieldValue($organization, $field));
+            $after = $this->normalizeRevisionComparableValue($validated[$field]);
+            if ($before !== $after) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function updateProfile(Request $request)
     {
         /** @var User $user */
@@ -1068,13 +1245,44 @@ class OrganizationController extends Controller
                 ->with('error', $organization->profileEditBlockedMessage());
         }
 
-        $validated = $request->validate([
+        $defaultRules = [
             'organization_name' => ['required', 'string', 'max:150'],
             'organization_type' => ['required', 'string', 'max:50'],
             'college_department' => ['required', 'string', 'max:100'],
             'purpose' => ['required', 'string'],
             'founded_date' => ['nullable', 'date'],
-        ]);
+        ];
+        $validated = [];
+        if ($organization->isProfileRevisionRequested()) {
+            $latestRevisionSubmission = $organization->submissions()
+                ->where('status', OrganizationSubmission::STATUS_REVISION)
+                ->latest('updated_at')
+                ->latest('id')
+                ->first();
+            $revisionSummary = $this->buildProfileRevisionSummary($latestRevisionSubmission);
+            $editableFields = $this->profileRevisionEditableFieldsFromNotes(
+                is_array($revisionSummary['field_notes'] ?? null) ? $revisionSummary['field_notes'] : []
+            );
+            if ($editableFields !== []) {
+                $revisionRules = [];
+                foreach ($editableFields as $field) {
+                    if (isset($defaultRules[$field])) {
+                        $revisionRules[$field] = $defaultRules[$field];
+                    }
+                }
+                $validated = $revisionRules !== [] ? $request->validate($revisionRules) : [];
+                $editableComparedFields = array_keys($revisionRules);
+                if ($editableComparedFields !== [] && ! $this->hasMeaningfulProfileChanges($organization, $validated, $editableComparedFields)) {
+                    return back()
+                        ->withErrors(['revision_changes' => 'No changes were detected. Please update at least one requested field before saving.'])
+                        ->withInput();
+                }
+            } else {
+                $validated = $request->validate($defaultRules);
+            }
+        } else {
+            $validated = $request->validate($defaultRules);
+        }
 
         $organization->update($validated);
 

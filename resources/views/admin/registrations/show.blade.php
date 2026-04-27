@@ -67,7 +67,7 @@
   };
   $sectionFieldKeys = [
     'application' => ['academic_year', 'submission_date', 'submitted_by', 'organization'],
-    'contact' => ['organization_name', 'contact_person', 'contact_no', 'contact_email'],
+    'contact' => ['contact_person', 'contact_no', 'contact_email'],
     'organizational' => ['date_organized', 'organization_type', 'school', 'purpose'],
     'requirements' => $requirementKeys,
   ];
@@ -224,13 +224,6 @@
     </div>
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-      <div class="{{ $readonlyItemClass }} md:col-span-2">
-        <dt class="{{ $readonlyLabelClass }}">Organization Name</dt>
-        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-          <dd class="text-sm font-semibold text-slate-900">{{ $org?->organization_name ?? 'N/A' }}</dd>
-          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'contact', 'fieldKey' => 'organization_name', 'fieldLabel' => 'Organization Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
-        </div>
-      </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Contact Person</dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">

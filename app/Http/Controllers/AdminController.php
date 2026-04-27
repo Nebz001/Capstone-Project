@@ -692,7 +692,6 @@ class AdminController extends Controller
                 'organization' => 'Organization',
             ],
             'contact' => [
-                'organization_name' => 'Organization Name',
                 'contact_person' => 'Contact Person',
                 'contact_no' => 'Contact Number',
                 'contact_email' => 'Email Address',
