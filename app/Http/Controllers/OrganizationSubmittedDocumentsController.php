@@ -212,7 +212,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 220),
             'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
-            'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.register')),
+            'workflowLinks' => [],
+            'submitActionUrl' => route('organizations.submitted-documents.registrations.resubmit', $submission),
+            'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['is_revised'] ?? false)),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Organization registration',
             'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($submission->legacyStatus()),
@@ -306,6 +308,41 @@ class OrganizationSubmittedDocumentsController extends Controller
         );
 
         return back()->with('success', 'Replacement file uploaded successfully.');
+    }
+
+    public function resubmitRegistrationRevisionFiles(Request $request, OrganizationSubmission $submission): RedirectResponse
+    {
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
+
+        $fieldReviews = is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [];
+        $revisionKeys = collect(self::REGISTRATION_FILE_KEYS)
+            ->filter(fn (string $key): bool => (string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending') === 'flagged')
+            ->values()
+            ->all();
+        if ($revisionKeys === []) {
+            return back()->with('error', 'No revised files are pending for replacement.');
+        }
+
+        $validated = $request->validate([
+            'replacement_files' => ['required', 'array'],
+        ]);
+        $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
+        $changedKeys = array_values(array_filter($revisionKeys, fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile));
+        if ($changedKeys === []) {
+            return back()->with('error', 'Replace at least one revised file before submitting.');
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        foreach ($changedKeys as $key) {
+            /** @var \Illuminate\Http\UploadedFile $upload */
+            $upload = $incoming[$key];
+            $this->applyRegistrationRequirementReplacement($submission, $user, $key, $upload);
+        }
+        $this->notifyRegistrationFileReplacementToAdmins($submission);
+
+        return back()->with('success', 'Updated file(s) submitted for review.');
     }
 
     public function showSubmittedRenewal(Request $request, OrganizationSubmission $submission): View

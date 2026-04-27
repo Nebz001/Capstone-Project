@@ -7,6 +7,7 @@ use App\Http\Controllers\ApproverDashboardController;
 use App\Http\Controllers\AnnouncementDismissController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\OrganizationNotificationController;
 use App\Http\Controllers\OrganizationSubmittedDocumentsController;
 use App\Models\Organization;
 use App\Models\OrganizationSubmission;
@@ -68,6 +69,11 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'off
     Route::controller(OrganizationSubmittedDocumentsController::class)->group(function () {
         Route::get('/submitted-documents', 'index')->name('submitted-documents');
         Route::get('/submitted-documents/registrations/{submission}', 'showSubmittedRegistration')->name('submitted-documents.registrations.show');
+        Route::post('/submitted-documents/registrations/{submission}/files/{key}/replace', 'replaceSubmittedRegistrationRequirementFile')
+            ->name('submitted-documents.registrations.file.replace')
+            ->where('key', '[a-z0-9_]+');
+        Route::post('/submitted-documents/registrations/{submission}/resubmit', 'resubmitRegistrationRevisionFiles')
+            ->name('submitted-documents.registrations.resubmit');
         Route::get('/submitted-documents/renewals/{submission}', 'showSubmittedRenewal')->name('submitted-documents.renewals.show');
         Route::get('/submitted-documents/activity-calendars/{calendar}', 'showSubmittedActivityCalendar')->name('submitted-documents.calendars.show');
         Route::get('/submitted-documents/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('submitted-documents.proposals.show');
@@ -108,6 +114,13 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'off
         Route::get('/submit-report', 'showSubmitReportHub')->name('submit-report');
         Route::get('/after-activity-report', 'showAfterActivityReportForm')->name('after-activity-report');
         Route::post('/after-activity-report', 'storeAfterActivityReport')->name('after-activity-report.store');
+    });
+
+    Route::controller(OrganizationNotificationController::class)->group(function () {
+        Route::get('/notifications', 'index')->name('notifications.index');
+        Route::get('/notifications/{notification}/open', 'open')->name('notifications.open');
+        Route::post('/notifications/{notification}/mark-read', 'markRead')->name('notifications.mark-read');
+        Route::post('/notifications/mark-all-read', 'markAllRead')->name('notifications.mark-all-read');
     });
 });
 

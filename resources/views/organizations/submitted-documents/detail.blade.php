@@ -39,35 +39,54 @@
     />
   @endif
 
-  @if ($remarkHighlight)
-    <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-      <p class="text-xs font-semibold uppercase tracking-wide text-amber-800">Remarks / notes preview</p>
-      <p class="mt-1 text-amber-950">{{ $remarkHighlight }}</p>
-    </div>
-  @endif
-
   @if (! empty($revisionSections ?? []))
-    <x-ui.card padding="p-0" class="mb-5">
-      <x-ui.card-section-header
-        title="Revision notes"
-        subtitle="Only fields marked for revision are shown below."
-        content-padding="px-6"
-      />
-      <div class="border-t border-slate-100 px-6 py-4.5">
-        <div class="space-y-3.5">
-          @foreach ($revisionSections as $section)
-            <section class="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-              <h3 class="text-sm font-semibold text-amber-900">{{ $section['title'] }}</h3>
-              <ul class="mt-2 space-y-1.5">
-                @foreach (($section['items'] ?? []) as $item)
-                  <li class="text-sm text-amber-950"><span class="font-semibold">{{ $item['field'] }}:</span> {{ $item['note'] }}</li>
-                @endforeach
-              </ul>
-            </section>
-          @endforeach
+    <x-feedback.blocked-message variant="warning" :icon="false" class="mb-5">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-yellow-100/90" aria-hidden="true">
+          <svg class="h-4.5 w-4.5 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <p class="font-semibold">Profile / Submission Information — For revision</p>
+          <p class="mt-1 text-sm font-normal">SDAO has requested updates to your registration submission. Update the sections noted below and resubmit for review.</p>
         </div>
       </div>
-    </x-ui.card>
+      <div class="mt-4 space-y-3">
+        @foreach ($revisionSections as $section)
+          <div class="rounded-lg border border-yellow-200/90 bg-white/60 px-3 py-3">
+            <p class="text-xs font-bold uppercase tracking-wide text-yellow-950">{{ strtoupper((string) ($section['title'] ?? 'Section')) }} ({{ count($section['items'] ?? []) }})</p>
+            <ul class="mt-2 space-y-1.5">
+              @foreach (($section['items'] ?? []) as $item)
+                <li>
+                  @if (! empty($item['anchor_id']))
+                    <button
+                      type="button"
+                      class="inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-yellow-950 transition hover:bg-yellow-100/70 focus:outline-none focus:ring-2 focus:ring-yellow-400/60"
+                      data-revision-target-id="{{ $item['anchor_id'] }}"
+                    >
+                      <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
+                      <span>— {{ $item['note'] ?? '' }}</span>
+                    </button>
+                  @else
+                    <p class="inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-xs text-yellow-950">
+                      <span class="font-semibold">{{ $item['field'] ?? 'Field' }}</span>
+                      <span>— {{ $item['note'] ?? '' }}</span>
+                    </p>
+                  @endif
+                </li>
+              @endforeach
+            </ul>
+          </div>
+        @endforeach
+        @if ($remarkHighlight)
+          <div class="rounded-lg border border-yellow-200/90 bg-white/60 px-3 py-3">
+            <p class="text-xs font-bold uppercase tracking-wide text-yellow-950">GENERAL REMARKS</p>
+            <p class="mt-1.5 whitespace-pre-wrap text-sm font-normal leading-relaxed text-yellow-950/90">{{ $remarkHighlight }}</p>
+          </div>
+        @endif
+      </div>
+    </x-feedback.blocked-message>
   @endif
 
   <x-ui.card padding="p-0" class="mb-5">
@@ -222,7 +241,7 @@
         <ul class="space-y-2">
           @foreach ($fileLinks as $link)
             @php $isMissing = ! empty($link['missing'] ?? false) || empty($link['url'] ?? ''); @endphp
-            <li class="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 sm:px-4">
+            <li @if(! empty($link['anchor_id'])) id="{{ $link['anchor_id'] }}" @endif class="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 sm:px-4">
               <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0 flex items-start gap-2.5">
                   <span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg {{ $isMissing ? 'bg-slate-200 text-slate-500' : 'bg-[#003E9F]/10 text-[#003E9F]' }}">
@@ -230,21 +249,48 @@
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 0H5.625C5.004 2.25 4.5 2.754 4.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
                     </svg>
                   </span>
-                  <p class="wrap-break-word text-sm font-semibold leading-relaxed text-slate-800">{{ $link['label'] }}</p>
+                  <div class="min-w-0">
+                    <p class="wrap-break-word text-sm font-semibold leading-relaxed text-slate-800">{{ $link['label'] }}</p>
+                    @if (! empty($link['is_revised']) && ! empty($link['revision_note']))
+                      <p class="mt-1 text-xs text-amber-700">{{ $link['revision_note'] }}</p>
+                    @endif
+                  </div>
                 </div>
                 @if ($isMissing)
-                  <span class="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 sm:w-auto sm:min-w-29">
-                    No file uploaded
-                  </span>
+                  <div class="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
+                    <span class="inline-flex w-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 sm:w-auto sm:min-w-29">
+                      No file uploaded
+                    </span>
+                    @if (! empty($link['is_revised']) && ! empty($link['replace_url']))
+                      <form method="POST" action="{{ $link['replace_url'] }}" enctype="multipart/form-data" class="inline-flex w-full items-center gap-2 sm:w-auto">
+                        @csrf
+                        <input type="file" name="replacement_file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input>
+                        <button type="button" class="inline-flex w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto" data-replace-file-trigger>
+                          Replace file
+                        </button>
+                      </form>
+                    @endif
+                  </div>
                 @else
-                  <a
-                    href="{{ $link['url'] }}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F] sm:w-auto sm:min-w-29"
-                  >
-                    View file
-                  </a>
+                  <div class="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
+                    <a
+                      href="{{ $link['url'] }}"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F] sm:w-auto sm:min-w-29"
+                    >
+                      View file
+                    </a>
+                    @if (! empty($link['is_revised']) && ! empty($link['replace_url']))
+                      <form method="POST" action="{{ $link['replace_url'] }}" enctype="multipart/form-data" class="inline-flex w-full items-center gap-2 sm:w-auto">
+                        @csrf
+                        <input type="file" name="replacement_file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input>
+                        <button type="button" class="inline-flex w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto" data-replace-file-trigger>
+                          Replace file
+                        </button>
+                      </form>
+                    @endif
+                  </div>
                 @endif
               </div>
             </li>
@@ -273,3 +319,49 @@
 </div>
 
 @endsection
+
+@if (! empty($revisionSections ?? []))
+  @section('scripts')
+    <script>
+      (() => {
+        let highlightTimer = null;
+        const scrollToTarget = (targetId) => {
+          if (!targetId) return;
+          const target = document.getElementById(targetId);
+          if (!target) return;
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
+          if (highlightTimer) window.clearTimeout(highlightTimer);
+          highlightTimer = window.setTimeout(() => {
+            target.classList.remove('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
+          }, 1800);
+        };
+
+        document.querySelectorAll('[data-revision-target-id]').forEach((button) => {
+          button.addEventListener('click', () => {
+            scrollToTarget(button.dataset.revisionTargetId || '');
+          });
+        });
+
+        document.querySelectorAll('[data-replace-file-trigger]').forEach((trigger) => {
+          trigger.addEventListener('click', () => {
+            const form = trigger.closest('form');
+            const input = form?.querySelector('[data-replace-file-input]');
+            if (!(input instanceof HTMLInputElement)) return;
+            input.click();
+          });
+        });
+
+        document.querySelectorAll('[data-replace-file-input]').forEach((input) => {
+          input.addEventListener('change', () => {
+            const fileInput = input;
+            if (!fileInput.files || fileInput.files.length === 0) return;
+            const form = fileInput.closest('form');
+            if (!form) return;
+            form.submit();
+          });
+        });
+      })();
+    </script>
+  @endsection
+@endif
