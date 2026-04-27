@@ -476,8 +476,17 @@
 
     let saveDraftTimer = null;
     let savingDraft = false;
+    let draftRequestSeq = 0;
+    let latestAppliedDraftSeq = 0;
+    let activeDraftController = null;
     async function persistDraftNow() {
-      if (!reviewDraftUrl || savingDraft) return;
+      if (!reviewDraftUrl) return;
+      if (savingDraft && activeDraftController) {
+        activeDraftController.abort();
+      }
+      const requestSeq = ++draftRequestSeq;
+      const controller = new AbortController();
+      activeDraftController = controller;
       savingDraft = true;
       try {
         const response = await fetch(reviewDraftUrl, {
@@ -490,53 +499,18 @@
           body: JSON.stringify({
             field_review: buildFieldReviewPayload(),
           }),
+          signal: controller.signal,
         });
         if (!response.ok) return;
-        const data = await response.json();
-        const sectionReviews = data?.section_reviews && typeof data.section_reviews === 'object'
-          ? data.section_reviews
-          : null;
-        const fieldReviews = data?.field_reviews && typeof data.field_reviews === 'object'
-          ? data.field_reviews
-          : null;
-        if (fieldReviews) {
-          form.querySelectorAll('[data-field-review]').forEach((control) => {
-            const sectionKey = control.dataset.sectionKey || '';
-            const fieldKey = control.dataset.fieldKey || '';
-            const row = fieldReviews?.[sectionKey]?.[fieldKey];
-            if (!row) return;
-            const statusInput = control.querySelector('.field-review-status');
-            if (statusInput) {
-              statusInput.value = normalizeFieldStatus(row.status || 'pending');
-            }
-            const noteInput = control.dataset.noteInputId
-              ? document.getElementById(control.dataset.noteInputId)
-              : control.querySelector('.field-review-note-input');
-            if (noteInput && typeof row.note === 'string') {
-              noteInput.value = row.note;
-            }
-            syncFieldControl(control);
-          });
+        if (requestSeq > latestAppliedDraftSeq) {
+          latestAppliedDraftSeq = requestSeq;
         }
-        if (sectionReviews) {
-          allSectionRoots().forEach((root) => {
-            const key = root.dataset.sectionKey || '';
-            const stateInput = root.querySelector('.section-review-state');
-            const submittedInput = root.querySelector('.section-review-submitted');
-            if (stateInput) {
-              stateInput.value = String(sectionReviews?.[key]?.status || 'pending');
-            }
-            if (submittedInput) {
-              submittedInput.value = sectionReviews?.[key]?.submitted ? '1' : '0';
-            }
-          });
-        }
-        refreshSummary();
-        refreshRevisionSummary();
-        updateSaveReviewAvailability();
       } catch (e) {
         // No-op. UI still keeps local draft state.
       } finally {
+        if (activeDraftController === controller) {
+          activeDraftController = null;
+        }
         savingDraft = false;
       }
     }
@@ -633,7 +607,6 @@
       if (noteWrap) noteWrap.classList.toggle('hidden', status !== 'flagged');
       const hasNote = (noteInput?.value || '').trim() !== '';
       if (noteError) noteError.classList.toggle('hidden', status !== 'flagged' || hasNote);
-      if (status !== 'flagged' && noteInput) noteInput.value = '';
     }
 
     function evaluateReviewReadiness() {

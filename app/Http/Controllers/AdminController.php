@@ -600,6 +600,11 @@ class AdminController extends Controller
         $admin = $request->user();
         $fieldReviewInput = is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [];
         $sectionSchema = $this->registrationReviewFieldSchema();
+        $fieldReviewInput = $this->mergeFieldReviewInputWithStored(
+            $fieldReviewInput,
+            is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [],
+            $sectionSchema
+        );
 
         $normalizedFieldReviews = [];
         $normalizedSectionReviews = [];
@@ -1291,8 +1296,14 @@ class AdminController extends Controller
         $validated = $request->validate(['field_review' => ['nullable', 'array']]);
         /** @var User $admin */
         $admin = $request->user();
-        [$fieldReviews, $sectionReviews] = $this->normalizeModuleFieldReviews(
+        $storedFieldReviews = $record->getAttribute($fieldColumn);
+        $mergedFieldReviewInput = $this->mergeFieldReviewInputWithStored(
             is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [],
+            is_array($storedFieldReviews) ? $storedFieldReviews : [],
+            $schema
+        );
+        [$fieldReviews, $sectionReviews] = $this->normalizeModuleFieldReviews(
+            $mergedFieldReviewInput,
             $schema,
             $admin
         );
@@ -1394,6 +1405,39 @@ class AdminController extends Controller
             ];
         }
         return [$normalizedFieldReviews, $normalizedSectionReviews, $hasPending, $hasMissingNotes];
+    }
+
+    /**
+     * Merge draft payload with persisted field reviews so partial draft saves
+     * never reset untouched fields back to pending.
+     *
+     * @param  array<string, mixed>  $incoming
+     * @param  array<string, mixed>  $stored
+     * @param  array<string, array<string, string>>  $schema
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    private function mergeFieldReviewInputWithStored(array $incoming, array $stored, array $schema): array
+    {
+        $merged = [];
+        foreach ($schema as $sectionKey => $fields) {
+            $incomingSection = is_array($incoming[$sectionKey] ?? null) ? $incoming[$sectionKey] : [];
+            $storedSection = is_array($stored[$sectionKey] ?? null) ? $stored[$sectionKey] : [];
+            $merged[$sectionKey] = [];
+            foreach ($fields as $fieldKey => $_fieldLabel) {
+                $incomingRow = is_array($incomingSection[$fieldKey] ?? null) ? $incomingSection[$fieldKey] : null;
+                $storedRow = is_array($storedSection[$fieldKey] ?? null) ? $storedSection[$fieldKey] : [];
+                if ($incomingRow !== null) {
+                    $merged[$sectionKey][$fieldKey] = $incomingRow;
+                } else {
+                    $merged[$sectionKey][$fieldKey] = [
+                        'status' => $storedRow['status'] ?? 'pending',
+                        'note' => $storedRow['note'] ?? '',
+                    ];
+                }
+            }
+        }
+
+        return $merged;
     }
 
     private function composeGenericFlaggedNotes(array $fieldReviews): ?string

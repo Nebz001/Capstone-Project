@@ -189,7 +189,6 @@
     if (noteWrap) noteWrap.classList.toggle('hidden', status !== 'flagged');
     const hasNote = (noteInput?.value || '').trim() !== '';
     if (noteError) noteError.classList.toggle('hidden', status !== 'flagged' || hasNote);
-    if (status !== 'flagged' && noteInput) noteInput.value = '';
   }
 
   function computeSection(sectionKey) {
@@ -366,17 +365,38 @@
   }
 
   let draftTimer = null;
+  let draftRequestSeq = 0;
+  let latestAppliedDraftSeq = 0;
+  let activeDraftController = null;
+  let isPersistingDraft = false;
   function scheduleDraftPersist() {
     if (!reviewDraftUrl) return;
     if (draftTimer) window.clearTimeout(draftTimer);
     draftTimer = window.setTimeout(async () => {
+      if (isPersistingDraft && activeDraftController) {
+        activeDraftController.abort();
+      }
+      const requestSeq = ++draftRequestSeq;
+      const controller = new AbortController();
+      activeDraftController = controller;
+      isPersistingDraft = true;
       try {
         await fetch(reviewDraftUrl, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
           body: JSON.stringify({ field_review: buildFieldReviewPayload() }),
+          signal: controller.signal,
         });
-      } catch (e) {}
+        if (requestSeq > latestAppliedDraftSeq) {
+          latestAppliedDraftSeq = requestSeq;
+        }
+      } catch (e) {
+      } finally {
+        if (activeDraftController === controller) {
+          activeDraftController = null;
+        }
+        isPersistingDraft = false;
+      }
     }, 350);
   }
 
