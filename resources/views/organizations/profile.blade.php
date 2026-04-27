@@ -51,6 +51,14 @@
     $revisionEditMode = (bool) ($revisionEditMode ?? false);
     $revisionEditableFields = is_array($revisionEditableFields ?? null) ? $revisionEditableFields : [];
     $shouldShowField = static fn (string $field) => ! $revisionEditMode || in_array($field, $revisionEditableFields, true);
+    $submittedByDefault = trim((string) old('submitted_by_display', $activeApplication?->submittedBy?->full_name ?? ''));
+    $showRevisionRegistrationCard = $shouldShowField('submitted_by_display');
+    $showRevisionApplicationCard = $shouldShowField('organization_name');
+    $showRevisionOrganizationCard = $shouldShowField('organization_type')
+        || $shouldShowField('college_department')
+        || $shouldShowField('founded_date')
+        || $shouldShowField('purpose');
+    $hasRevisionEditableCards = $showRevisionRegistrationCard || $showRevisionApplicationCard || $showRevisionOrganizationCard;
     $revisionAnchorId = static fn (string $sectionKey, string $fieldKey): string => 'revision-field-'.\Illuminate\Support\Str::of($sectionKey)->lower()->replaceMatches('/[^a-z0-9]+/', '-')->trim('-').'-'.\Illuminate\Support\Str::of($fieldKey)->lower()->replaceMatches('/[^a-z0-9]+/', '-')->trim('-');
     $revisionNoteFor = static function (array $keys) use ($revisionFieldNotes): ?string {
         foreach ($keys as $key) {
@@ -475,16 +483,47 @@
                     </section>
                 @endif
 
-                @if ($shouldShowField('organization_name') || $shouldShowField('organization_type') || $shouldShowField('college_department') || $shouldShowField('founded_date') || $shouldShowField('purpose'))
+                @if ($showRevisionRegistrationCard)
+                <section aria-labelledby="profile-edit-section-registration-info-heading">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
+                        <div class="border-b border-slate-100 bg-white px-6 py-4">
+                            <h2 id="profile-edit-section-registration-info-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Registration Information</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Only requested fields are shown in this revision form.</p>
+                        </div>
+                        <div class="bg-white px-6 py-4.5">
+                            <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
+                                <div id="{{ $revisionAnchorId('application', 'submitted_by') }}">
+                                    <x-forms.label for="submitted_by_display" required>Submitted By</x-forms.label>
+                                    <x-forms.input
+                                        id="submitted_by_display"
+                                        name="submitted_by_display"
+                                        type="text"
+                                        :value="$submittedByDefault"
+                                        data-revision-original="{{ $submittedByDefault }}"
+                                        required
+                                    />
+                                    <input type="hidden" name="submitted_by_display_original" value="{{ $submittedByDefault }}">
+                                    @php $submittedByRevisionNote = $revisionNoteFor(['application.submitted_by', 'overview.submitted_by']); @endphp
+                                    @if ($submittedByRevisionNote)
+                                        <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $submittedByRevisionNote }}</p>
+                                    @endif
+                                    @error('submitted_by_display') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+                                </div>
+                            </div>
+                        </div>
+                    </x-ui.card>
+                </section>
+                @endif
+
+                @if ($showRevisionApplicationCard)
                 <section aria-labelledby="profile-edit-section-org-details-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden">
                         <div class="border-b border-slate-100 bg-white px-6 py-4">
-                            <h2 id="profile-edit-section-org-details-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Organization Details</h2>
-                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Update your organization’s core information.</p>
+                            <h2 id="profile-edit-section-org-details-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Application Information</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Only requested fields are shown in this revision form.</p>
                         </div>
                     <div class="bg-white px-6 py-4.5">
                         <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
-                            @if ($shouldShowField('organization_name'))
                             <div id="{{ $revisionAnchorId('application', 'organization') }}">
                                 <x-forms.label for="organization_name" required>Organization Name</x-forms.label>
                                 <x-forms.input
@@ -501,8 +540,21 @@
                                 @endif
                                 @error('organization_name') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                             </div>
-                            @endif
+                        </div>
+                    </div>
+                </x-ui.card>
+                </section>
+                @endif
 
+                @if ($showRevisionOrganizationCard)
+                <section aria-labelledby="profile-edit-section-org-information-heading">
+                    <x-ui.card padding="p-0" class="overflow-hidden">
+                        <div class="border-b border-slate-100 bg-white px-6 py-4">
+                            <h2 id="profile-edit-section-org-information-heading" class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Organization Information</h2>
+                            <p class="mt-0.5 text-xs leading-snug text-slate-500">Only requested fields are shown in this revision form.</p>
+                        </div>
+                    <div class="bg-white px-6 py-4.5">
+                        <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
                             @if ($shouldShowField('organization_type'))
                             <div id="{{ $revisionAnchorId('organizational', 'organization_type') }}">
                                 <x-forms.label for="organization_type" required>Organization Type</x-forms.label>
@@ -578,6 +630,13 @@
                 </section>
                 @endif
 
+                @if ($revisionEditMode && ! $hasRevisionEditableCards)
+                    <x-feedback.blocked-message
+                        variant="info"
+                        message="No editable profile fields are currently marked for revision. File-related revisions can be addressed in Submitted Documents."
+                    />
+                @endif
+
                 @if (! $revisionEditMode)
                 <section aria-labelledby="profile-edit-section-adviser-heading">
                     <x-ui.card padding="p-0" class="overflow-hidden">
@@ -611,7 +670,7 @@
                     >
                         Cancel
                     </a>
-                    <x-ui.button type="submit" id="revision-save-btn" :disabled="$revisionEditMode">
+                    <x-ui.button type="submit" id="revision-save-btn" :disabled="$revisionEditMode || ($revisionEditMode && ! $hasRevisionEditableCards)">
                         Save Changes
                     </x-ui.button>
                 </div>

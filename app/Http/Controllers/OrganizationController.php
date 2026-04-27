@@ -1102,7 +1102,9 @@ class OrganizationController extends Controller
     {
         $map = [
             'application.organization' => 'organization_name',
+            'application.submitted_by' => 'submitted_by_display',
             'contact.organization_name' => 'organization_name',
+            'overview.submitted_by' => 'submitted_by_display',
             'organizational.organization_type' => 'organization_type',
             'organizational.school' => 'college_department',
             'organizational.date_organized' => 'founded_date',
@@ -1165,8 +1167,8 @@ class OrganizationController extends Controller
                 if (! is_array($row)) {
                     continue;
                 }
-                $status = (string) ($row['status'] ?? 'pending');
-                if (! in_array($status, ['flagged', 'revision', 'needs_revision'], true)) {
+                $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
+                if (! in_array($status, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
                     continue;
                 }
                 $note = trim((string) ($row['note'] ?? ''));
@@ -1231,6 +1233,7 @@ class OrganizationController extends Controller
             'college_department' => (string) ($organization->college_department ?? ''),
             'purpose' => (string) ($organization->purpose ?? ''),
             'founded_date' => $organization->founded_date?->format('Y-m-d') ?? '',
+            'submitted_by_display' => '',
             default => '',
         };
     }
@@ -1242,6 +1245,7 @@ class OrganizationController extends Controller
     {
         return [
             'organization_name' => ['section_key' => 'application', 'field_key' => 'organization'],
+            'submitted_by_display' => ['section_key' => 'application', 'field_key' => 'submitted_by'],
             'organization_type' => ['section_key' => 'organizational', 'field_key' => 'organization_type'],
             'college_department' => ['section_key' => 'organizational', 'field_key' => 'school'],
             'purpose' => ['section_key' => 'organizational', 'field_key' => 'purpose'],
@@ -1313,13 +1317,26 @@ class OrganizationController extends Controller
             if ($editableFields !== []) {
                 $revisionRules = [];
                 foreach ($editableFields as $field) {
+                    if ($field === 'submitted_by_display') {
+                        $revisionRules[$field] = ['required', 'string', 'max:150'];
+                        continue;
+                    }
                     if (isset($defaultRules[$field])) {
                         $revisionRules[$field] = $defaultRules[$field];
                     }
                 }
                 $validated = $revisionRules !== [] ? $request->validate($revisionRules) : [];
                 $editableComparedFields = array_keys($revisionRules);
-                if ($editableComparedFields !== [] && ! $this->hasMeaningfulProfileChanges($organization, $validated, $editableComparedFields)) {
+                $orgComparedFields = array_values(array_filter($editableComparedFields, fn (string $field): bool => $field !== 'submitted_by_display'));
+                $hasMeaningfulChanges = $this->hasMeaningfulProfileChanges($organization, $validated, $orgComparedFields);
+                if (in_array('submitted_by_display', $editableComparedFields, true)) {
+                    $submittedByBefore = $this->normalizeRevisionComparableValue($request->input('submitted_by_display_original', ''));
+                    $submittedByAfter = $this->normalizeRevisionComparableValue($validated['submitted_by_display'] ?? '');
+                    if ($submittedByBefore !== $submittedByAfter) {
+                        $hasMeaningfulChanges = true;
+                    }
+                }
+                if ($editableComparedFields !== [] && ! $hasMeaningfulChanges) {
                     return back()
                         ->withErrors(['revision_changes' => 'No changes were detected. Please update at least one requested field before saving.'])
                         ->withInput();
@@ -1333,10 +1350,18 @@ class OrganizationController extends Controller
 
         $beforeValues = [];
         foreach (array_keys($validated) as $field) {
+            if ($field === 'submitted_by_display') {
+                $beforeValues[$field] = (string) $request->input('submitted_by_display_original', '');
+                continue;
+            }
             $beforeValues[$field] = $this->profileCurrentFieldValue($organization, $field);
         }
 
-        $organization->update($validated);
+        $organizationUpdatableFields = array_keys($defaultRules);
+        $organizationPayload = array_intersect_key($validated, array_flip($organizationUpdatableFields));
+        if ($organizationPayload !== []) {
+            $organization->update($organizationPayload);
+        }
 
         if ($latestRevisionSubmission && $editableComparedFields !== []) {
             $map = $this->profileFieldToRevisionKeyMap();
@@ -1345,7 +1370,9 @@ class OrganizationController extends Controller
                     continue;
                 }
                 $oldValue = (string) ($beforeValues[$field] ?? '');
-                $newValue = (string) $this->profileCurrentFieldValue($organization, $field);
+                $newValue = $field === 'submitted_by_display'
+                    ? (string) ($validated[$field] ?? '')
+                    : (string) $this->profileCurrentFieldValue($organization, $field);
                 if ($this->normalizeRevisionComparableValue($oldValue) === $this->normalizeRevisionComparableValue($newValue)) {
                     continue;
                 }
