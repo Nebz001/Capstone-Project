@@ -1209,32 +1209,19 @@ class OrganizationController extends Controller
             ]);
         }
 
-        $activeAcademicYear = $this->activeAcademicYear();
-        $activeTerm = SystemSetting::activeSemester();
-        if ($activeTerm !== 'term_1') {
+        if (! $organization->isEligibleForRenewal()) {
+            $message = (string) ($organization->renewalIneligibilityReason() ?? 'Your organization is not eligible for renewal at this time.');
+            $blockedByTerm = str_contains($message, '1st Term');
+            $blockedByExistingRenewal = str_contains(strtolower($message), 'already submitted a renewal')
+                || str_contains(strtolower($message), 'renewal submission in progress');
+            $blockedByNoRegistration = str_contains($message, 'approved registration on file');
+
             return [
                 'allowed' => false,
-                'message' => 'Renew Organization is only available during 1st Term. Renewal is closed for the current term.',
-                'blocked_by_term' => true,
-                'blocked_by_existing_renewal' => false,
-                'blocked_by_no_registration' => false,
-                'blocked_by_officer_validation' => false,
-            ];
-        }
-
-        $alreadyRenewedThisYear = OrganizationSubmission::query()
-            ->renewals()
-            ->where('organization_id', $organization->id)
-            ->whereHas('academicTerm', fn ($q) => $q->where('academic_year', $activeAcademicYear))
-            ->exists();
-
-        if ($alreadyRenewedThisYear) {
-            return [
-                'allowed' => false,
-                'message' => 'Your organization has already submitted a renewal for '.$activeAcademicYear.'. Only one renewal is allowed per academic year.',
-                'blocked_by_term' => false,
-                'blocked_by_existing_renewal' => true,
-                'blocked_by_no_registration' => false,
+                'message' => $message,
+                'blocked_by_term' => $blockedByTerm,
+                'blocked_by_existing_renewal' => $blockedByExistingRenewal,
+                'blocked_by_no_registration' => $blockedByNoRegistration,
                 'blocked_by_officer_validation' => false,
             ];
         }
