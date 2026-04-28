@@ -310,8 +310,8 @@
               $oldReqs = is_array($oldReqs) ? $oldReqs : [];
               $othersChecked = in_array('others', $oldReqs, true);
             @endphp
-            <div class="requirement-item sm:col-span-2 rounded-md px-1.5 py-1 hover:bg-white/60" data-requirement-key="others">
-              <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:gap-2">
+            <div class="requirement-item sm:col-span-1 rounded-md px-1.5 py-1 hover:bg-white/60" data-requirement-key="others">
+              <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
                     <x-forms.choice
@@ -332,12 +332,12 @@
                       variant="underline"
                       placeholder="Describe the other document"
                       :value="old('requirements_other')"
-                      class="min-w-0 w-full sm:max-w-xl"
+                      class="min-w-0 w-full sm:w-56 md:w-64 lg:w-72"
                       aria-label="Other document specification"
                     />
                   </div>
                 </div>
-                <div class="req-attach-toolbar flex w-full min-w-0 max-w-full shrink-0 items-center justify-end gap-1.5 self-end sm:w-auto sm:max-w-[24rem] sm:self-start sm:pt-0.5">
+                <div class="req-attach-toolbar flex min-w-0 max-w-[min(100%,20rem)] shrink-0 items-center justify-end gap-1.5 self-end sm:self-center sm:max-w-[24rem]">
                   <input
                     type="file"
                     id="req_file_req_others"
