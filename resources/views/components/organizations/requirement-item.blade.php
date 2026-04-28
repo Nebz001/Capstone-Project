@@ -60,5 +60,8 @@
     @error('requirement_files.'.$fk)
         <p class="req-file-error mt-1.5 text-xs text-rose-600">{{ $message }}</p>
     @enderror
+    @error('requirements.'.$value)
+        <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
+    @enderror
     <p class="req-client-msg mt-1 hidden text-xs text-rose-600" role="alert"></p>
 </div>

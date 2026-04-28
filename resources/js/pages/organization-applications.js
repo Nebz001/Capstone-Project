@@ -65,6 +65,27 @@ const setClientMsg = (item, text) => {
 
 const REQUIREMENTS_MIN_ONE_MSG =
     "Select at least one requirement you are submitting.";
+const REQUIRED_CHECKBOX_AND_FILE_MSG =
+    "This requirement must be selected and must have an attached file.";
+const REQUIRED_FILE_ONLY_MSG = "Please attach a file for this requirement.";
+
+const REQUIRED_REGISTER_KEYS = new Set([
+    "letter_of_intent",
+    "application_form",
+    "by_laws",
+    "updated_list_of_officers_founders",
+    "dean_endorsement_faculty_adviser",
+    "proposed_projects_budget",
+]);
+
+const REQUIRED_RENEW_KEYS = new Set([
+    "letter_of_intent",
+    "application_form",
+    "by_laws_updated_if_applicable",
+    "updated_list_of_officers_founders_ay",
+    "dean_endorsement_faculty_adviser",
+    "proposed_projects_budget",
+]);
 
 const clearRequirementsSectionClientError = (form) => {
     const el = form.querySelector(".requirements-section-client-error");
@@ -79,6 +100,24 @@ const hasAnyRequirementChecked = (form) =>
     form.querySelectorAll(
         'input[type="checkbox"][name="requirements[]"]:checked',
     ).length > 0;
+
+const requirementKeyFromItem = (item) => {
+    const checkbox = item.querySelector(
+        'input[type="checkbox"][name="requirements[]"]',
+    );
+    if (checkbox?.value) {
+        return checkbox.value;
+    }
+
+    return item.dataset.requirementKey || "";
+};
+
+const requiredKeysForForm = (form) => {
+    const action = form.getAttribute("action") || "";
+    return action.includes("/organizations/renew")
+        ? REQUIRED_RENEW_KEYS
+        : REQUIRED_REGISTER_KEYS;
+};
 
 const syncRequirementRow = (item) => {
     const checkbox = item.querySelector(
@@ -147,6 +186,9 @@ const initRequirementAttachments = () => {
 
             fileInput.addEventListener("change", () => {
                 const f = fileInput.files?.[0];
+                if (f && !checkbox.checked) {
+                    checkbox.checked = true;
+                }
                 if (f && !ACCEPT_RE.test(f.name)) {
                     fileInput.value = "";
                     setClientMsg(
@@ -201,6 +243,7 @@ const initRequirementAttachments = () => {
                 'input[name="requirements_other"]',
             );
             let blocked = false;
+            const requiredKeys = requiredKeysForForm(form);
 
             items.forEach((item) => {
                 clearClientMsg(item);
@@ -211,7 +254,19 @@ const initRequirementAttachments = () => {
                     'input[type="checkbox"][name="requirements[]"]',
                 );
                 const fileInput = item.querySelector(".req-file-input");
-                if (!checkbox?.checked || !fileInput) {
+                if (!checkbox || !fileInput) {
+                    continue;
+                }
+
+                const key = requirementKeyFromItem(item);
+                const isRequiredStandard = requiredKeys.has(key);
+                if (isRequiredStandard && !checkbox.checked) {
+                    setClientMsg(item, REQUIRED_CHECKBOX_AND_FILE_MSG);
+                    blocked = true;
+                    continue;
+                }
+
+                if (!checkbox.checked) {
                     continue;
                 }
 
@@ -231,10 +286,7 @@ const initRequirementAttachments = () => {
                 }
 
                 if (!fileInput.files?.length) {
-                    setClientMsg(
-                        item,
-                        "Attach a file for this requirement (use the paperclip).",
-                    );
+                    setClientMsg(item, REQUIRED_FILE_ONLY_MSG);
                     blocked = true;
                 }
             }

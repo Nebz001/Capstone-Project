@@ -46,6 +46,16 @@ class OrganizationController extends Controller
         'others',
     ];
 
+    /** Registration requirements that must always be selected and uploaded. */
+    private const REGISTRATION_REQUIRED_REQUIREMENT_KEYS = [
+        'letter_of_intent',
+        'application_form',
+        'by_laws',
+        'updated_list_of_officers_founders',
+        'dean_endorsement_faculty_adviser',
+        'proposed_projects_budget',
+    ];
+
     /** Checkbox values for renewal — must match `requirements[]` and `requirement_files` keys. */
     private const RENEWAL_REQUIREMENT_KEYS = [
         'letter_of_intent',
@@ -58,6 +68,16 @@ class OrganizationController extends Controller
         'financial_statement_previous_ay',
         'evaluation_summary_past_projects',
         'others',
+    ];
+
+    /** Renewal requirements that must always be selected and uploaded. */
+    private const RENEWAL_REQUIRED_REQUIREMENT_KEYS = [
+        'letter_of_intent',
+        'application_form',
+        'by_laws_updated_if_applicable',
+        'updated_list_of_officers_founders_ay',
+        'dean_endorsement_faculty_adviser',
+        'proposed_projects_budget',
     ];
 
     private const REQUIREMENTS_MIN_ONE_MESSAGE = 'Select at least one requirement you are submitting.';
@@ -814,6 +834,11 @@ class OrganizationController extends Controller
             'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
         ]);
 
+        $this->enforceRequiredRequirementSelectionsAndFiles(
+            $request,
+            self::REGISTRATION_REQUIRED_REQUIREMENT_KEYS
+        );
+
         $validated['contact_no'] = $this->normalizePhilippineContactNo($validated['contact_no']);
 
         $reqs = collect($validated['requirements'] ?? []);
@@ -991,6 +1016,11 @@ class OrganizationController extends Controller
             'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
             'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
         ]);
+
+        $this->enforceRequiredRequirementSelectionsAndFiles(
+            $request,
+            self::RENEWAL_REQUIRED_REQUIREMENT_KEYS
+        );
 
         if ($user->isSuperAdmin()) {
             $organization = $this->resolveOrganizationByRegisteredName($validated['organization_name']);
@@ -3632,12 +3662,40 @@ class OrganizationController extends Controller
             $rules["requirement_files.$key"] = [
                 'required',
                 'file',
-                'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png',
+                'mimes:pdf,doc,docx,jpg,jpeg,png',
                 'max:10240',
             ];
         }
 
         return $rules;
+    }
+
+    /**
+     * @param  array<int, string>  $requiredKeys
+     */
+    private function enforceRequiredRequirementSelectionsAndFiles(Request $request, array $requiredKeys): void
+    {
+        $selected = $request->input('requirements', []);
+        if (! is_array($selected)) {
+            $selected = [];
+        }
+
+        $errors = [];
+        foreach ($requiredKeys as $key) {
+            if (! in_array($key, $selected, true)) {
+                $errors["requirements.$key"] = 'This requirement must be selected and must have an attached file.';
+                continue;
+            }
+
+            $file = $request->file("requirement_files.$key");
+            if (! ($file instanceof UploadedFile) || ! $file->isValid()) {
+                $errors["requirement_files.$key"] = 'Please attach a file for this requirement.';
+            }
+        }
+
+        if ($errors !== []) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
     }
 
     /**
