@@ -256,17 +256,46 @@ class AdminController extends Controller
             ->latest('submission_date')
             ->latest('id')
             ->paginate(10);
+        $submissionIds = $records->getCollection()->pluck('id')->all();
+        $updateAggregates = OrganizationRevisionFieldUpdate::query()
+            ->selectRaw('organization_submission_id, SUM(CASE WHEN acknowledged_at IS NULL THEN 1 ELSE 0 END) as pending_updates_count, MAX(resubmitted_at) as last_resubmitted_at')
+            ->whereIn('organization_submission_id', $submissionIds)
+            ->groupBy('organization_submission_id')
+            ->get()
+            ->keyBy('organization_submission_id');
 
         return view('admin.review-index', [
             'pageTitle' => 'Renewal Review',
             'pageSubtitle' => 'Monitor submitted RSO renewal applications.',
             'routeBase' => 'admin.renewals.show',
-            'rows' => $records->through(function (OrganizationSubmission $record): array {
+            'rows' => $records->through(function (OrganizationSubmission $record) use ($updateAggregates): array {
+                $legacyStatus = $record->legacyStatus();
+                $update = $updateAggregates->get($record->id);
+                $pendingUpdatesCount = $update ? (int) ($update->pending_updates_count ?? 0) : 0;
+                $isUpdated = $legacyStatus === 'REVISION' && $pendingUpdatesCount > 0;
+                $status = $isUpdated ? 'UPDATED' : $legacyStatus;
+                $statusLabel = $isUpdated ? 'UPDATED' : str_replace('_', ' ', $legacyStatus);
+                $lastResubmittedAt = $update && $update->last_resubmitted_at
+                    ? \Illuminate\Support\Carbon::parse((string) $update->last_resubmitted_at)
+                    : null;
+                $latestAdminReviewedAt = $this->latestRegistrationReviewTimestamp(
+                    is_array($record->renewal_section_reviews) ? $record->renewal_section_reviews : []
+                );
+                $lastUpdatedAt = $lastResubmittedAt
+                    ?: $latestAdminReviewedAt
+                    ?: $record->updated_at;
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
-                    'status' => $record->legacyStatus(),
+                    'last_updated' => $lastUpdatedAt
+                        ? $lastUpdatedAt->format('M d, Y, g:i A')
+                        : '—',
+                    'status' => $status,
+                    'status_label' => $statusLabel,
+                    'is_updated' => $isUpdated,
+                    'updates_count' => $pendingUpdatesCount,
+                    'action_label' => $isUpdated ? 'View Updates' : 'View',
                     'id' => $record->id,
                 ];
             }),
@@ -1001,7 +1030,34 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
 
-        $submission->load(['organization', 'submittedBy', 'academicTerm', 'attachments']);
+        $submission->load(['organization', 'submittedBy', 'academicTerm', 'attachments', 'requirements']);
+        $latestUpdates = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->with(['resubmittedBy:id,first_name,last_name', 'acknowledgedBy:id,first_name,last_name'])
+            ->orderByDesc('id')
+            ->get()
+            ->unique(fn (OrganizationRevisionFieldUpdate $row): string => $row->section_key.'.'.$row->field_key)
+            ->values();
+        $updatesByField = [];
+        $storedFieldReviews = is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [];
+        foreach ($latestUpdates as $row) {
+            if (! isset($updatesByField[$row->section_key])) {
+                $updatesByField[$row->section_key] = [];
+            }
+            $updatesByField[$row->section_key][$row->field_key] = [
+                'id' => (int) $row->id,
+                'section_key' => (string) $row->section_key,
+                'field_key' => (string) $row->field_key,
+                'old_value' => $row->old_value,
+                'new_value' => $row->new_value,
+                'resubmitted_at' => optional($row->resubmitted_at)->toDateTimeString(),
+                'resubmitted_by' => $row->resubmittedBy?->full_name ?? 'Unknown',
+                'acknowledged_at' => optional($row->acknowledged_at)->toDateTimeString(),
+                'acknowledged_by' => $row->acknowledgedBy?->full_name ?? null,
+                'is_updated' => $row->acknowledged_at === null,
+            ];
+        }
+        $effectiveFieldReviews = $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField);
         $sections = $this->renewalReviewSections($submission);
 
         return view('admin.reviews.module-show', [
@@ -1009,13 +1065,14 @@ class AdminController extends Controller
             'moduleLabel' => 'Renewal',
             'status' => $submission->legacyStatus(),
             'sections' => $sections,
-            'persistedFieldReviews' => is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [],
+            'persistedFieldReviews' => $effectiveFieldReviews,
             'persistedSectionReviews' => is_array($submission->renewal_section_reviews) ? $submission->renewal_section_reviews : [],
             'persistedRemarks' => $submission->additional_remarks ?? '',
             'saveRoute' => route('admin.renewals.update-status', $submission),
             'draftRoute' => route('admin.renewals.review-draft', $submission),
             'backRoute' => route('admin.renewals.index'),
             'backLabel' => 'Back to Renewals',
+            'fieldUpdateDiffs' => $updatesByField,
         ]);
     }
 
@@ -1440,7 +1497,20 @@ class AdminController extends Controller
         if (! $attachment) {
             abort(404);
         }
-        return Storage::disk('public')->response((string) $attachment->stored_path, basename((string) $attachment->stored_path), [], 'inline');
+        $relativePath = (string) $attachment->stored_path;
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        $filename = (string) ($attachment->original_name ?: basename($relativePath));
+
+        if ($request->boolean('download')) {
+            return $disk->download($relativePath, $filename);
+        }
+
+        return $disk->response($relativePath, $filename, [], 'inline');
     }
 
     public function saveRenewalReviewDraft(Request $request, OrganizationSubmission $submission): JsonResponse
@@ -1454,17 +1524,67 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
-        return $this->finalizeModuleReview(
-            $request,
-            $submission,
+        $validated = $request->validate([
+            'field_review' => ['nullable', 'array'],
+            'remarks' => ['nullable', 'string', 'max:5000'],
+        ]);
+        /** @var User $admin */
+        $admin = $request->user();
+        [$fieldReviews, $sectionReviews, $hasPending, $hasMissingNotes] = $this->normalizeModuleFieldReviews(
+            is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [],
             $this->renewalReviewSchema(),
-            'renewal_field_reviews',
-            'renewal_section_reviews',
-            'additional_remarks',
-            route('admin.renewals.show', $submission),
-            route('admin.renewals.index'),
-            'Back to Renewals'
+            $admin
         );
+        if ($hasPending || $hasMissingNotes) {
+            return back()->withErrors(['field_review' => 'Review all fields and provide notes for every revision-marked field before finalizing.'])->withInput();
+        }
+
+        $allVerified = collect($sectionReviews)->every(fn (array $row): bool => ($row['status'] ?? 'pending') === 'verified');
+        $nextStatus = $allVerified ? OrganizationSubmission::STATUS_APPROVED : OrganizationSubmission::STATUS_REVISION;
+        $remarks = trim((string) ($validated['remarks'] ?? ''));
+        $notes = $this->composeGenericFlaggedNotes($fieldReviews);
+
+        DB::transaction(function () use ($submission, $fieldReviews, $sectionReviews, $remarks, $nextStatus, $notes, $admin): void {
+            $payload = [
+                'status' => $nextStatus,
+                'renewal_field_reviews' => $fieldReviews,
+                'renewal_section_reviews' => $sectionReviews,
+                'additional_remarks' => $remarks !== '' ? $remarks : null,
+                'approval_decision' => $nextStatus === OrganizationSubmission::STATUS_APPROVED ? 'approved' : null,
+                'notes' => $nextStatus === OrganizationSubmission::STATUS_REVISION
+                    ? ($notes ?? ($remarks !== '' ? $remarks : $submission->notes))
+                    : ($remarks !== '' ? $remarks : $submission->notes),
+                'current_approval_step' => 0,
+            ];
+            if (Schema::hasColumn('organization_submissions', 'review_status')) {
+                $payload['review_status'] = $nextStatus === OrganizationSubmission::STATUS_APPROVED ? 'approved' : 'revision';
+            }
+            if ($nextStatus === OrganizationSubmission::STATUS_APPROVED) {
+                if (Schema::hasColumn('organization_submissions', 'approved_at')) {
+                    $payload['approved_at'] = now();
+                }
+                if (Schema::hasColumn('organization_submissions', 'approved_by')) {
+                    $payload['approved_by'] = (int) $admin->id;
+                }
+            }
+            $submission->update($payload);
+
+            if ($nextStatus === OrganizationSubmission::STATUS_APPROVED) {
+                $organizationPayload = ['status' => 'active'];
+                if (Schema::hasColumn('organizations', 'active_at')) {
+                    $organizationPayload['active_at'] = now();
+                }
+                $submission->organization?->update($organizationPayload);
+            }
+        });
+
+        $this->autoAcknowledgeReviewedRegistrationFieldUpdates($submission, $fieldReviews, (int) $admin->id);
+        $this->notifyModuleReviewResult($submission, $nextStatus);
+
+        return redirect()
+            ->route('admin.renewals.show', $submission)
+            ->with('renewal_review_saved', true)
+            ->with('renewal_review_outcome', $nextStatus === OrganizationSubmission::STATUS_APPROVED ? 'approved' : 'revision');
     }
 
     public function saveCalendarReviewDraft(Request $request, ActivityCalendar $calendar): JsonResponse
@@ -1773,12 +1893,18 @@ class AdminController extends Controller
                 'contact_no' => 'Contact Number',
                 'contact_email' => 'Contact Email',
             ],
+            'adviser' => [
+                'adviser_full_name' => 'Full Name',
+                'adviser_school_id' => 'School ID',
+                'adviser_email' => 'Email',
+                'adviser_status' => 'Status',
+            ],
             'requirements' => [
                 'letter_of_intent' => 'Letter of Intent',
                 'application_form' => 'Application Form',
-                'by_laws_updated_if_applicable' => 'By-Laws Updated (if applicable)',
-                'updated_list_of_officers_founders_ay' => 'Updated Officers/Founders (AY)',
-                'dean_endorsement_faculty_adviser' => 'Dean Endorsement',
+                'by_laws_updated_if_applicable' => 'By-laws, if applicable',
+                'updated_list_of_officers_founders_ay' => 'Updated List of Officers / Founders',
+                'dean_endorsement_faculty_adviser' => 'Dean Endorsement / Faculty Adviser',
                 'proposed_projects_budget' => 'Proposed Projects and Budget',
                 'past_projects' => 'Past Projects',
                 'financial_statement_previous_ay' => 'Financial Statement (Previous AY)',
@@ -1791,10 +1917,11 @@ class AdminController extends Controller
     private function renewalReviewSections(OrganizationSubmission $submission): array
     {
         $adviserNomination = $this->submissionAdviserNomination($submission);
+        $requirementRows = $submission->requirements->keyBy('requirement_key');
         $sections = [
             ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Renewal context and submitter details.', 'fields' => []],
             ['key' => 'contact', 'title' => 'Contact Details', 'subtitle' => 'Primary point-of-contact for this renewal.', 'fields' => []],
-            ['key' => 'adviser', 'title' => 'Adviser Information', 'subtitle' => 'Faculty adviser nomination linked to this submission.', 'reviewable' => false, 'fields' => []],
+            ['key' => 'adviser', 'title' => 'Adviser Information', 'subtitle' => 'Faculty adviser nomination linked to this submission.', 'fields' => []],
             ['key' => 'requirements', 'title' => 'Requirements Attached', 'subtitle' => 'Uploaded requirement files for renewal.', 'fields' => []],
         ];
         $sections[0]['fields'] = [
@@ -1814,29 +1941,29 @@ class AdminController extends Controller
             ['key' => 'adviser_school_id', 'label' => 'School ID', 'value' => (string) ($adviserNomination?->user?->school_id ?? 'N/A')],
             ['key' => 'adviser_email', 'label' => 'Email', 'value' => (string) ($adviserNomination?->user?->email ?? 'N/A')],
             ['key' => 'adviser_status', 'label' => 'Status', 'value' => $adviserNomination ? ucfirst((string) $adviserNomination->status) : 'No nomination'],
-            ['key' => 'adviser_rejection_notes', 'label' => 'Rejection Notes', 'value' => $adviserNomination?->rejection_notes ?: '—', 'wide' => true],
         ];
-        if ($adviserNomination) {
-            $sections[2]['actions'] = [
-                [
-                    'label' => 'Approve Adviser',
-                    'action' => route('admin.advisers.review', $adviserNomination),
-                    'status' => 'approved',
-                ],
-                [
-                    'label' => 'Reject Adviser',
-                    'action' => route('admin.advisers.review', $adviserNomination),
-                    'status' => 'rejected',
-                ],
-            ];
-        }
         foreach (self::RENEWAL_REQUIREMENT_FILE_KEYS as $key) {
             $attachment = $submission->attachments()->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)->latest('id')->first();
+            $requirement = $requirementRows->get($key);
+            $checked = (bool) ($requirement?->is_submitted ?? false);
+            $extension = strtoupper((string) pathinfo((string) ($attachment?->original_name ?: $attachment?->stored_path ?: ''), PATHINFO_EXTENSION));
+            $badgeLabel = in_array($extension, ['PDF', 'DOCX', 'PNG', 'JPG', 'JPEG'], true) ? $extension : 'FILE';
+            $badgeClass = match ($badgeLabel) {
+                'PDF' => 'border-red-200 bg-red-50 text-red-700',
+                'DOCX' => 'border-blue-200 bg-blue-50 text-blue-700',
+                'PNG' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                'JPG', 'JPEG' => 'border-amber-200 bg-amber-50 text-amber-700',
+                default => 'border-slate-200 bg-slate-100 text-slate-700',
+            };
             $sections[3]['fields'][] = [
                 'key' => $key,
-                'label' => ucwords(str_replace('_', ' ', $key)),
+                'label' => (string) data_get($this->renewalReviewSchema(), 'requirements.'.$key, ucwords(str_replace('_', ' ', $key))),
                 'value' => $attachment ? 'File uploaded' : 'Not uploaded',
                 'action' => $attachment ? ['href' => route('admin.renewals.requirement-file', ['submission' => $submission, 'key' => $key])] : null,
+                'download_action' => $attachment ? ['href' => route('admin.renewals.requirement-file', ['submission' => $submission, 'key' => $key, 'download' => 1])] : null,
+                'submitted' => $checked,
+                'file_badge_label' => $badgeLabel,
+                'file_badge_class' => $badgeClass,
                 'wide' => true,
             ];
         }

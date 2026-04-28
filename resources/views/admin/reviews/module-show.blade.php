@@ -23,6 +23,25 @@
   };
 @endphp
 
+@if (($moduleLabel ?? '') === 'Renewal' && ((session('renewal_review_saved') || false) || ($status ?? '') === 'APPROVED'))
+  @php
+    $renewalOutcome = session('renewal_review_outcome', ($status ?? '') === 'APPROVED' ? 'approved' : null);
+    $isRenewalApproved = $renewalOutcome === 'approved' || ($renewalOutcome === null && ($status ?? '') === 'APPROVED');
+  @endphp
+  <x-feedback.blocked-message variant="success" class="mb-6 items-start">
+    <p class="font-semibold">{{ $isRenewalApproved ? 'Renewal has been approved' : 'Renewal review submitted' }}</p>
+    <p class="mt-1 text-sm font-normal">{{ $isRenewalApproved ? 'The organization renewal has been approved successfully.' : 'The organization renewal has been returned for revision.' }}</p>
+    <p class="mt-2">
+      <a
+        href="{{ $backRoute }}"
+        class="text-sm font-semibold text-emerald-800 underline decoration-emerald-700/60 underline-offset-2 transition hover:text-emerald-900 hover:decoration-emerald-900"
+      >
+        Back to renewals
+      </a>
+    </p>
+  </x-feedback.blocked-message>
+@endif
+
 <form
   id="module-review-form"
   method="POST"
@@ -50,6 +69,10 @@
     </div>
   </x-ui.card>
 
+  @php
+    $fieldUpdateDiffs = is_array($fieldUpdateDiffs ?? null) ? $fieldUpdateDiffs : [];
+    $fieldUpdateFor = static fn (string $sectionKey, string $fieldKey): ?array => data_get($fieldUpdateDiffs, $sectionKey.'.'.$fieldKey);
+  @endphp
   @foreach ($sections as $section)
     @php
       $sectionReviewable = (bool) ($section['reviewable'] ?? true);
@@ -72,12 +95,71 @@
         </div>
       </div>
       <div class="bg-white px-6 py-5">
+        @if (($moduleLabel ?? '') === 'Renewal' && ($section['key'] ?? '') === 'requirements')
+          <ul class="space-y-3">
+            @foreach (($section['fields'] ?? []) as $field)
+              @php
+                $fieldUpdate = $fieldUpdateFor((string) ($section['key'] ?? ''), (string) ($field['key'] ?? ''));
+                $isFieldUpdated = (bool) data_get($fieldUpdate, 'is_updated', false);
+                $hasFile = ! empty(data_get($field, 'action.href'));
+                $fileUrl = data_get($field, 'action.href');
+                $downloadUrl = data_get($field, 'download_action.href');
+              @endphp
+              <li class="requirement-review-item rounded-xl border border-slate-200 bg-slate-50/80 p-3.5">
+                <div class="requirement-review-main-row flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="text-sm font-semibold text-slate-900">{{ $field['label'] }}</p>
+                      @if ($isFieldUpdated)
+                        <span class="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                      @endif
+                      <span class="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $field['file_badge_class'] ?? 'border-slate-200 bg-slate-100 text-slate-700' }}">{{ $field['file_badge_label'] ?? 'FILE' }}</span>
+                    </div>
+                    <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ ! empty($field['submitted']) ? 'Yes' : 'No' }}</span></p>
+                  </div>
+                  <div class="requirement-review-top-row flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
+                    <div class="shrink-0">
+                      @if ($hasFile)
+                        <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="File actions for {{ $field['label'] }}">
+                          <a href="{{ $fileUrl }}" target="_blank" rel="noopener noreferrer" class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30">View file</a>
+                          <span class="mx-1 h-4 w-px bg-slate-200"></span>
+                          <a href="{{ $downloadUrl }}" class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30">Download</a>
+                        </div>
+                      @elseif (! empty($field['submitted']))
+                        <span class="text-xs font-medium text-amber-700">Marked yes - no file on record</span>
+                      @endif
+                    </div>
+                    <div class="ml-auto shrink-0 lg:ml-0">
+                      @include('admin.registrations.partials.field-review-control', [
+                        'sectionKey' => $section['key'],
+                        'fieldKey' => $field['key'],
+                        'fieldLabel' => $field['label'],
+                        'persistedFieldReviews' => $persistedFieldReviews,
+                        'persistedSectionReviews' => $persistedSectionReviews,
+                      ])
+                    </div>
+                  </div>
+                </div>
+                @if ($isFieldUpdated)
+                  <p class="mt-2 text-xs text-sky-800"><span class="font-semibold">Updated value:</span> {{ data_get($fieldUpdate, 'old_value') ?: '—' }} → {{ data_get($fieldUpdate, 'new_value') ?: '—' }}</p>
+                @endif
+              </li>
+            @endforeach
+          </ul>
+        @else
         <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
           @foreach (($section['fields'] ?? []) as $field)
             <div class="{{ $readonlyItemClass }} {{ ($field['wide'] ?? false) ? 'md:col-span-2' : '' }}">
               <dt class="{{ $readonlyLabelClass }}">{{ $field['label'] }}</dt>
+              @php
+                $fieldUpdate = $fieldUpdateFor((string) ($section['key'] ?? ''), (string) ($field['key'] ?? ''));
+                $isFieldUpdated = (bool) data_get($fieldUpdate, 'is_updated', false);
+              @endphp
               <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                 <dd class="text-sm font-semibold text-slate-900">{{ $field['value'] }}</dd>
+                @if ($isFieldUpdated)
+                  <span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">Updated</span>
+                @endif
                 @if (! empty($field['action'] ?? null))
                   <a href="{{ $field['action']['href'] }}" target="_blank" rel="noopener noreferrer" class="inline-flex rounded-xl border border-[#003E9F] bg-white px-3.5 py-2 text-xs font-semibold text-[#003E9F] transition hover:bg-slate-50">View file</a>
                 @endif
@@ -91,6 +173,12 @@
                   ])
                 @endif
               </div>
+              @if ($isFieldUpdated)
+                <p class="mt-2 text-xs text-sky-800">
+                  <span class="font-semibold">Updated value:</span>
+                  {{ data_get($fieldUpdate, 'old_value') ?: '—' }} → {{ data_get($fieldUpdate, 'new_value') ?: '—' }}
+                </p>
+              @endif
               @if (! empty($field['table']) && is_array($field['table']))
                 <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
                   <table class="min-w-160 w-full divide-y divide-slate-200 text-left text-xs sm:text-sm">
@@ -118,6 +206,7 @@
             </div>
           @endforeach
         </dl>
+        @endif
         @if (! empty($section['actions']) && is_array($section['actions']))
           <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             @foreach ($section['actions'] as $action)
@@ -150,12 +239,12 @@
     <div class="bg-white px-6 py-5">
       <div id="revision-summary-box" class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900">
         <p id="revision-summary-title" class="text-sm font-bold uppercase tracking-widest text-amber-900">Revision Summary</p>
-        <p id="revision-summary-helper" class="mt-1 text-xs text-amber-800/90">Click a revision item below to jump to the field that needs updates.</p>
+      <p id="revision-summary-helper" class="mt-1 text-xs text-amber-800/90">Click a revision item below to jump to the section that needs updates.</p>
         <ul id="revision-summary-list" class="mt-3 space-y-3"></ul>
       </div>
       <div class="mt-6">
         <x-forms.label for="module-remarks">General remarks / instructions <span class="font-normal normal-case text-slate-400">(optional)</span></x-forms.label>
-        <x-forms.textarea id="module-remarks" name="remarks" :rows="4">{{ old('remarks', $persistedRemarks ?? '') }}</x-forms.textarea>
+        <x-forms.textarea id="module-remarks" name="remarks" :rows="4" placeholder="Optional overall context. Field-level flagged notes are captured from each section.">{{ old('remarks', $persistedRemarks ?? '') }}</x-forms.textarea>
       </div>
       <div class="mt-6 flex flex-wrap gap-3 border-t border-slate-100 pt-5">
         <button id="save-review-btn" type="submit" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] disabled:cursor-not-allowed disabled:opacity-60">Save review</button>
@@ -180,6 +269,7 @@
   const remarks = document.getElementById('module-remarks');
   const reviewDraftUrl = form.dataset.reviewDraftUrl || '';
   const sectionOrder = Array.from(form.querySelectorAll('[data-section-submit]')).map((r) => r.dataset.sectionKey || '');
+  const moduleLabelLower = @json(strtolower((string) ($moduleLabel ?? 'submission')));
 
   const normalizeStatus = (status) => {
     const value = String(status || 'pending');
@@ -326,12 +416,12 @@
       return;
     }
     if (state === 'pending') {
-      revisionSummaryBox.className = 'rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800';
+      revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
       if (revisionSummaryTitle) {
-        revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-slate-800';
-        revisionSummaryTitle.textContent = 'Review Summary';
+        revisionSummaryTitle.className = 'text-sm font-bold uppercase tracking-widest text-amber-900';
+        revisionSummaryTitle.textContent = 'Revision Summary';
       }
-      revisionSummaryHelper.className = 'mt-1 text-xs text-slate-600';
+      revisionSummaryHelper.className = 'mt-1 text-xs text-amber-800/90';
       return;
     }
     revisionSummaryBox.className = 'rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900';
@@ -372,7 +462,7 @@
     if (rows.length === 0 && verifiedCount === sectionRoots.length && sectionRoots.length > 0) {
       applyRevisionSummaryState('success');
       revisionSummaryHelper.textContent = 'Every section is fully reviewed and verified.';
-      revisionSummaryList.innerHTML = '<li class="text-sm text-emerald-800">All sections are verified. This registration is ready for approval.</li>';
+      revisionSummaryList.innerHTML = `<li class="text-sm text-emerald-800">All sections are verified. This ${moduleLabelLower} is ready for approval.</li>`;
       return;
     }
 
