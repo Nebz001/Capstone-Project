@@ -7,6 +7,10 @@ import { initOrganizationTypeSchoolToggle } from "../utils/organization-type-sch
 
 const ACCEPT_RE =
     /\.(pdf|doc|docx|jpe?g|png)$/i;
+const MAX_FILE_SIZE_MB = 2;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const INVALID_FILE_TYPE_MSG = "Only PDF, Word, or image files are allowed.";
+const FILE_TOO_LARGE_MSG = `The selected file is too large. Maximum allowed file size is ${MAX_FILE_SIZE_MB} MB.`;
 
 const setAttachVisualState = (item, hasFile, fileName) => {
     const btn = item.querySelector(".req-attach-btn");
@@ -193,8 +197,14 @@ const initRequirementAttachments = () => {
                     fileInput.value = "";
                     setClientMsg(
                         item,
-                        "Please choose a PDF, Word, or image file.",
+                        INVALID_FILE_TYPE_MSG,
                     );
+                    syncRequirementRow(item);
+                    return;
+                }
+                if (f && f.size > MAX_FILE_SIZE_BYTES) {
+                    fileInput.value = "";
+                    setClientMsg(item, FILE_TOO_LARGE_MSG);
                     syncRequirementRow(item);
                     return;
                 }
@@ -287,6 +297,24 @@ const initRequirementAttachments = () => {
 
                 if (!fileInput.files?.length) {
                     setClientMsg(item, REQUIRED_FILE_ONLY_MSG);
+                    blocked = true;
+                    continue;
+                }
+
+                const selectedFile = fileInput.files?.[0];
+                if (!selectedFile) {
+                    continue;
+                }
+                if (!ACCEPT_RE.test(selectedFile.name)) {
+                    setClientMsg(item, INVALID_FILE_TYPE_MSG);
+                    blocked = true;
+                    continue;
+                }
+                if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+                    setClientMsg(
+                        item,
+                        `${checkbox.labels?.[0]?.textContent?.trim() || "This file"} is too large. Maximum allowed file size is ${MAX_FILE_SIZE_MB} MB.`,
+                    );
                     blocked = true;
                 }
             }

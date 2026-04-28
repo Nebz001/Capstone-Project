@@ -103,6 +103,12 @@
     </x-feedback.blocked-message>
   @endif
 
+  @if ($errors->has('replacement_file') || $errors->has('replacement_files') || $errors->has('replacement_files.*'))
+    <x-feedback.blocked-message variant="warning" class="mb-5" :message="$errors->first('replacement_file') ?: ($errors->first('replacement_files') ?: $errors->first('replacement_files.*'))" />
+  @endif
+
+  <x-feedback.blocked-message variant="warning" class="mb-5 hidden" id="replacement-file-warning-message" />
+
   @if (! empty($adviserNomination ?? null))
     <x-ui.card padding="p-0" class="mb-5">
       <x-ui.card-section-header
@@ -350,7 +356,7 @@
                       No file uploaded
                     </span>
                     @if (! empty($link['can_replace']) && ! empty($link['replace_url']))
-                        <input type="file" name="replacement_files[{{ $link['key'] }}]" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input data-revision-key="{{ $link['key'] }}">
+                        <input type="file" name="replacement_files[{{ $link['key'] }}]" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" data-replace-file-input data-revision-key="{{ $link['key'] }}">
                         <button type="button" class="inline-flex h-8 w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto sm:min-w-29" data-replace-file-trigger>
                           Replace file
                         </button>
@@ -370,7 +376,7 @@
                       View file
                     </a>
                     @if (! empty($link['can_replace']) && ! empty($link['replace_url']))
-                      <input type="file" name="replacement_files[{{ $link['key'] }}]" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" data-replace-file-input data-revision-key="{{ $link['key'] }}">
+                      <input type="file" name="replacement_files[{{ $link['key'] }}]" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" data-replace-file-input data-revision-key="{{ $link['key'] }}">
                         <button type="button" class="inline-flex h-8 w-full items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 sm:w-auto sm:min-w-29" data-replace-file-trigger>
                           Replace file
                         </button>
@@ -463,7 +469,21 @@
   @section('scripts')
     <script>
       (() => {
+        const MAX_REPLACEMENT_FILE_MB = 2;
+        const MAX_REPLACEMENT_FILE_BYTES = MAX_REPLACEMENT_FILE_MB * 1024 * 1024;
+        const REPLACEMENT_ACCEPT_RE = /\.(pdf|doc|docx|jpe?g|png)$/i;
         let highlightTimer = null;
+        const replacementWarningEl = document.getElementById('replacement-file-warning-message');
+        const setReplacementWarning = (message) => {
+          if (!replacementWarningEl) return;
+          if (!message) {
+            replacementWarningEl.classList.add('hidden');
+            replacementWarningEl.textContent = '';
+            return;
+          }
+          replacementWarningEl.classList.remove('hidden');
+          replacementWarningEl.textContent = message;
+        };
         const scrollToTarget = (targetId) => {
           if (!targetId) return;
           const target = document.getElementById(targetId);
@@ -634,7 +654,29 @@
             const fileInput = input;
             const key = fileInput.getAttribute('data-revision-key') || '';
             const file = fileInput.files && fileInput.files.length > 0 ? fileInput.files[0] : null;
+            if (file && !REPLACEMENT_ACCEPT_RE.test(file.name || '')) {
+              fileInput.value = '';
+              setReplacementWarning('Only PDF, Word, or image files are allowed.');
+              if (key) {
+                selectedRevisionKeys.delete(key);
+                selectedReplacementNames.delete(key);
+              }
+              syncSubmitState();
+              return;
+            }
+            if (file && file.size > MAX_REPLACEMENT_FILE_BYTES) {
+              fileInput.value = '';
+              const label = document.querySelector(`[data-file-row][data-revision-key="${key}"]`)?.getAttribute('data-file-label') || 'Selected file';
+              setReplacementWarning(`${label} is too large. Maximum allowed file size is ${MAX_REPLACEMENT_FILE_MB} MB.`);
+              if (key) {
+                selectedRevisionKeys.delete(key);
+                selectedReplacementNames.delete(key);
+              }
+              syncSubmitState();
+              return;
+            }
             if (key && file) {
+              setReplacementWarning('');
               selectedRevisionKeys.add(key);
               selectedReplacementNames.set(key, file.name || 'Selected file');
               document.querySelectorAll(`[data-changed-badge][data-revision-key="${key}"]`).forEach((badge) => {
@@ -653,6 +695,7 @@
             } else if (key) {
               selectedRevisionKeys.delete(key);
               selectedReplacementNames.delete(key);
+              setReplacementWarning('');
             }
             syncSubmitState();
           });

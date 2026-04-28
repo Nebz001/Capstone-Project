@@ -32,6 +32,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrganizationSubmittedDocumentsController extends Controller
 {
+    private const REPLACEMENT_FILE_MAX_KB = 2048;
+    private const REPLACEMENT_FILE_MAX_MB = 2;
+
     private const REGISTRATION_FILE_KEYS = [
         'letter_of_intent',
         'application_form',
@@ -309,7 +312,10 @@ class OrganizationSubmittedDocumentsController extends Controller
         abort_unless($status === 'flagged', 403);
 
         $validated = $request->validate([
-            'replacement_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png,webp', 'max:10240'],
+            'replacement_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_file.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_file.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
         ]);
 
         /** @var User $user */
@@ -339,6 +345,10 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         $validated = $request->validate([
             'replacement_files' => ['required', 'array'],
+            'replacement_files.*' => ['file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_files.*.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
         ]);
         $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
         $changedKeys = array_values(array_filter($revisionKeys, fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile));

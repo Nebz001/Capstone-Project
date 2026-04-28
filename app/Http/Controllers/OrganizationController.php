@@ -83,6 +83,8 @@ class OrganizationController extends Controller
         'dean_endorsement_faculty_adviser',
         'proposed_projects_budget',
     ];
+    private const REQUIREMENT_FILE_MAX_KB = 2048;
+    private const REQUIREMENT_FILE_MAX_MB = 2;
 
     private const REQUIREMENTS_MIN_ONE_MESSAGE = 'Select at least one requirement you are submitting.';
 
@@ -837,10 +839,10 @@ class OrganizationController extends Controller
                 'max:255',
             ],
             'requirement_files' => ['nullable', 'array'],
-        ], $this->requirementFileRules($request, self::REGISTRATION_REQUIREMENT_KEYS)), [
+        ], $this->requirementFileRules($request, self::REGISTRATION_REQUIREMENT_KEYS)), array_merge([
             'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
             'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
-        ]);
+        ], $this->requirementFileValidationMessages()));
 
         if (! $this->isEligibleAdviserUserId((int) $validated['adviser_user_id'])) {
             return back()->withErrors([
@@ -1056,10 +1058,10 @@ class OrganizationController extends Controller
                 'max:255',
             ],
             'requirement_files' => ['nullable', 'array'],
-        ], $this->requirementFileRules($request, self::RENEWAL_REQUIREMENT_KEYS)), [
+        ], $this->requirementFileRules($request, self::RENEWAL_REQUIREMENT_KEYS)), array_merge([
             'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
             'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
-        ]);
+        ], $this->requirementFileValidationMessages()));
 
         if (! $this->isEligibleAdviserUserId((int) $validated['adviser_user_id'])) {
             return back()->withErrors([
@@ -3716,11 +3718,22 @@ class OrganizationController extends Controller
                 'required',
                 'file',
                 'mimes:pdf,doc,docx,jpg,jpeg,png',
-                'max:10240',
+                'max:'.self::REQUIREMENT_FILE_MAX_KB,
             ];
         }
 
         return $rules;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function requirementFileValidationMessages(): array
+    {
+        return [
+            'requirement_files.*.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'requirement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REQUIREMENT_FILE_MAX_MB.' MB.',
+        ];
     }
 
     /**
