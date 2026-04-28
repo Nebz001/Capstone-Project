@@ -9,6 +9,7 @@
   $initialSectionReviewState = $initialSectionReviewState ?? [
     'application' => 'pending',
     'contact' => 'pending',
+    'adviser' => 'pending',
     'organizational' => 'pending',
     'requirements' => 'pending',
   ];
@@ -63,6 +64,7 @@
   $sectionTitles = [
     'application' => 'Application Information',
     'contact' => 'Contact Information',
+    'adviser' => 'Adviser Information',
     'organizational' => 'Organizational Information',
     'requirements' => 'Requirements Attached',
   ];
@@ -77,6 +79,12 @@
       'contact_person' => 'Contact Person',
       'contact_no' => 'Contact Number',
       'contact_email' => 'Email Address',
+    ],
+    'adviser' => [
+      'full_name' => 'Full Name',
+      'school_id' => 'School ID',
+      'email' => 'Email',
+      'status' => 'Status',
     ],
     'organizational' => [
       'date_organized' => 'Date Organized',
@@ -119,6 +127,7 @@
   $sectionFieldKeys = [
     'application' => ['academic_year', 'submission_date', 'submitted_by', 'organization'],
     'contact' => ['contact_person', 'contact_no', 'contact_email'],
+    'adviser' => ['full_name', 'school_id', 'email', 'status'],
     'organizational' => ['date_organized', 'organization_type', 'school', 'purpose'],
     'requirements' => $requirementKeys,
   ];
@@ -148,6 +157,7 @@
   $effectiveSectionStatus = [
     'application' => old('section_review.application', $deriveSectionStatusFromFields('application', $sectionFieldKeys['application'])),
     'contact' => old('section_review.contact', $deriveSectionStatusFromFields('contact', $sectionFieldKeys['contact'])),
+    'adviser' => old('section_review.adviser', $deriveSectionStatusFromFields('adviser', $sectionFieldKeys['adviser'])),
     'organizational' => old('section_review.organizational', $deriveSectionStatusFromFields('organizational', $sectionFieldKeys['organizational'])),
     'requirements' => old('section_review.requirements', $deriveSectionStatusFromFields('requirements', $sectionFieldKeys['requirements'])),
   ];
@@ -190,12 +200,29 @@
   @csrf
   @method('PATCH')
 
-  @error('section_review')
-    <x-feedback.blocked-message variant="error" :message="$message" />
-  @enderror
-  @error('field_review')
-    <x-feedback.blocked-message variant="error" :message="$message" />
-  @enderror
+  <div id="registration-review-validation-alerts" class="space-y-3">
+    @error('section_review')
+      <x-feedback.blocked-message variant="error" :message="$message" />
+    @enderror
+    @error('field_review')
+      <x-feedback.blocked-message variant="error" :message="$message" />
+    @enderror
+  </div>
+
+  @if ($status === 'APPROVED' || session('review_success'))
+    <x-feedback.blocked-message variant="success" class="mb-6 items-start">
+      <p class="font-semibold">Organization has been approved</p>
+      <p class="mt-1 text-sm font-normal">The organization registration has been approved successfully.</p>
+      <p class="mt-2">
+        <a
+          href="{{ route('admin.registrations.index') }}"
+          class="text-sm font-semibold text-emerald-800 underline decoration-emerald-700/60 underline-offset-2 transition hover:text-emerald-900 hover:decoration-emerald-900"
+        >
+          Back to registrations
+        </a>
+      </p>
+    </x-feedback.blocked-message>
+  @endif
 
   @if ($updatedFieldSummary !== [])
     <x-feedback.blocked-message variant="info" :icon="false" class="mb-6">
@@ -371,6 +398,55 @@
     </dl>
     </div>
     @include('admin.registrations.partials.section-submit-control', ['sectionKey' => 'contact', 'persistedSectionReviews' => $persistedSectionReviews])
+  </x-ui.card>
+
+  {{-- Adviser Information --}}
+  <x-ui.card padding="p-0" class="overflow-hidden" data-review-section-card data-section-key="adviser">
+    <div class="border-b border-slate-100 bg-white px-6 py-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold tracking-tight text-slate-900">Adviser Information</h2>
+          <p class="mt-1 text-sm text-slate-500">Faculty adviser nomination linked to this submission.</p>
+        </div>
+        @php
+          $adviserBadge = $statusBadge((string) ($effectiveSectionStatus['adviser'] ?? 'pending'));
+        @endphp
+        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $adviserBadge['class'] }}" data-section-status-badge="adviser">{{ $adviserBadge['label'] }}</span>
+      </div>
+    </div>
+    <div class="bg-white px-6 py-5">
+      <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+        <div class="{{ $readonlyItemClass }}">
+          <dt class="{{ $readonlyLabelClass }}">Full Name</dt>
+          <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->full_name ?? 'N/A' }}</dd>
+            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'full_name', 'fieldLabel' => 'Full Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+          </div>
+        </div>
+        <div class="{{ $readonlyItemClass }}">
+          <dt class="{{ $readonlyLabelClass }}">School ID</dt>
+          <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->school_id ?? 'N/A' }}</dd>
+            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'school_id', 'fieldLabel' => 'School ID', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+          </div>
+        </div>
+        <div class="{{ $readonlyItemClass }}">
+          <dt class="{{ $readonlyLabelClass }}">Email</dt>
+          <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->email ?? 'N/A' }}</dd>
+            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'email', 'fieldLabel' => 'Email', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+          </div>
+        </div>
+        <div class="{{ $readonlyItemClass }}">
+          <dt class="{{ $readonlyLabelClass }}">Status</dt>
+          <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination ? ucfirst((string) $adviserNomination->status) : 'No nomination' }}</dd>
+            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'status', 'fieldLabel' => 'Status', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+          </div>
+        </div>
+      </dl>
+    </div>
+    @include('admin.registrations.partials.section-submit-control', ['sectionKey' => 'adviser', 'persistedSectionReviews' => $persistedSectionReviews])
   </x-ui.card>
 
   {{-- Organizational Details --}}
@@ -613,6 +689,7 @@
     const revisionSummaryList = document.getElementById('revision-summary-list');
     const saveReviewBtn = document.getElementById('save-review-btn');
     const saveReviewHelper = document.getElementById('save-review-helper');
+    const validationAlerts = document.getElementById('registration-review-validation-alerts');
     const submissionId = form?.dataset.submissionId || 'unknown';
     const reviewDraftUrl = form?.dataset.reviewDraftUrl || '';
     const reviewDraftStorageKey = `registration-review-draft:${submissionId}`;
@@ -816,6 +893,9 @@
     function updateSaveReviewAvailability() {
       const state = evaluateReviewReadiness();
       saveReviewBtn.disabled = !state.canSave;
+      if (validationAlerts) {
+        validationAlerts.classList.toggle('hidden', !state.hasPending && !state.hasMissingRevisionNote);
+      }
       if (state.hasPending) {
         saveReviewBtn.title = 'Review all fields before saving.';
         saveReviewHelper.textContent = 'All sections must be resolved before saving the review.';
@@ -1198,6 +1278,9 @@
 
     confirmBtn.addEventListener('click', () => {
       form.dataset.confirmed = '1';
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Saving...';
+      saveReviewBtn.disabled = true;
       if (saveDraftTimer) {
         window.clearTimeout(saveDraftTimer);
         saveDraftTimer = null;
@@ -1208,5 +1291,6 @@
     });
   })();
 </script>
+
 @endif
 @endsection

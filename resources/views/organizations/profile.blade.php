@@ -454,9 +454,19 @@
                             <p class="mt-0.5 text-xs leading-snug text-slate-500">Faculty adviser assigned to this organization.</p>
                         </div>
                         <div class="bg-white px-6 py-4.5">
-                            <div class="{{ $readonlyItemClass }}">
-                                <p class="{{ $readonlyLabelClass }}">Adviser Name</p>
-                                <p class="{{ $readonlyValueClass }}">{{ $organization->adviser_name ?? '—' }}</p>
+                            <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Adviser Name</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $activeAdviser?->user?->full_name ?? ($organization->adviser_name ?? 'No adviser assigned.') }}</p>
+                                </div>
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Adviser Email</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $activeAdviser?->user?->email ?? 'No adviser assigned.' }}</p>
+                                </div>
+                                <div class="{{ $readonlyItemClass }}">
+                                    <p class="{{ $readonlyLabelClass }}">Adviser School ID</p>
+                                    <p class="{{ $readonlyValueClass }}">{{ $activeAdviser?->user?->school_id ?? 'No adviser assigned.' }}</p>
+                                </div>
                             </div>
                         </div>
                     </x-ui.card>

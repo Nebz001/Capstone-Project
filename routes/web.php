@@ -7,6 +7,7 @@ use App\Http\Controllers\ApproverDashboardController;
 use App\Http\Controllers\AnnouncementDismissController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\OrganizationAdviserController;
 use App\Http\Controllers\OrganizationNotificationController;
 use App\Http\Controllers\OrganizationSubmittedDocumentsController;
 use App\Models\Organization;
@@ -48,6 +49,10 @@ Route::get('dashboard', function (Request $request) {
  * surfaces to the user as a broken / 404-looking "View file" link).
  */
 Route::prefix('organizations')->name('organizations.')->middleware(['auth'])->group(function () {
+    Route::get('/advisers/search', [OrganizationAdviserController::class, 'searchAdvisers'])
+        ->name('advisers.search');
+    Route::post('/submitted-documents/{submission}/adviser/renominate', [OrganizationAdviserController::class, 'renominateForSubmission'])
+        ->name('submitted-documents.adviser.renominate');
     Route::controller(OrganizationSubmittedDocumentsController::class)->group(function () {
         Route::get('/submitted-documents/registrations/{submission}/files/{key}', 'streamSubmittedRegistrationRequirementFile')
             ->name('submitted-documents.registrations.file')
@@ -64,6 +69,9 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth'])->gr
             ->where('key', '[a-z0-9_]+');
     });
 });
+
+Route::middleware(['auth'])->get('/api/users/search-advisers', [OrganizationAdviserController::class, 'searchAdvisers'])
+    ->name('api.users.search-advisers');
 
 Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'officer.portal'])->group(function () {
     Route::controller(OrganizationSubmittedDocumentsController::class)->group(function () {
@@ -228,6 +236,10 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
 
     Route::post('/organizations/{organization}/request-profile-revision', 'requestOrganizationProfileRevision')
         ->name('organizations.request-profile-revision');
+});
+
+Route::prefix('admin')->name('admin.')->middleware('auth')->controller(OrganizationAdviserController::class)->group(function () {
+    Route::patch('/advisers/{adviser}/review', 'reviewAdviser')->name('advisers.review');
 });
 
 Route::bind('submission', function (string $value): OrganizationSubmission {

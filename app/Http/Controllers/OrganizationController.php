@@ -12,6 +12,7 @@ use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
 use App\Models\Attachment;
 use App\Models\Organization;
+use App\Models\OrganizationAdviser;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationProfileRevision;
 use App\Models\OrganizationRevisionFieldUpdate;
@@ -35,6 +36,9 @@ use Illuminate\Validation\Rule;
 
 class OrganizationController extends Controller
 {
+    /** Adviser-eligible role names in `roles.name`. */
+    private const ADVISER_ROLE_NAMES = ['adviser'];
+
     /** Checkbox values for new registration — must match `requirements[]` and `requirement_files` keys. */
     private const REGISTRATION_REQUIREMENT_KEYS = [
         'letter_of_intent',
@@ -746,7 +750,10 @@ class OrganizationController extends Controller
         $officerValidationPending = $user && ! $user->isOfficerValidated();
         $alreadyLinkedToOrganization = $user && $user->currentOrganization() !== null;
 
-        return view('organizations.register', compact('officerValidationPending', 'alreadyLinkedToOrganization'));
+        return view('organizations.register', compact(
+            'officerValidationPending',
+            'alreadyLinkedToOrganization'
+        ));
     }
 
     /**
@@ -813,6 +820,7 @@ class OrganizationController extends Controller
         $validated = $request->validate(array_merge([
             'organization_name' => ['required', 'string', 'max:150'],
             'contact_person' => ['required', 'string', 'max:255'],
+            'adviser_user_id' => ['required', 'integer', 'exists:users,id'],
             'contact_no' => $this->contactNoRules(),
             'email_address' => ['required', 'email', 'max:150'],
             'academic_year' => ['required', 'string', 'max:20'],
@@ -833,6 +841,12 @@ class OrganizationController extends Controller
             'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
             'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
         ]);
+
+        if (! $this->isEligibleAdviserUserId((int) $validated['adviser_user_id'])) {
+            return back()->withErrors([
+                'adviser_user_id' => 'Selected faculty adviser is not eligible.',
+            ])->withInput();
+        }
 
         $this->enforceRequiredRequirementSelectionsAndFiles(
             $request,
@@ -877,6 +891,7 @@ class OrganizationController extends Controller
                 'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
                 'type' => OrganizationSubmission::TYPE_REGISTRATION,
                 'contact_person' => $validated['contact_person'],
+                'adviser_name' => $this->adviserDisplayNameByUserId((int) $validated['adviser_user_id']),
                 'contact_no' => $validated['contact_no'],
                 'contact_email' => $validated['email_address'],
                 'submission_date' => now()->toDateString(),
@@ -890,6 +905,11 @@ class OrganizationController extends Controller
                 self::REGISTRATION_REQUIREMENT_KEYS,
                 $reqs,
                 (string) ($validated['requirements_other'] ?? '')
+            );
+            $this->syncSubmissionAdviserNomination(
+                $organization->id,
+                (int) $submission->id,
+                (int) $validated['adviser_user_id']
             );
             $this->attachRequirementFiles($submission, $filePaths, $user->id);
 
@@ -949,6 +969,28 @@ class OrganizationController extends Controller
                 ? 'No organization is linked to your account. Register your organization before submitting a renewal application.'
                 : (string) ($renewalAccess['message'] ?? ''));
 
+        $adviserNominationNotice = null;
+        if ($organization) {
+            $latestRenewalSubmission = $organization->submissions()
+                ->renewals()
+                ->where('status', OrganizationSubmission::STATUS_REVISION)
+                ->latest('updated_at')
+                ->latest('id')
+                ->first();
+            if ($latestRenewalSubmission) {
+                $latestRejectedNomination = OrganizationAdviser::query()
+                    ->where('organization_id', $organization->id)
+                    ->where('submission_id', (int) $latestRenewalSubmission->id)
+                    ->where('status', 'rejected')
+                    ->latest('reviewed_at')
+                    ->latest('id')
+                    ->first();
+                if ($latestRejectedNomination) {
+                    $adviserNominationNotice = 'Previous adviser was rejected - please nominate a new one.';
+                }
+            }
+        }
+
         return view('organizations.renew', compact(
             'organization',
             'schoolCodeDefault',
@@ -957,6 +999,7 @@ class OrganizationController extends Controller
             'renewalAccess',
             'renewalIsBlocked',
             'renewalBlockedReason',
+            'adviserNominationNotice',
         ));
     }
 
@@ -997,6 +1040,7 @@ class OrganizationController extends Controller
         $validated = $request->validate(array_merge([
             'organization_name' => ['required', 'string', 'max:150'],
             'contact_person' => ['required', 'string', 'max:255'],
+            'adviser_user_id' => ['required', 'integer', 'exists:users,id'],
             'contact_no' => $this->contactNoRules(),
             'email_address' => ['required', 'email', 'max:150'],
             'academic_year' => ['required', 'string', 'max:20'],
@@ -1016,6 +1060,12 @@ class OrganizationController extends Controller
             'requirements.required' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
             'requirements.min' => self::REQUIREMENTS_MIN_ONE_MESSAGE,
         ]);
+
+        if (! $this->isEligibleAdviserUserId((int) $validated['adviser_user_id'])) {
+            return back()->withErrors([
+                'adviser_user_id' => 'Selected faculty adviser is not eligible.',
+            ])->withInput();
+        }
 
         $this->enforceRequiredRequirementSelectionsAndFiles(
             $request,
@@ -1059,6 +1109,7 @@ class OrganizationController extends Controller
             'academic_term_id' => $this->resolveOrCreateAcademicTermId((string) $validated['academic_year']),
             'type' => OrganizationSubmission::TYPE_RENEWAL,
             'contact_person' => $validated['contact_person'],
+            'adviser_name' => $this->adviserDisplayNameByUserId((int) $validated['adviser_user_id']),
             'contact_no' => $validated['contact_no'],
             'contact_email' => $validated['email_address'],
             'submission_date' => now()->toDateString(),
@@ -1079,6 +1130,11 @@ class OrganizationController extends Controller
             self::RENEWAL_REQUIREMENT_KEYS,
             $reqs,
             (string) ($validated['requirements_other'] ?? '')
+        );
+        $this->syncSubmissionAdviserNomination(
+            $organization->id,
+            (int) $submission->id,
+            (int) $validated['adviser_user_id']
         );
         $this->attachRequirementFiles($submission, $filePaths, $user->id);
 
@@ -1243,6 +1299,15 @@ class OrganizationController extends Controller
         $revisionEditMode = $editingAllowed
             && (bool) ($organization?->isProfileRevisionRequested() ?? false)
             && count($revisionEditableFields) > 0;
+        $activeAdviser = $organization
+            ? OrganizationAdviser::query()
+                ->active()
+                ->with('user')
+                ->where('organization_id', $organization->id)
+                ->latest('assigned_at')
+                ->latest('id')
+                ->first()
+            : null;
 
         return view('organizations.profile', [
             'organization' => $organization,
@@ -1256,6 +1321,7 @@ class OrganizationController extends Controller
             'applicationWorkflowStatus' => $applicationWorkflowStatus,
             'revisionRegistration' => $revisionRegistration,
             'profileRevisionSummary' => $profileRevisionSummary,
+            'activeAdviser' => $activeAdviser,
         ]);
     }
 
@@ -3696,6 +3762,51 @@ class OrganizationController extends Controller
         if ($errors !== []) {
             throw \Illuminate\Validation\ValidationException::withMessages($errors);
         }
+    }
+
+    private function isEligibleAdviserUserId(int $userId): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+
+        return User::query()
+            ->whereKey($userId)
+            ->whereHas('role', function ($query): void {
+                $query->whereIn('name', self::ADVISER_ROLE_NAMES);
+            })
+            ->exists();
+    }
+
+    private function adviserDisplayNameByUserId(int $userId): ?string
+    {
+        $adviser = User::query()->find($userId);
+        if (! $adviser) {
+            return null;
+        }
+
+        return trim((string) $adviser->full_name) !== ''
+            ? (string) $adviser->full_name
+            : trim(((string) $adviser->first_name).' '.((string) $adviser->last_name));
+    }
+
+    private function syncSubmissionAdviserNomination(int $organizationId, int $submissionId, int $adviserUserId): void
+    {
+        OrganizationAdviser::query()->updateOrCreate(
+            [
+                'organization_id' => $organizationId,
+                'submission_id' => $submissionId,
+            ],
+            [
+                'user_id' => $adviserUserId,
+                'assigned_at' => now()->toDateString(),
+                'status' => 'pending',
+                'relieved_at' => null,
+                'reviewed_by' => null,
+                'reviewed_at' => null,
+                'rejection_notes' => null,
+            ]
+        );
     }
 
     /**

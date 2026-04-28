@@ -103,6 +103,58 @@
     </x-feedback.blocked-message>
   @endif
 
+  @if (! empty($adviserNomination ?? null))
+    <x-ui.card padding="p-0" class="mb-5">
+      <x-ui.card-section-header
+        title="Faculty Adviser Nomination"
+        subtitle="Nomination status for this submission."
+        content-padding="px-6"
+      />
+      <div class="border-t border-slate-100 px-6 py-4.5">
+        <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+          <div class="{{ $readonlyItemClass }}">
+            <dt class="{{ $readonlyLabelClass }}">Full name</dt>
+            <dd class="{{ $readonlyValueClass }}">{{ $adviserNomination->user?->full_name ?? 'N/A' }}</dd>
+          </div>
+          <div class="{{ $readonlyItemClass }}">
+            <dt class="{{ $readonlyLabelClass }}">School ID</dt>
+            <dd class="{{ $readonlyValueClass }}">{{ $adviserNomination->user?->school_id ?? 'N/A' }}</dd>
+          </div>
+          <div class="{{ $readonlyItemClass }}">
+            <dt class="{{ $readonlyLabelClass }}">Email</dt>
+            <dd class="{{ $readonlyValueClass }}">{{ $adviserNomination->user?->email ?? 'N/A' }}</dd>
+          </div>
+          <div class="{{ $readonlyItemClass }}">
+            <dt class="{{ $readonlyLabelClass }}">Status</dt>
+            <dd class="{{ $readonlyValueClass }}">{{ ucfirst((string) ($adviserNomination->status ?? 'pending')) }}</dd>
+          </div>
+          <div class="{{ $readonlyItemClass }} md:col-span-2">
+            <dt class="{{ $readonlyLabelClass }}">Rejection reason</dt>
+            <dd class="{{ $readonlyValueClass }}">{{ $adviserNomination->rejection_notes ?: '—' }}</dd>
+          </div>
+        </dl>
+
+        @if (! empty($canRenominateAdviser ?? false))
+          <div class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+            <p class="font-semibold">Previous adviser was rejected.</p>
+            <p class="mt-1">Please nominate a new adviser to continue review.</p>
+          </div>
+          <form method="POST" action="{{ $adviserRenominateActionUrl ?? '#' }}" class="mt-4 space-y-2">
+            @csrf
+            <input type="hidden" name="adviser_user_id" id="detail_adviser_user_id" value="">
+            <x-forms.label for="detail_adviser_search" required>Nominate New Adviser</x-forms.label>
+            <x-forms.input id="detail_adviser_search" name="detail_adviser_search" type="text" placeholder="Search by name, school ID, or email" autocomplete="off" required />
+            <div id="detail_adviser_results" class="hidden rounded-xl border border-slate-200 bg-white p-2 shadow-lg"></div>
+            @error('adviser_user_id') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+            <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#00327F]">
+              Nominate New Adviser
+            </button>
+          </form>
+        @endif
+      </div>
+    </x-ui.card>
+  @endif
+
   <x-ui.card padding="p-0" class="mb-5">
     <x-ui.card-section-header
       title="Submission details"
@@ -407,7 +459,7 @@
 
 @endsection
 
-@if (! empty($revisionSections ?? []) || ! empty($canSubmitFileRevision ?? false))
+@if (! empty($revisionSections ?? []) || ! empty($canSubmitFileRevision ?? false) || ! empty($canRenominateAdviser ?? false))
   @section('scripts')
     <script>
       (() => {
@@ -433,6 +485,66 @@
             scrollToTarget(button.dataset.revisionTargetId || '');
           });
         });
+
+        const adviserSearch = document.getElementById('detail_adviser_search');
+        const adviserHidden = document.getElementById('detail_adviser_user_id');
+        const adviserResults = document.getElementById('detail_adviser_results');
+        if (adviserSearch && adviserHidden && adviserResults) {
+          let adviserTimer = null;
+          const hideAdviserResults = () => {
+            adviserResults.classList.add('hidden');
+            adviserResults.innerHTML = '';
+          };
+          const runAdviserSearch = async (q) => {
+            if (!q || q.trim().length < 2) {
+              hideAdviserResults();
+              return;
+            }
+            try {
+              const res = await fetch(`/api/users/search-advisers?q=${encodeURIComponent(q.trim())}`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+              });
+              if (!res.ok) {
+                hideAdviserResults();
+                return;
+              }
+              const rows = await res.json();
+              if (!Array.isArray(rows) || rows.length === 0) {
+                hideAdviserResults();
+                return;
+              }
+              adviserResults.innerHTML = rows.map((row) => `
+                <button
+                  type="button"
+                  class="flex w-full flex-col items-start rounded-lg px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-100"
+                  data-detail-adviser-id="${row.id}"
+                  data-detail-adviser-text="${row.full_name || ''} | ${row.school_id || ''} | ${row.email || ''}"
+                >
+                  <span class="font-semibold text-slate-900">${row.full_name || 'N/A'}</span>
+                  <span>${row.school_id || 'No school ID'} • ${row.email || 'No email'}</span>
+                </button>
+              `).join('');
+              adviserResults.classList.remove('hidden');
+            } catch (_e) {
+              hideAdviserResults();
+            }
+          };
+          adviserSearch.addEventListener('input', () => {
+            adviserHidden.value = '';
+            if (adviserTimer) window.clearTimeout(adviserTimer);
+            adviserTimer = window.setTimeout(() => runAdviserSearch(adviserSearch.value || ''), 220);
+          });
+          adviserResults.addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const btn = target.closest('[data-detail-adviser-id]');
+            if (!(btn instanceof HTMLElement)) return;
+            adviserHidden.value = btn.getAttribute('data-detail-adviser-id') || '';
+            adviserSearch.value = btn.getAttribute('data-detail-adviser-text') || '';
+            hideAdviserResults();
+          });
+        }
 
         document.querySelectorAll('[data-replace-file-trigger]').forEach((trigger) => {
           trigger.addEventListener('click', () => {

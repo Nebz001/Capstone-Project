@@ -142,6 +142,28 @@
                         />
                         @error('contact_person') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                     </div>
+                    <div class="md:col-span-2">
+                        <x-forms.label for="adviser_search" required>Faculty Adviser</x-forms.label>
+                        <input type="hidden" id="adviser_user_id" name="adviser_user_id" value="{{ old('adviser_user_id') }}" />
+                        <x-forms.input
+                            id="adviser_search"
+                            name="adviser_search"
+                            type="text"
+                            placeholder="Search by name, school ID, or email"
+                            :value="old('adviser_search')"
+                            autocomplete="off"
+                            required
+                        />
+                        @if (!empty($adviserNominationNotice))
+                            <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">{{ $adviserNominationNotice }}</p>
+                        @endif
+                        <div id="adviser_search_results" class="mt-2 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-lg"></div>
+                        <div id="adviser_selected_summary" class="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 {{ old('adviser_user_id') ? '' : 'hidden' }}">
+                            <p class="font-semibold text-slate-900">Selected adviser</p>
+                            <p id="adviser_selected_text">{{ old('adviser_search') }}</p>
+                        </div>
+                        @error('adviser_user_id') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+                    </div>
                     <div> 
                         <x-forms.label for="contact_no" required>Contact No.</x-forms.label>
                         <x-forms.input

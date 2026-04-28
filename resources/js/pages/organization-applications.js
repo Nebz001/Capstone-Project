@@ -312,6 +312,142 @@ const initRequirementAttachments = () => {
     });
 };
 
+const initAdviserSearch = () => {
+    const forms = document.querySelectorAll(
+        'form[action*="/organizations/register"], form[action*="/organizations/renew"]',
+    );
+
+    forms.forEach((form) => {
+        const searchInput = form.querySelector("#adviser_search");
+        const hiddenIdInput = form.querySelector("#adviser_user_id");
+        const resultsBox = form.querySelector("#adviser_search_results");
+        const selectedSummary = form.querySelector("#adviser_selected_summary");
+        const selectedText = form.querySelector("#adviser_selected_text");
+
+        if (
+            !(searchInput instanceof HTMLInputElement) ||
+            !(hiddenIdInput instanceof HTMLInputElement) ||
+            !(resultsBox instanceof HTMLElement) ||
+            !(selectedSummary instanceof HTMLElement) ||
+            !(selectedText instanceof HTMLElement)
+        ) {
+            return;
+        }
+
+        let debounceTimer = null;
+        const hideResults = () => {
+            resultsBox.classList.add("hidden");
+            resultsBox.innerHTML = "";
+        };
+
+        const renderResults = (rows) => {
+            if (!Array.isArray(rows) || rows.length === 0) {
+                hideResults();
+                return;
+            }
+
+            resultsBox.innerHTML = rows
+                .map(
+                    (row) => `
+                    <button
+                        type="button"
+                        class="flex w-full flex-col items-start rounded-lg px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-100"
+                        data-adviser-select
+                        data-adviser-id="${row.id}"
+                        data-adviser-text="${(row.full_name || "").replace(/"/g, "&quot;")} | ${(
+                            row.school_id || ""
+                        ).replace(/"/g, "&quot;")} | ${(row.email || "").replace(/"/g, "&quot;")}"
+                    >
+                        <span class="font-semibold text-slate-900">${row.full_name || "N/A"}</span>
+                        <span>${row.school_id || "No school ID"} • ${row.email || "No email"}</span>
+                    </button>
+                `,
+                )
+                .join("");
+            resultsBox.classList.remove("hidden");
+        };
+
+        const runSearch = async (query) => {
+            if (!query || query.trim().length < 2) {
+                hideResults();
+                return;
+            }
+            try {
+                const url = `/api/users/search-advisers?q=${encodeURIComponent(
+                    query.trim(),
+                )}`;
+                const response = await fetch(url, {
+                    headers: { Accept: "application/json" },
+                    credentials: "same-origin",
+                });
+                if (!response.ok) {
+                    hideResults();
+                    return;
+                }
+                const rows = await response.json();
+                renderResults(rows);
+            } catch (_error) {
+                hideResults();
+            }
+        };
+
+        searchInput.addEventListener("input", () => {
+            searchInput.setCustomValidity("");
+            hiddenIdInput.value = "";
+            selectedText.textContent = "";
+            selectedSummary.classList.add("hidden");
+            if (debounceTimer) {
+                window.clearTimeout(debounceTimer);
+            }
+            debounceTimer = window.setTimeout(
+                () => runSearch(searchInput.value || ""),
+                220,
+            );
+        });
+
+        resultsBox.addEventListener("click", (event) => {
+            const target = event.target;
+            const button =
+                target instanceof HTMLElement
+                    ? target.closest("[data-adviser-select]")
+                    : null;
+            if (!(button instanceof HTMLElement)) {
+                return;
+            }
+            const adviserId = button.getAttribute("data-adviser-id") || "";
+            const adviserText = button.getAttribute("data-adviser-text") || "";
+            hiddenIdInput.value = adviserId;
+            searchInput.value = adviserText;
+            selectedText.textContent = adviserText;
+            selectedSummary.classList.remove("hidden");
+            hideResults();
+        });
+
+        document.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof Node)) {
+                return;
+            }
+            if (!form.contains(target)) {
+                hideResults();
+            }
+        });
+
+        form.addEventListener("submit", (event) => {
+            if (!hiddenIdInput.value) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                searchInput.setCustomValidity(
+                    "Please select a faculty adviser from search results.",
+                );
+                searchInput.reportValidity();
+                return;
+            }
+            searchInput.setCustomValidity("");
+        });
+    });
+};
+
 const showOrganizationApplicationSuccessAlert = () => {
     const flashEl =
         document.getElementById("organization-register-success-alert-data") ||
@@ -360,6 +496,7 @@ const showOrganizationApplicationSuccessAlert = () => {
 export const initOrganizationApplicationAlerts = () => {
     initPhilippineContactInputs();
     initRequirementAttachments();
+    initAdviserSearch();
     initOrganizationTypeSchoolToggle();
 
     if (document.readyState === "loading") {

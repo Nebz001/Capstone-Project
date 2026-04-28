@@ -33,6 +33,9 @@
 >
   @csrf
   @method('PATCH')
+  @error('adviser')
+    <x-feedback.blocked-message variant="error" :message="$message" />
+  @enderror
 
   <x-ui.card padding="p-5" class="border border-slate-200 bg-slate-50/70">
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -115,6 +118,23 @@
             </div>
           @endforeach
         </dl>
+        @if (! empty($section['actions']) && is_array($section['actions']))
+          <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            @foreach ($section['actions'] as $action)
+              @if (($action['status'] ?? '') === 'approved')
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+                  <button type="button" class="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700" data-adviser-review-action="{{ $action['action'] }}" data-adviser-review-status="approved">{{ $action['label'] ?? 'Approve' }}</button>
+                </div>
+              @elseif (($action['status'] ?? '') === 'rejected')
+                <div class="rounded-xl border border-rose-200 bg-rose-50/40 p-3 space-y-2">
+                  <x-forms.label for="adviser-rejection-notes-{{ $section['key'] }}">Rejection notes</x-forms.label>
+                  <x-forms.textarea id="adviser-rejection-notes-{{ $section['key'] }}" name="rejection_notes" rows="2" placeholder="Reason for rejection...">{{ old('rejection_notes') }}</x-forms.textarea>
+                  <button type="button" class="inline-flex w-full items-center justify-center rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700" data-adviser-review-action="{{ $action['action'] }}" data-adviser-review-status="rejected" data-adviser-rejection-notes-id="adviser-rejection-notes-{{ $section['key'] }}">{{ $action['label'] ?? 'Reject' }}</button>
+                </div>
+              @endif
+            @endforeach
+          </div>
+        @endif
       </div>
       @if ($sectionReviewable)
         @include('admin.registrations.partials.section-submit-control', ['sectionKey' => $section['key'], 'persistedSectionReviews' => $persistedSectionReviews])
@@ -171,6 +191,39 @@
   const getFieldControls = (sectionKey) => Array.from(form.querySelectorAll(`[data-field-review][data-section-key="${sectionKey}"]`));
   const allSectionRoots = () => Array.from(form.querySelectorAll('[data-section-submit]'));
   const csrfToken = () => form.querySelector('input[name="_token"]')?.value || '';
+
+  document.querySelectorAll('[data-adviser-review-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const actionUrl = btn.getAttribute('data-adviser-review-action') || '';
+      const status = btn.getAttribute('data-adviser-review-status') || '';
+      const token = csrfToken();
+      if (!actionUrl || !status || !token) return;
+      if (status === 'rejected') {
+        const notesId = btn.getAttribute('data-adviser-rejection-notes-id') || '';
+        const notesEl = notesId ? document.getElementById(notesId) : null;
+        if (!notesEl || String(notesEl.value || '').trim() === '') {
+          alert('Rejection notes are required.');
+          return;
+        }
+      }
+      const submitForm = document.createElement('form');
+      submitForm.method = 'POST';
+      submitForm.action = actionUrl;
+      submitForm.style.display = 'none';
+      submitForm.innerHTML = `<input type="hidden" name="_token" value="${token}"><input type="hidden" name="_method" value="PATCH"><input type="hidden" name="action" value="${status}">`;
+      if (status === 'rejected') {
+        const notesId = btn.getAttribute('data-adviser-rejection-notes-id') || '';
+        const notesEl = notesId ? document.getElementById(notesId) : null;
+        const notesInput = document.createElement('input');
+        notesInput.type = 'hidden';
+        notesInput.name = 'rejection_notes';
+        notesInput.value = String(notesEl?.value || '');
+        submitForm.appendChild(notesInput);
+      }
+      document.body.appendChild(submitForm);
+      submitForm.submit();
+    });
+  });
 
   function syncFieldControl(control) {
     const statusInput = control.querySelector('.field-review-status');

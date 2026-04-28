@@ -114,6 +114,11 @@ class OrganizationSubmission extends Model
         return $this->type === self::TYPE_RENEWAL;
     }
 
+    public function adviserNominations(): HasMany
+    {
+        return $this->hasMany(OrganizationAdviser::class, 'submission_id');
+    }
+
     /**
      * Legacy uppercase status representation for old UI helpers.
      */

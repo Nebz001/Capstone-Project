@@ -10,6 +10,7 @@ use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
 use App\Models\Attachment;
 use App\Models\Organization;
+use App\Models\OrganizationAdviser;
 use App\Models\OrganizationProfileRevision;
 use App\Models\OrganizationRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
@@ -24,6 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -55,7 +57,7 @@ class AdminController extends Controller
     ];
 
     /** Admin per-section review keys (registration show page). */
-    private const REGISTRATION_REVIEW_SECTION_KEYS = ['application', 'contact', 'organizational', 'requirements'];
+    private const REGISTRATION_REVIEW_SECTION_KEYS = ['application', 'contact', 'adviser', 'organizational', 'requirements'];
 
     /** @return array<string, string> section_key => revision_comment column */
     private function registrationReviewSectionRevisionColumns(): array
@@ -514,6 +516,7 @@ class AdminController extends Controller
         return view('admin.registrations.show', [
             'registration' => $submission,
             'submission' => $submission,
+            'adviserNomination' => $this->submissionAdviserNomination($submission),
             'initialSectionReviewState' => $this->initialRegistrationSectionReviewState($submission),
             'persistedFieldReviews' => $effectiveFieldReviews,
             'persistedSectionReviews' => is_array($submission->registration_section_reviews) ? $submission->registration_section_reviews : [],
@@ -554,6 +557,16 @@ class AdminController extends Controller
                 'download' => 1,
             ]),
         ];
+    }
+
+    private function submissionAdviserNomination(OrganizationSubmission $submission): ?OrganizationAdviser
+    {
+        return OrganizationAdviser::query()
+            ->with(['user', 'reviewer'])
+            ->where('organization_id', $submission->organization_id)
+            ->where('submission_id', (int) $submission->id)
+            ->latest('id')
+            ->first();
     }
 
     /**
@@ -742,7 +755,7 @@ class AdminController extends Controller
                     $effectiveRemarks !== '' ? "General remarks\n".$effectiveRemarks : null,
                 ]))
                 : '';
-            $submission->update([
+            $submissionPayload = [
                 'status' => $nextStatus,
                 'approval_decision' => $nextStatus === OrganizationSubmission::STATUS_APPROVED ? 'approved' : null,
                 'additional_remarks' => $effectiveRemarks !== '' ? $effectiveRemarks : null,
@@ -752,10 +765,35 @@ class AdminController extends Controller
                 'current_approval_step' => 0,
                 'registration_field_reviews' => $normalizedFieldReviews,
                 'registration_section_reviews' => $normalizedSectionReviews,
-            ]);
+            ];
+            if (Schema::hasColumn('organization_submissions', 'review_status')) {
+                $submissionPayload['review_status'] = $nextStatus === OrganizationSubmission::STATUS_APPROVED
+                    ? 'approved'
+                    : ($nextStatus === OrganizationSubmission::STATUS_REVISION ? 'revision' : 'pending');
+            }
+            if ($nextStatus === OrganizationSubmission::STATUS_APPROVED) {
+                if (Schema::hasColumn('organization_submissions', 'approved_at')) {
+                    $submissionPayload['approved_at'] = now();
+                }
+                if (Schema::hasColumn('organization_submissions', 'approved_by')) {
+                    $submissionPayload['approved_by'] = (int) $admin->id;
+                }
+            }
+            $submission->update($submissionPayload);
 
             if ($nextStatus === OrganizationSubmission::STATUS_APPROVED) {
-                $submission->organization?->update(['status' => 'active']);
+                $organizationPayload = ['status' => 'active'];
+                if (Schema::hasColumn('organizations', 'active_at')) {
+                    $organizationPayload['active_at'] = now();
+                }
+                $submission->organization?->update($organizationPayload);
+                OrganizationProfileRevision::query()
+                    ->where('organization_id', $submission->organization_id)
+                    ->where('status', 'open')
+                    ->update([
+                        'status' => 'addressed',
+                        'addressed_at' => now(),
+                    ]);
             }
 
             if ($nextStatus === OrganizationSubmission::STATUS_REVISION && $effectiveRevisionNotes !== '') {
@@ -773,8 +811,7 @@ class AdminController extends Controller
 
         return redirect()
             ->route('admin.registrations.show', $submission)
-            ->with('success', 'Registration review saved successfully.')
-            ->with('success_html', 'Registration review saved successfully. <a href="'.route('admin.registrations.index').'" class="ml-1 inline-flex items-center font-semibold underline decoration-emerald-700/50 underline-offset-2 hover:decoration-emerald-900">Back to Registrations</a>');
+            ->with('review_success', true);
     }
 
     public function saveRegistrationReviewDraft(Request $request, OrganizationSubmission $submission): JsonResponse
@@ -883,6 +920,12 @@ class AdminController extends Controller
                 'contact_no' => 'Contact Number',
                 'contact_email' => 'Email Address',
             ],
+            'adviser' => [
+                'full_name' => 'Full Name',
+                'school_id' => 'School ID',
+                'email' => 'Email',
+                'status' => 'Status',
+            ],
             'organizational' => [
                 'date_organized' => 'Date Organized',
                 'organization_type' => 'Type of Organization',
@@ -901,6 +944,7 @@ class AdminController extends Controller
         $sectionTitles = [
             'application' => 'Application Information',
             'contact' => 'Account and Contact Information',
+            'adviser' => 'Adviser Information',
             'organizational' => 'Organization Details',
             'requirements' => 'Requirements Attached',
         ];
@@ -1606,6 +1650,7 @@ class AdminController extends Controller
         return [$normalizedFieldReviews, $normalizedSectionReviews, $hasPending, $hasMissingNotes];
     }
 
+
     /**
      * Merge draft payload with persisted field reviews so partial draft saves
      * never reset untouched fields back to pending.
@@ -1724,6 +1769,7 @@ class AdminController extends Controller
             ],
             'contact' => [
                 'contact_person' => 'Contact Person',
+                'adviser_name' => 'Adviser Name',
                 'contact_no' => 'Contact Number',
                 'contact_email' => 'Contact Email',
             ],
@@ -1744,9 +1790,11 @@ class AdminController extends Controller
 
     private function renewalReviewSections(OrganizationSubmission $submission): array
     {
+        $adviserNomination = $this->submissionAdviserNomination($submission);
         $sections = [
             ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Renewal context and submitter details.', 'fields' => []],
             ['key' => 'contact', 'title' => 'Contact Details', 'subtitle' => 'Primary point-of-contact for this renewal.', 'fields' => []],
+            ['key' => 'adviser', 'title' => 'Adviser Information', 'subtitle' => 'Faculty adviser nomination linked to this submission.', 'reviewable' => false, 'fields' => []],
             ['key' => 'requirements', 'title' => 'Requirements Attached', 'subtitle' => 'Uploaded requirement files for renewal.', 'fields' => []],
         ];
         $sections[0]['fields'] = [
@@ -1757,12 +1805,34 @@ class AdminController extends Controller
         ];
         $sections[1]['fields'] = [
             ['key' => 'contact_person', 'label' => 'Contact Person', 'value' => $submission->contact_person ?? 'N/A'],
+            ['key' => 'adviser_name', 'label' => 'Adviser Name', 'value' => $submission->adviser_name ?? 'N/A'],
             ['key' => 'contact_no', 'label' => 'Contact Number', 'value' => $submission->contact_no ?? 'N/A'],
             ['key' => 'contact_email', 'label' => 'Contact Email', 'value' => $submission->contact_email ?? 'N/A', 'wide' => true],
         ];
+        $sections[2]['fields'] = [
+            ['key' => 'adviser_full_name', 'label' => 'Full Name', 'value' => $adviserNomination?->user?->full_name ?? 'N/A'],
+            ['key' => 'adviser_school_id', 'label' => 'School ID', 'value' => (string) ($adviserNomination?->user?->school_id ?? 'N/A')],
+            ['key' => 'adviser_email', 'label' => 'Email', 'value' => (string) ($adviserNomination?->user?->email ?? 'N/A')],
+            ['key' => 'adviser_status', 'label' => 'Status', 'value' => $adviserNomination ? ucfirst((string) $adviserNomination->status) : 'No nomination'],
+            ['key' => 'adviser_rejection_notes', 'label' => 'Rejection Notes', 'value' => $adviserNomination?->rejection_notes ?: '—', 'wide' => true],
+        ];
+        if ($adviserNomination) {
+            $sections[2]['actions'] = [
+                [
+                    'label' => 'Approve Adviser',
+                    'action' => route('admin.advisers.review', $adviserNomination),
+                    'status' => 'approved',
+                ],
+                [
+                    'label' => 'Reject Adviser',
+                    'action' => route('admin.advisers.review', $adviserNomination),
+                    'status' => 'rejected',
+                ],
+            ];
+        }
         foreach (self::RENEWAL_REQUIREMENT_FILE_KEYS as $key) {
             $attachment = $submission->attachments()->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)->latest('id')->first();
-            $sections[2]['fields'][] = [
+            $sections[3]['fields'][] = [
                 'key' => $key,
                 'label' => ucwords(str_replace('_', ' ', $key)),
                 'value' => $attachment ? 'File uploaded' : 'Not uploaded',

@@ -12,6 +12,11 @@ class OrganizationAdviser extends Model
         'user_id',
         'assigned_at',
         'relieved_at',
+        'status',
+        'rejection_notes',
+        'reviewed_by',
+        'reviewed_at',
+        'submission_id',
     ];
 
     protected function casts(): array
@@ -19,6 +24,7 @@ class OrganizationAdviser extends Model
         return [
             'assigned_at' => 'datetime',
             'relieved_at' => 'datetime',
+            'reviewed_at' => 'datetime',
         ];
     }
 
@@ -30,5 +36,25 @@ class OrganizationAdviser extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function submission(): BelongsTo
+    {
+        return $this->belongsTo(OrganizationSubmission::class, 'submission_id');
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'approved')->whereNull('relieved_at');
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
     }
 }

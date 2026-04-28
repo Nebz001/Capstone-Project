@@ -8,6 +8,7 @@ use App\Models\ActivityReport;
 use App\Models\ActivityRequestForm;
 use App\Models\Attachment;
 use App\Models\Organization;
+use App\Models\OrganizationAdviser;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
@@ -259,6 +260,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $fileLinks = $this->registrationFileLinksFromSubmission($submission, $revisionSections, $savedUpdatedKeys, $recentlyReplacedKeys, $pendingRequirementUpdateKeys);
 
         $backNav = $this->registrationDetailBackNavigation($request);
+        $adviserNomination = $this->submissionAdviserNomination($submission);
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $backNav['route'],
             'backLabel' => $backNav['label'],
@@ -272,6 +274,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'isResubmittedPendingReview' => $isResubmittedPendingReview,
             'fileLinks' => $fileLinks,
             'workflowLinks' => [],
+            'adviserNomination' => $adviserNomination,
+            'canRenominateAdviser' => $adviserNomination?->status === 'rejected',
+            'adviserRenominateActionUrl' => route('organizations.submitted-documents.adviser.renominate', $submission),
             'submitActionUrl' => route('organizations.submitted-documents.registrations.resubmit', $submission),
             'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => null,
@@ -363,6 +368,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $sp = $this->submissionStatusPresentation($submission->legacyStatus());
         $fileLinks = $this->renewalFileLinksFromSubmission($submission);
         $revisionSections = $this->moduleRevisionSections(is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : []);
+        $adviserNomination = $this->submissionAdviserNomination($submission);
 
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $this->submittedDocumentsListUrl($request),
@@ -375,6 +381,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'revisionSections' => $revisionSections,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.renew')),
+            'adviserNomination' => $adviserNomination,
+            'canRenominateAdviser' => $adviserNomination?->status === 'rejected',
+            'adviserRenominateActionUrl' => route('organizations.submitted-documents.adviser.renominate', $submission),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Organization renewal',
             'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($submission->legacyStatus()),
@@ -1173,6 +1182,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     {
         return [
             ['label' => 'Contact person', 'value' => $submission->contact_person ?? '—'],
+            ['label' => 'Adviser name', 'value' => $submission->adviser_name ?? '—'],
             ['label' => 'Contact number', 'value' => $submission->contact_no ?? '—'],
             ['label' => 'Contact email', 'value' => $submission->contact_email ?? '—'],
             ['label' => 'Academic year', 'value' => $submission->academicTerm?->academic_year ?? '—'],
@@ -1188,6 +1198,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     {
         return [
             ['label' => 'Contact person', 'value' => $submission->contact_person ?? '—'],
+            ['label' => 'Adviser name', 'value' => $submission->adviser_name ?? '—'],
             ['label' => 'Contact number', 'value' => $submission->contact_no ?? '—'],
             ['label' => 'Contact email', 'value' => $submission->contact_email ?? '—'],
             ['label' => 'Academic year', 'value' => $submission->academicTerm?->academic_year ?? '—'],
@@ -2218,6 +2229,16 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $map;
+    }
+
+    private function submissionAdviserNomination(OrganizationSubmission $submission): ?OrganizationAdviser
+    {
+        return OrganizationAdviser::query()
+            ->with('user')
+            ->where('organization_id', $submission->organization_id)
+            ->where('submission_id', (int) $submission->id)
+            ->latest('id')
+            ->first();
     }
 
     /**
