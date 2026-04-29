@@ -554,7 +554,7 @@
             ? route('admin.registrations.requirement-file', ['submission' => ($submission ?? $registration), 'key' => $key])
             : null;
           $downloadUrl = $hasFile
-            ? route('admin.registrations.requirement-file', ['submission' => ($submission ?? $registration), 'key' => $key, 'download' => 1])
+            ? route('admin.registrations.requirement-file.download', ['submission' => ($submission ?? $registration), 'key' => $key])
             : null;
         @endphp
         <li class="requirement-review-item rounded-xl border border-slate-200 bg-slate-50/80 p-3.5">

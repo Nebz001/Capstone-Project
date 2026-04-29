@@ -198,9 +198,15 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::get('/registrations/{submission}/requirements/{key}', 'showRegistrationRequirementFile')
         ->name('registrations.requirement-file')
         ->where('key', '[a-z0-9_]+');
+    Route::get('/registrations/{submission}/requirements/{key}/download', 'downloadRegistrationRequirementFile')
+        ->name('registrations.requirement-file.download')
+        ->where('key', '[a-z0-9_]+');
     Route::get('/registrations/{submission}', 'showRegistration')->name('registrations.show');
     Route::get('/registrations/{submission}/field-updates/{fieldUpdate}/{version}/file', 'showRegistrationFieldUpdateFile')
         ->name('registrations.field-updates.file')
+        ->where('version', 'old|new');
+    Route::get('/registrations/{submission}/field-updates/{fieldUpdate}/{version}/file/download', 'downloadRegistrationFieldUpdateFile')
+        ->name('registrations.field-updates.file.download')
         ->where('version', 'old|new');
     Route::patch('/registrations/{submission}/review-draft', 'saveRegistrationReviewDraft')->name('registrations.review-draft');
     Route::patch('/registrations/{submission}/field-updates/{fieldUpdate}/acknowledge', 'acknowledgeRegistrationFieldUpdate')->name('registrations.field-updates.acknowledge');
@@ -209,6 +215,9 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::get('/renewals', 'renewals')->name('renewals.index');
     Route::get('/renewals/{submission}/requirements/{key}', 'showRenewalRequirementFile')
         ->name('renewals.requirement-file')
+        ->where('key', '[a-z0-9_]+');
+    Route::get('/renewals/{submission}/requirements/{key}/download', 'downloadRenewalRequirementFile')
+        ->name('renewals.requirement-file.download')
         ->where('key', '[a-z0-9_]+');
     Route::get('/renewals/{submission}', 'showRenewal')->name('renewals.show');
     Route::patch('/renewals/{submission}/review-draft', 'saveRenewalReviewDraft')->name('renewals.review-draft');

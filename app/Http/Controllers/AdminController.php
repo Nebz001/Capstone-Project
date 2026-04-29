@@ -580,11 +580,10 @@ class AdminController extends Controller
                 'fieldUpdate' => $update,
                 'version' => $version,
             ]),
-            'download_url' => route('admin.registrations.field-updates.file', [
+            'download_url' => route('admin.registrations.field-updates.file.download', [
                 'submission' => $submission,
                 'fieldUpdate' => $update,
                 'version' => $version,
-                'download' => 1,
             ]),
         ];
     }
@@ -645,6 +644,47 @@ class AdminController extends Controller
         return redirect()->away($publicUrl);
     }
 
+    /**
+     * Force-download an old/new revision file (no preview, no modal).
+     *
+     * Mirrors `showRegistrationFieldUpdateFile` for authorization and path
+     * resolution, but forces a download with the original filename rather
+     * than redirecting to the public Supabase URL where the browser would
+     * preview the file inline.
+     */
+    public function downloadRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): \Symfony\Component\HttpFoundation\Response
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        abort_unless((int) $fieldUpdate->organization_submission_id === (int) $submission->id, 404);
+        abort_unless((string) $fieldUpdate->section_key === 'requirements', 404);
+
+        $meta = $version === 'old'
+            ? (is_array($fieldUpdate->old_file_meta) ? $fieldUpdate->old_file_meta : [])
+            : (is_array($fieldUpdate->new_file_meta) ? $fieldUpdate->new_file_meta : []);
+        $storedPath = trim((string) ($meta['stored_path'] ?? ''));
+        if ($storedPath === '' || str_contains($storedPath, '..') || str_starts_with($storedPath, '/')) {
+            abort(404);
+        }
+
+        $originalName = trim((string) ($meta['original_name'] ?? ''));
+        if ($originalName === '') {
+            $originalName = basename($storedPath);
+        }
+        $mimeType = trim((string) ($meta['mime_type'] ?? ''));
+
+        return $this->forceDownloadSupabaseObject(
+            $storedPath,
+            $originalName,
+            $mimeType !== '' ? $mimeType : null,
+            [
+                'field_update_id' => $fieldUpdate->id,
+                'submission_id' => $submission->id,
+                'version' => $version,
+            ]
+        );
+    }
+
     public function acknowledgeRegistrationFieldUpdate(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate): JsonResponse
     {
         $this->authorizeAdmin($request);
@@ -683,6 +723,26 @@ class AdminController extends Controller
         }
 
         return $this->redirectToSupabaseRequirementFile($submission, $key);
+    }
+
+    /**
+     * Force-download a registration requirement file (no preview, no modal).
+     *
+     * Reuses the same admin authorization, requirement-key whitelist, and
+     * attachment lookup as `showRegistrationRequirementFile`, but emits the
+     * file with `Content-Disposition: attachment` so the browser saves it
+     * directly using the original filename from `attachments.original_name`.
+     */
+    public function downloadRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+
+        if (! in_array($key, self::REGISTRATION_REQUIREMENT_FILE_KEYS, true)) {
+            abort(404);
+        }
+
+        return $this->forceDownloadSupabaseRequirementFile($submission, $key);
     }
 
     public function updateRegistrationStatus(Request $request, OrganizationSubmission $submission): RedirectResponse
@@ -1493,6 +1553,24 @@ class AdminController extends Controller
     }
 
     /**
+     * Force-download a renewal requirement file (no preview, no modal).
+     *
+     * Mirrors `showRenewalRequirementFile` for authorization and lookup, but
+     * emits the file with `Content-Disposition: attachment` so the browser
+     * saves it directly using `attachments.original_name`.
+     */
+    public function downloadRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        if (! in_array($key, self::RENEWAL_REQUIREMENT_FILE_KEYS, true)) {
+            abort(404);
+        }
+
+        return $this->forceDownloadSupabaseRequirementFile($submission, $key);
+    }
+
+    /**
      * Look up a registration/renewal requirement attachment and redirect the
      * caller to its public Supabase Storage URL.
      *
@@ -1554,6 +1632,131 @@ class AdminController extends Controller
             .'/'.ltrim($relativePath, '/');
 
         return redirect()->away($publicUrl);
+    }
+
+    /**
+     * Look up a registration/renewal requirement attachment and emit it as a
+     * forced download instead of an inline preview.
+     *
+     * Uses the same prefixed/exact `file_type` lookup as the view path so
+     * legacy bare-key rows still resolve.
+     */
+    private function forceDownloadSupabaseRequirementFile(OrganizationSubmission $submission, string $requirementKey): \Symfony\Component\HttpFoundation\Response
+    {
+        $attachment = Attachment::query()
+            ->where('attachable_type', OrganizationSubmission::class)
+            ->where('attachable_id', $submission->id)
+            ->where(function ($query) use ($requirementKey): void {
+                $query->where('file_type', $requirementKey)
+                    ->orWhere('file_type', 'like', '%:'.$requirementKey);
+            })
+            ->latest('id')
+            ->first();
+
+        if (! $attachment) {
+            abort(404, 'No file has been uploaded for this requirement yet.');
+        }
+
+        $relativePath = (string) $attachment->stored_path;
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            Log::warning('Submission attachment has an invalid stored_path during download.', [
+                'attachment_id' => $attachment->id,
+                'submission_id' => $submission->id,
+                'requirement_key' => $requirementKey,
+                'stored_path' => $attachment->stored_path,
+            ]);
+
+            abort(404, 'File not found.');
+        }
+
+        $originalName = trim((string) ($attachment->original_name ?? ''));
+        if ($originalName === '') {
+            $originalName = basename($relativePath);
+        }
+
+        return $this->forceDownloadSupabaseObject(
+            $relativePath,
+            $originalName,
+            $attachment->mime_type ?: null,
+            [
+                'attachment_id' => $attachment->id,
+                'submission_id' => $submission->id,
+                'requirement_key' => $requirementKey,
+            ]
+        );
+    }
+
+    /**
+     * Force-download a bucket-relative object from the `supabase` disk.
+     *
+     * Strategy:
+     *   1. Verify the object exists (so we 404 cleanly instead of leaking a
+     *      broken signed URL).
+     *   2. Try a 15-minute presigned URL with `ResponseContentDisposition` +
+     *      `ResponseContentType` so Supabase serves the response with
+     *      `Content-Disposition: attachment` and the correct content type —
+     *      this works for both public and private buckets without any
+     *      Laravel-side proxying.
+     *   3. If presigned URL generation fails (e.g. the underlying Flysystem
+     *      adapter doesn't support `temporaryUrl`), fall back to streaming
+     *      the bytes through the framework with the same headers so the
+     *      browser still saves the file.
+     *
+     * @param  array<string, mixed>  $logContext  Non-secret IDs to attach to log lines (attachment id / submission id / etc.).
+     */
+    private function forceDownloadSupabaseObject(string $storedPath, string $originalName, ?string $mimeType, array $logContext = []): \Symfony\Component\HttpFoundation\Response
+    {
+        $disk = Storage::disk('supabase');
+
+        if (! $disk->exists($storedPath)) {
+            Log::warning('File missing from Supabase Storage during download request', array_merge([
+                'stored_path' => $storedPath,
+            ], $logContext));
+
+            abort(404, 'The file could not be found in Supabase Storage.');
+        }
+
+        $safeFilename = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $originalName);
+        if ($safeFilename === '') {
+            $safeFilename = basename($storedPath);
+        }
+        $resolvedMime = ($mimeType !== null && trim($mimeType) !== '') ? $mimeType : 'application/octet-stream';
+
+        try {
+            $temporaryUrl = $disk->temporaryUrl(
+                $storedPath,
+                now()->addMinutes(15),
+                [
+                    'ResponseContentDisposition' => 'attachment; filename="'.$safeFilename.'"',
+                    'ResponseContentType' => $resolvedMime,
+                ]
+            );
+
+            return redirect()->away($temporaryUrl);
+        } catch (\Throwable $e) {
+            Log::warning('Falling back to streamed Supabase download (temporaryUrl failed).', array_merge([
+                'stored_path' => $storedPath,
+                'error' => $e->getMessage(),
+                'exception' => class_basename($e),
+            ], $logContext));
+        }
+
+        try {
+            return response()->streamDownload(function () use ($disk, $storedPath): void {
+                echo $disk->get($storedPath);
+            }, $safeFilename, [
+                'Content-Type' => $resolvedMime,
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to stream download Supabase file', array_merge([
+                'stored_path' => $storedPath,
+                'error' => $e->getMessage(),
+                'exception' => class_basename($e),
+            ], $logContext));
+
+            abort(500, 'Unable to download file.');
+        }
     }
 
     public function saveRenewalReviewDraft(Request $request, OrganizationSubmission $submission): JsonResponse
@@ -2003,7 +2206,7 @@ class AdminController extends Controller
                 'label' => (string) data_get($this->renewalReviewSchema(), 'requirements.'.$key, ucwords(str_replace('_', ' ', $key))),
                 'value' => $attachment ? 'File uploaded' : 'Not uploaded',
                 'action' => $attachment ? ['href' => route('admin.renewals.requirement-file', ['submission' => $submission, 'key' => $key])] : null,
-                'download_action' => $attachment ? ['href' => route('admin.renewals.requirement-file', ['submission' => $submission, 'key' => $key, 'download' => 1])] : null,
+                'download_action' => $attachment ? ['href' => route('admin.renewals.requirement-file.download', ['submission' => $submission, 'key' => $key])] : null,
                 'submitted' => $checked,
                 'file_badge_label' => $badgeLabel,
                 'file_badge_class' => $badgeClass,
