@@ -245,3 +245,93 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(Organizat
 Route::bind('submission', function (string $value): OrganizationSubmission {
     return OrganizationSubmission::query()->findOrFail((int) $value);
 });
+
+/*
+ * Local-only debug helper for verifying that an attachment row points to a
+ * real object in Supabase Storage and that the generated public URL is well-
+ * formed. Disabled in non-local environments to avoid leaking metadata.
+ */
+if (app()->environment('local')) {
+    Route::get('/debug-attachment/{id}', function ($id) {
+        $attachment = \App\Models\Attachment::findOrFail($id);
+        $disk = \Illuminate\Support\Facades\Storage::disk('supabase');
+
+        $storedPath = (string) $attachment->stored_path;
+        $publicUrl = rtrim((string) env('SUPABASE_STORAGE_PUBLIC_URL'), '/')
+            .'/'.trim((string) env('SUPABASE_STORAGE_BUCKET'), '/')
+            .'/'.ltrim($storedPath, '/');
+
+        return response()->json([
+            'attachment_id' => $attachment->id,
+            'original_name' => $attachment->original_name,
+            'stored_path_from_database' => $attachment->stored_path,
+            'bucket' => env('SUPABASE_STORAGE_BUCKET'),
+            'public_url' => $publicUrl,
+            'exists_in_supabase_storage' => $disk->exists($storedPath),
+            'is_bad_local_path' => str_contains($storedPath, 'C:')
+                || str_contains($storedPath, 'localhost')
+                || str_contains($storedPath, '127.0.0.1')
+                || str_contains($storedPath, 'storage/app')
+                || str_contains($storedPath, 'rest/v1'),
+        ]);
+    });
+
+    /*
+     * End-to-end smoke test for the Supabase S3 disk. Hits Storage::put +
+     * exists with a tiny throwaway object so misconfigured credentials fail
+     * fast (no 30-second InstanceProfileProvider hang) and reveal exactly
+     * which config key is missing. Never exposes key/secret values.
+     */
+    Route::get('/debug-supabase-storage', function () {
+        $diskConfig = config('filesystems.disks.supabase', []);
+        if (! is_array($diskConfig)) {
+            $diskConfig = [];
+        }
+
+        foreach (['key', 'secret', 'region', 'bucket', 'endpoint'] as $required) {
+            if (empty($diskConfig[$required])) {
+                return response()->json([
+                    'ok' => false,
+                    'error' => "Missing Supabase storage config: {$required}",
+                    'config' => [
+                        'has_key' => ! empty($diskConfig['key']),
+                        'has_secret' => ! empty($diskConfig['secret']),
+                        'region' => $diskConfig['region'] ?? null,
+                        'bucket' => $diskConfig['bucket'] ?? null,
+                        'endpoint' => $diskConfig['endpoint'] ?? null,
+                    ],
+                ], 500);
+            }
+        }
+
+        $path = 'debug/test-'.now()->format('YmdHis').'.txt';
+        $disk = \Illuminate\Support\Facades\Storage::disk('supabase');
+
+        try {
+            $disk->put($path, 'Supabase storage test '.now()->toIso8601String());
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'error' => 'put() failed: '.$e->getMessage(),
+                'exception' => class_basename($e),
+                'path' => $path,
+            ], 500);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'path' => $path,
+            'exists' => $disk->exists($path),
+            'public_url' => rtrim((string) env('SUPABASE_STORAGE_PUBLIC_URL'), '/')
+                .'/'.trim((string) env('SUPABASE_STORAGE_BUCKET'), '/')
+                .'/'.ltrim($path, '/'),
+            'config' => [
+                'has_key' => ! empty($diskConfig['key']),
+                'has_secret' => ! empty($diskConfig['secret']),
+                'region' => $diskConfig['region'] ?? null,
+                'bucket' => $diskConfig['bucket'] ?? null,
+                'endpoint' => $diskConfig['endpoint'] ?? null,
+            ],
+        ]);
+    });
+}

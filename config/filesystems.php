@@ -2,7 +2,7 @@
 
 return [
 
-    /*
+  /*
     |--------------------------------------------------------------------------
     | Default Filesystem Disk
     |--------------------------------------------------------------------------
@@ -13,9 +13,9 @@ return [
     |
     */
 
-    'default' => env('FILESYSTEM_DISK', 'local'),
+  'default' => env('FILESYSTEM_DISK', 'local'),
 
-    /*
+  /*
     |--------------------------------------------------------------------------
     | Submissions Disk
     |--------------------------------------------------------------------------
@@ -29,9 +29,9 @@ return [
     |
     */
 
-    'submissions_disk' => env('SUBMISSIONS_STORAGE_DISK', 'public'),
+  'submissions_disk' => env('SUBMISSIONS_STORAGE_DISK', 'public'),
 
-    /*
+  /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
@@ -44,62 +44,56 @@ return [
     |
     */
 
-    'disks' => [
+  'disks' => [
 
-        'local' => [
-            'driver' => 'local',
-            'root' => storage_path('app/private'),
-            'serve' => true,
-            'throw' => false,
-            'report' => false,
-        ],
-
-        'public' => [
-            'driver' => 'local',
-            'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
-            'visibility' => 'public',
-            'throw' => false,
-            'report' => false,
-        ],
-
-        's3' => [
-            'driver' => 's3',
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION'),
-            'bucket' => env('AWS_BUCKET'),
-            'url' => env('AWS_URL'),
-            'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
-            'report' => false,
-        ],
-
-        /*
-        | Supabase Storage exposes an S3-compatible API. Keep the bucket
-        | private; the app should never embed bucket credentials in the
-        | frontend — the file-streaming controller proxies bytes to the
-        | browser instead. When enabled, set SUBMISSIONS_STORAGE_DISK=supabase
-        | so submission attachments land in this bucket.
-        */
-        'supabase' => [
-            'driver' => 's3',
-            'key' => env('SUPABASE_S3_KEY'),
-            'secret' => env('SUPABASE_S3_SECRET'),
-            'region' => env('SUPABASE_S3_REGION', 'us-east-1'),
-            'bucket' => env('SUPABASE_S3_BUCKET'),
-            'endpoint' => env('SUPABASE_S3_ENDPOINT'),
-            'url' => env('SUPABASE_S3_PUBLIC_URL'),
-            'use_path_style_endpoint' => env('SUPABASE_S3_USE_PATH_STYLE', true),
-            'visibility' => 'private',
-            'throw' => false,
-            'report' => false,
-        ],
-
-    ],
+    // keep existing disks...
 
     /*
+        | Supabase Storage exposes an S3-compatible endpoint. The credentials
+        | MUST be the dedicated S3 Access Key ID + Secret Access Key generated
+        | in Supabase Dashboard → Storage → S3 Configuration → Access Keys.
+        | Do NOT reuse the project anon key, the service-role JWT, or any
+        | other Supabase API key here — the AWS SDK will reject them as
+        | invalid SigV4 credentials and fall back to InstanceProfileProvider,
+        | which silently tries the EC2 metadata endpoint and hangs your
+        | request until PHP's max_execution_time elapses.
+        */
+    'supabase' => [
+      'driver'                  => 's3',
+      'key'                     => env('SUPABASE_STORAGE_ACCESS_KEY_ID'),
+      'secret'                  => env('SUPABASE_STORAGE_SECRET_ACCESS_KEY'),
+      'region'                  => env('SUPABASE_STORAGE_REGION', 'ap-northeast-2'),
+      'bucket'                  => env('SUPABASE_STORAGE_BUCKET', 'organization-requirements'),
+      'endpoint'                => env('SUPABASE_STORAGE_ENDPOINT'),
+      'use_path_style_endpoint' => true,
+      'throw'                   => true,
+    ],
+
+    'public' => [
+      'driver' => 'local',
+      'root' => storage_path('app/public'),
+      'url' => rtrim(env('APP_URL', 'http://localhost'), '/') . '/storage',
+      'visibility' => 'public',
+      'throw' => false,
+      'report' => false,
+    ],
+
+    's3' => [
+      'driver' => 's3',
+      'key' => env('AWS_ACCESS_KEY_ID'),
+      'secret' => env('AWS_SECRET_ACCESS_KEY'),
+      'region' => env('AWS_DEFAULT_REGION'),
+      'bucket' => env('AWS_BUCKET'),
+      'url' => env('AWS_URL'),
+      'endpoint' => env('AWS_ENDPOINT'),
+      'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+      'throw' => false,
+      'report' => false,
+    ],
+
+  ],
+
+  /*
     |--------------------------------------------------------------------------
     | Symbolic Links
     |--------------------------------------------------------------------------
@@ -110,8 +104,8 @@ return [
     |
     */
 
-    'links' => [
-        public_path('storage') => storage_path('app/public'),
-    ],
+  'links' => [
+    public_path('storage') => storage_path('app/public'),
+  ],
 
 ];

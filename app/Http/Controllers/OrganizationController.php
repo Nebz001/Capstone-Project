@@ -31,6 +31,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -884,7 +885,7 @@ class OrganizationController extends Controller
                 $request,
                 $reqs,
                 self::REGISTRATION_REQUIREMENT_KEYS,
-                "organization-requirements/{$organization->id}/registration"
+                "{$organization->id}/registration"
             );
 
             $submission = OrganizationSubmission::create([
@@ -1124,7 +1125,7 @@ class OrganizationController extends Controller
             $request,
             $reqs,
             self::RENEWAL_REQUIREMENT_KEYS,
-            "organization-requirements/{$organization->id}/renewals/{$submission->id}"
+            "{$organization->id}/renewals/{$submission->id}"
         );
 
         $this->syncSubmissionRequirements(
@@ -3825,6 +3826,8 @@ class OrganizationController extends Controller
         array $allowedKeys,
         string $storageBasePath
     ): array {
+        self::assertSupabaseDiskIsConfigured();
+
         $stored = [];
         foreach ($allowedKeys as $key) {
             if (! $reqs->contains($key)) {
@@ -3832,7 +3835,13 @@ class OrganizationController extends Controller
             }
             $file = $request->file("requirement_files.$key");
             if ($file && $file->isValid()) {
-                $path = $file->store($storageBasePath, 'public');
+                // Persist to Supabase Storage. The bucket itself is configured
+                // on the `supabase` disk (SUPABASE_STORAGE_BUCKET), so the
+                // object path stays bucket-relative — e.g.
+                //   "{organizationId}/registration/<random>.pdf"
+                // or
+                //   "{organizationId}/renewals/{submissionId}/<random>.pdf"
+                $path = $file->store($storageBasePath, 'supabase');
                 if (is_string($path) && $path !== '') {
                     $stored[$key] = ['path' => $path, 'file' => $file];
                 }
@@ -3840,6 +3849,46 @@ class OrganizationController extends Controller
         }
 
         return $stored;
+    }
+
+    /**
+     * Fail fast if the Supabase S3 disk is missing required values.
+     *
+     * Without this, an empty `key` / `secret` makes the AWS SDK fall back to
+     * `InstanceProfileProvider`, which silently tries the EC2 metadata
+     * endpoint and hangs the request until PHP's max_execution_time elapses
+     * (the "Maximum execution time of 30 seconds exceeded" error coming out
+     * of vendor/aws/aws-sdk-php/src/Credentials/InstanceProfileProvider.php).
+     *
+     * Only non-secret values are logged (presence flags, region, bucket,
+     * endpoint) — never the key id or secret itself.
+     */
+    public static function assertSupabaseDiskIsConfigured(): void
+    {
+        $diskConfig = config('filesystems.disks.supabase', []);
+        if (! is_array($diskConfig)) {
+            $diskConfig = [];
+        }
+
+        Log::info('Supabase storage config check', [
+            'disk' => 'supabase',
+            'has_key' => ! empty($diskConfig['key']),
+            'has_secret' => ! empty($diskConfig['secret']),
+            'region' => $diskConfig['region'] ?? null,
+            'bucket' => $diskConfig['bucket'] ?? null,
+            'endpoint' => $diskConfig['endpoint'] ?? null,
+        ]);
+
+        foreach (['key', 'secret', 'region', 'bucket', 'endpoint'] as $required) {
+            if (empty($diskConfig[$required])) {
+                throw new \RuntimeException(
+                    "Supabase storage disk is missing required config: {$required}. "
+                    .'Set SUPABASE_STORAGE_ACCESS_KEY_ID, SUPABASE_STORAGE_SECRET_ACCESS_KEY, '
+                    .'SUPABASE_STORAGE_REGION, SUPABASE_STORAGE_BUCKET, and SUPABASE_STORAGE_ENDPOINT '
+                    .'in .env, then run `php artisan config:clear`.'
+                );
+            }
+        }
     }
 
     private function createOfficerNotification(

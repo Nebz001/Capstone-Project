@@ -1366,16 +1366,23 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->where('requirement_key', $requirementKey)
             ->first();
 
-        $fileType = Attachment::fileTypeForSubmissionRequirementKey($submission->type, $requirementKey);
-
-        $attachment = $submission->attachments()
-            ->where('file_type', $fileType)
+        // Attachments may be stored either with the bare requirement key
+        // (e.g. "by_laws") or with the namespaced form
+        // ("registration_requirement:by_laws" / "renewal_requirement:by_laws").
+        // Match both shapes so legacy and current rows resolve correctly.
+        $attachment = Attachment::query()
+            ->where('attachable_type', OrganizationSubmission::class)
+            ->where('attachable_id', $submission->id)
+            ->where(function ($query) use ($requirementKey): void {
+                $query->where('file_type', $requirementKey)
+                    ->orWhere('file_type', 'like', '%:'.$requirementKey);
+            })
             ->latest('id')
             ->first();
 
         if (! $attachment) {
             $message = $requirement && ! $requirement->is_submitted
-                ? 'No file was uploaded for this requirement.'
+                ? 'No file has been uploaded for this requirement yet.'
                 : 'File not found for this requirement.';
 
             abort(404, $message);
@@ -1396,26 +1403,31 @@ class OrganizationSubmittedDocumentsController extends Controller
             abort(404, 'File not found.');
         }
 
-        $disk = Storage::disk(self::submissionStorageDisk());
-        if (! $disk->exists($relativePath)) {
-            Log::warning('Submission attachment is missing on disk.', [
+        $disk = Storage::disk('supabase');
+        $exists = $disk->exists($relativePath);
+
+        Log::info('Resolving submission requirement attachment from Supabase Storage.', [
+            'attachment_id' => $attachment->id,
+            'submission_id' => $submission->id,
+            'requirement_key' => $requirementKey,
+            'stored_path' => $relativePath,
+            'exists_in_supabase_storage' => $exists,
+        ]);
+
+        if (! $exists) {
+            Log::warning('File missing from Supabase Storage', [
                 'attachment_id' => $attachment->id,
-                'submission_id' => $submission->id,
-                'requirement_key' => $requirementKey,
                 'stored_path' => $relativePath,
-                'disk' => self::submissionStorageDisk(),
             ]);
 
-            abort(404, 'The requested file is no longer available. Please contact your SDAO admin.');
+            abort(404, 'The file could not be found in Supabase Storage.');
         }
 
-        $mimeType = $this->resolveAttachmentMimeType($attachment, $disk, $relativePath);
-        $filename = $this->resolveAttachmentDownloadName($attachment, $relativePath);
-        $disposition = $this->isInlineRenderableMimeType($mimeType) ? 'inline' : 'attachment';
+        $publicUrl = rtrim((string) env('SUPABASE_STORAGE_PUBLIC_URL'), '/')
+            .'/'.trim((string) env('SUPABASE_STORAGE_BUCKET'), '/')
+            .'/'.ltrim($relativePath, '/');
 
-        return $disk->response($relativePath, $filename, [
-            'Content-Type' => $mimeType,
-        ], $disposition);
+        return redirect()->away($publicUrl);
     }
 
     /**
@@ -2276,7 +2288,14 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->latest('id')
             ->first();
         $oldMeta = $oldAttachment ? $this->attachmentMeta($oldAttachment) : null;
-        $storedPath = $upload->store('organization-requirements/'.$submission->organization_id.'/registration', 'public');
+        // Fail fast if the Supabase S3 disk is misconfigured, otherwise the
+        // AWS SDK falls back to InstanceProfileProvider and the request hangs
+        // until PHP's max_execution_time elapses.
+        OrganizationController::assertSupabaseDiskIsConfigured();
+        // Upload the replacement file to Supabase Storage. The bucket is set
+        // on the `supabase` disk (SUPABASE_STORAGE_BUCKET), so the stored path
+        // stays bucket-relative — e.g. "{organizationId}/registration/<rand>.pdf".
+        $storedPath = $upload->store($submission->organization_id.'/registration', 'supabase');
 
         DB::transaction(function () use ($submission, $user, $key, $fileType, $upload, $storedPath, $oldMeta): void {
             Attachment::query()->create([

@@ -25,6 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -602,7 +603,7 @@ class AdminController extends Controller
      * @param  array<string, mixed>  $meta
      * @return array{name:string,view_url:?string,download_url:?string}
      */
-    public function showRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): StreamedResponse
+    public function showRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): \Symfony\Component\HttpFoundation\Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
@@ -613,23 +614,35 @@ class AdminController extends Controller
             ? (is_array($fieldUpdate->old_file_meta) ? $fieldUpdate->old_file_meta : [])
             : (is_array($fieldUpdate->new_file_meta) ? $fieldUpdate->new_file_meta : []);
         $storedPath = trim((string) ($meta['stored_path'] ?? ''));
-        if ($storedPath === '') {
+        if ($storedPath === '' || str_contains($storedPath, '..') || str_starts_with($storedPath, '/')) {
             abort(404);
         }
 
-        $disk = Storage::disk('public');
-        if (! $disk->exists($storedPath)) {
-            abort(404);
-        }
-        $name = trim((string) ($meta['original_name'] ?? ''));
-        if ($name === '') {
-            $name = basename($storedPath);
-        }
-        if ($request->boolean('download')) {
-            return $disk->download($storedPath, $name);
+        $disk = Storage::disk('supabase');
+        $exists = $disk->exists($storedPath);
+
+        Log::info('Resolving registration field-update file from Supabase Storage.', [
+            'field_update_id' => $fieldUpdate->id,
+            'submission_id' => $submission->id,
+            'version' => $version,
+            'stored_path' => $storedPath,
+            'exists_in_supabase_storage' => $exists,
+        ]);
+
+        if (! $exists) {
+            Log::warning('Registration field-update file missing from Supabase Storage', [
+                'field_update_id' => $fieldUpdate->id,
+                'stored_path' => $storedPath,
+            ]);
+
+            abort(404, 'The file could not be found in Supabase Storage.');
         }
 
-        return $disk->response($storedPath, $name, [], 'inline');
+        $publicUrl = rtrim((string) env('SUPABASE_STORAGE_PUBLIC_URL'), '/')
+            .'/'.trim((string) env('SUPABASE_STORAGE_BUCKET'), '/')
+            .'/'.ltrim($storedPath, '/');
+
+        return redirect()->away($publicUrl);
     }
 
     public function acknowledgeRegistrationFieldUpdate(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate): JsonResponse
@@ -652,10 +665,15 @@ class AdminController extends Controller
     }
 
     /**
-     * Stream a registration requirement file from the public disk (auth + path scoped to this org).
-     * Avoids relying on the public/storage symlink, which often causes 404s when the link is missing.
+     * Resolve and view a registration requirement file from Supabase Storage.
+     *
+     * Uploads land in the `supabase` disk under bucket-relative paths like
+     * `{organization_id}/registration/<random>.pdf`. We look the row up via
+     * the `attachments` table, verify the object exists in the bucket, then
+     * redirect the browser to the public Supabase URL so it can render or
+     * download the file directly.
      */
-    public function showRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
+    public function showRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
@@ -664,27 +682,7 @@ class AdminController extends Controller
             abort(404);
         }
 
-        $attachment = $submission->attachments()
-            ->where('file_type', Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key)
-            ->latest('id')
-            ->first();
-        if (! $attachment) {
-            abort(404);
-        }
-        $relativePath = (string) $attachment->stored_path;
-
-        $disk = Storage::disk('public');
-        if (! $disk->exists($relativePath)) {
-            abort(404);
-        }
-
-        $filename = (string) ($attachment->original_name ?: basename($relativePath));
-
-        if ($request->boolean('download')) {
-            return $disk->download($relativePath, $filename);
-        }
-
-        return $disk->response($relativePath, $filename, [], 'inline');
+        return $this->redirectToSupabaseRequirementFile($submission, $key);
     }
 
     public function updateRegistrationStatus(Request $request, OrganizationSubmission $submission): RedirectResponse
@@ -1483,34 +1481,79 @@ class AdminController extends Controller
         ]);
     }
 
-    public function showRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): StreamedResponse
+    public function showRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
         if (! in_array($key, self::RENEWAL_REQUIREMENT_FILE_KEYS, true)) {
             abort(404);
         }
-        $attachment = $submission->attachments()
-            ->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)
+
+        return $this->redirectToSupabaseRequirementFile($submission, $key);
+    }
+
+    /**
+     * Look up a registration/renewal requirement attachment and redirect the
+     * caller to its public Supabase Storage URL.
+     *
+     * The lookup tolerates both legacy bare keys (e.g. `by_laws`) and
+     * namespaced keys (`registration_requirement:by_laws`,
+     * `renewal_requirement:by_laws`) so older rows resolve correctly without
+     * any data migration.
+     */
+    private function redirectToSupabaseRequirementFile(OrganizationSubmission $submission, string $requirementKey): \Symfony\Component\HttpFoundation\Response
+    {
+        $attachment = Attachment::query()
+            ->where('attachable_type', OrganizationSubmission::class)
+            ->where('attachable_id', $submission->id)
+            ->where(function ($query) use ($requirementKey): void {
+                $query->where('file_type', $requirementKey)
+                    ->orWhere('file_type', 'like', '%:'.$requirementKey);
+            })
             ->latest('id')
             ->first();
+
         if (! $attachment) {
-            abort(404);
+            abort(404, 'No file has been uploaded for this requirement yet.');
         }
+
         $relativePath = (string) $attachment->stored_path;
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            Log::warning('Submission attachment has an invalid stored_path.', [
+                'attachment_id' => $attachment->id,
+                'submission_id' => $submission->id,
+                'requirement_key' => $requirementKey,
+                'stored_path' => $attachment->stored_path,
+            ]);
 
-        $disk = Storage::disk('public');
-        if (! $disk->exists($relativePath)) {
-            abort(404);
+            abort(404, 'File not found.');
         }
 
-        $filename = (string) ($attachment->original_name ?: basename($relativePath));
+        $disk = Storage::disk('supabase');
+        $exists = $disk->exists($relativePath);
 
-        if ($request->boolean('download')) {
-            return $disk->download($relativePath, $filename);
+        Log::info('Resolving submission requirement attachment from Supabase Storage.', [
+            'attachment_id' => $attachment->id,
+            'submission_id' => $submission->id,
+            'requirement_key' => $requirementKey,
+            'stored_path' => $relativePath,
+            'exists_in_supabase_storage' => $exists,
+        ]);
+
+        if (! $exists) {
+            Log::warning('File missing from Supabase Storage', [
+                'attachment_id' => $attachment->id,
+                'stored_path' => $relativePath,
+            ]);
+
+            abort(404, 'The file could not be found in Supabase Storage.');
         }
 
-        return $disk->response($relativePath, $filename, [], 'inline');
+        $publicUrl = rtrim((string) env('SUPABASE_STORAGE_PUBLIC_URL'), '/')
+            .'/'.trim((string) env('SUPABASE_STORAGE_BUCKET'), '/')
+            .'/'.ltrim($relativePath, '/');
+
+        return redirect()->away($publicUrl);
     }
 
     public function saveRenewalReviewDraft(Request $request, OrganizationSubmission $submission): JsonResponse
