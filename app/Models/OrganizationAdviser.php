@@ -50,7 +50,12 @@ class OrganizationAdviser extends Model
 
     public function scopeActive($query)
     {
-        return $query->where('status', 'approved')->whereNull('relieved_at');
+        return $query
+            ->where(function ($statusQuery): void {
+                $statusQuery->whereRaw('LOWER(status) = ?', ['approved'])
+                    ->orWhereRaw('LOWER(status) = ?', ['active']);
+            })
+            ->whereNull('relieved_at');
     }
 
     public function scopePending($query)

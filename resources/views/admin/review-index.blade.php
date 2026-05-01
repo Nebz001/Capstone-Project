@@ -45,8 +45,17 @@
           <tr class="align-top hover:bg-slate-50/80 {{ ! empty($row['is_updated'] ?? false) ? 'bg-sky-50/50' : '' }}">
             <td class="px-4 py-3.5 font-semibold text-slate-900 sm:px-5">{{ $row['organization'] }}</td>
             <td class="px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $row['submitted_by'] }}</td>
-            <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $row['submission_date'] }}</td>
-            <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $row['last_updated'] ?? '—' }}</td>
+            <td class="px-4 py-3.5 font-medium text-slate-700 sm:px-5">{{ $row['submission_date'] }}</td>
+            <td class="px-4 py-3.5 font-medium text-slate-700 sm:px-5">
+              @if (! empty($row['last_updated_date'] ?? null) && ! empty($row['last_updated_time'] ?? null))
+                <div class="flex flex-col">
+                  <span class="font-medium text-slate-900">{{ $row['last_updated_date'] }}</span>
+                  <span class="text-sm text-slate-500">{{ $row['last_updated_time'] }}</span>
+                </div>
+              @else
+                <span class="whitespace-nowrap">{{ $row['last_updated'] ?? '—' }}</span>
+              @endif
+            </td>
             <td class="px-4 py-3.5 sm:px-5">
               <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusClass($row['status']) }}">
                 {{ $row['status_label'] ?? $statusLabel($row['status']) }}

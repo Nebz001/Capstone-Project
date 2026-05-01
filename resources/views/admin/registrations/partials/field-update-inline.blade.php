@@ -33,7 +33,13 @@
         <p><span class="font-semibold">Updated:</span> <span class="whitespace-pre-wrap">{{ filled((string) ($update['new_value'] ?? '')) ? (string) $update['new_value'] : 'No updated value captured.' }}</span></p>
       @endif
       <p><span class="font-semibold">Resubmitted by:</span> {{ $update['resubmitted_by'] ?? 'Unknown' }}</p>
-      <p><span class="font-semibold">Resubmitted on:</span> {{ !empty($update['resubmitted_at']) ? \Illuminate\Support\Carbon::parse((string) $update['resubmitted_at'])->format('M d, Y, g:i A') : 'Unknown date' }}</p>
+      <p><span class="font-semibold">Resubmitted on:</span>
+        @if (! empty($update['resubmitted_at']))
+          {{ \App\Support\ManilaDateTime::formatDateTimeLine(\Illuminate\Support\Carbon::parse((string) $update['resubmitted_at'])) }}
+        @else
+          —
+        @endif
+      </p>
     </div>
   </div>
 @endif

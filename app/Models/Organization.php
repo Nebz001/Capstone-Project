@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Schema;
 
@@ -157,6 +158,17 @@ class Organization extends Model
     public function advisers(): HasMany
     {
         return $this->hasMany(OrganizationAdviser::class);
+    }
+
+    public function currentAdviser(): HasOne
+    {
+        return $this->hasOne(OrganizationAdviser::class)
+            ->where(function ($query): void {
+                $query->whereRaw('LOWER(status) = ?', ['approved'])
+                    ->orWhereRaw('LOWER(status) = ?', ['active']);
+            })
+            ->whereNull('relieved_at')
+            ->latestOfMany('id');
     }
 
     public function profileRevisions(): HasMany

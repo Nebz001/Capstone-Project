@@ -19,6 +19,7 @@ use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\OrganizationNotificationService;
+use App\Support\ManilaDateTime;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -205,9 +206,11 @@ class AdminController extends Controller
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
-                    'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
+                    'submission_date' => ManilaDateTime::formatSubmissionDate($record->submission_date),
+                    'last_updated_date' => ManilaDateTime::formatLastUpdatedDateLine($lastUpdatedAt),
+                    'last_updated_time' => ManilaDateTime::formatLastUpdatedTimeLine($lastUpdatedAt),
                     'last_updated' => $lastUpdatedAt
-                        ? $lastUpdatedAt->format('M d, Y, g:i A')
+                        ? ManilaDateTime::inManila($lastUpdatedAt)->format('M d, Y, h:i A').' PHT'
                         : '—',
                     'status' => $status,
                     'status_label' => $statusLabel,

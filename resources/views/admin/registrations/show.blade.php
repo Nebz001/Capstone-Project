@@ -309,7 +309,7 @@
           @endif
         </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-          <dd class="text-sm font-semibold text-slate-900">{{ optional($registration->submission_date)->format('M d, Y') ?? 'N/A' }}</dd>
+          <dd class="text-sm font-semibold text-slate-900">{{ \App\Support\ManilaDateTime::formatSubmissionDate($registration->submission_date) }}</dd>
           @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submission_date', 'fieldLabel' => 'Submission Date', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
         @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'submission_date')])

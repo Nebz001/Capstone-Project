@@ -32,6 +32,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -1289,15 +1290,147 @@ class OrganizationController extends Controller
         $revisionEditMode = $editingAllowed
             && (bool) ($organization?->isProfileRevisionRequested() ?? false)
             && count($revisionEditableFields) > 0;
-        $activeAdviser = $organization
-            ? OrganizationAdviser::query()
-                ->active()
-                ->with('user')
-                ->where('organization_id', $organization->id)
-                ->latest('assigned_at')
-                ->latest('id')
-                ->first()
-            : null;
+        $activeAdviser = null;
+        $adviserPayload = null;
+        if ($organization) {
+            $organization->load(['currentAdviser.user']);
+            $activeAdviser = $organization->currentAdviser;
+
+            Log::info('Organization profile adviser investigation', [
+                'organization_id' => (int) $organization->id,
+                'organization_attributes' => method_exists($organization, 'getAttributes')
+                    ? $organization->getAttributes()
+                    : null,
+                'has_current_adviser_relation' => (bool) $activeAdviser,
+                'current_adviser_relation_id' => $activeAdviser?->id,
+                'current_adviser_relation_user_id' => $activeAdviser?->user_id,
+                'has_current_adviser_relation_user' => (bool) $activeAdviser?->user,
+            ]);
+
+            if (Schema::hasTable('organization_advisers')) {
+                $adviserRows = DB::table('organization_advisers')
+                    ->where('organization_id', $organization->id)
+                    ->orderByDesc('id')
+                    ->get();
+
+                Log::info('organization_advisers rows for profile', [
+                    'organization_id' => (int) $organization->id,
+                    'rows' => $adviserRows->map(static fn ($row): array => [
+                        'id' => $row->id ?? null,
+                        'organization_id' => $row->organization_id ?? null,
+                        'user_id' => $row->user_id ?? null,
+                        'status' => $row->status ?? null,
+                        'relieved_at' => $row->relieved_at ?? null,
+                    ])->values()->all(),
+                ]);
+
+                $adviserJoinedRows = DB::table('organization_advisers as oa')
+                    ->leftJoin('users as u', 'u.id', '=', 'oa.user_id')
+                    ->where('oa.organization_id', $organization->id)
+                    ->select(
+                        'oa.id as adviser_record_id',
+                        'oa.organization_id',
+                        'oa.user_id',
+                        'oa.status',
+                        'oa.relieved_at',
+                        'u.id as user_id_from_users',
+                        'u.first_name',
+                        'u.last_name',
+                        'u.email',
+                        'u.school_id'
+                    )
+                    ->orderByDesc('oa.id')
+                    ->get();
+
+                Log::info('organization profile adviser joined rows', [
+                    'organization_id' => (int) $organization->id,
+                    'rows' => $adviserJoinedRows->values()->all(),
+                ]);
+
+                $adviserQuery = DB::table('organization_advisers as oa')
+                    ->leftJoin('users as u', 'u.id', '=', 'oa.user_id')
+                    ->where('oa.organization_id', $organization->id);
+
+                if (Schema::hasColumn('organization_advisers', 'relieved_at')) {
+                    $adviserQuery->whereNull('oa.relieved_at');
+                }
+                if (Schema::hasColumn('organization_advisers', 'status')) {
+                    $adviserQuery->whereRaw('LOWER(COALESCE(oa.status, \'\')) NOT IN (?, ?, ?)', [
+                        'rejected',
+                        'relieved',
+                        'inactive',
+                    ]);
+                }
+
+                $adviser = $adviserQuery
+                    ->select(
+                        'oa.id as adviser_record_id',
+                        'oa.user_id',
+                        'u.first_name',
+                        'u.last_name',
+                        'u.email',
+                        'u.school_id'
+                    )
+                    ->orderByDesc('oa.id')
+                    ->first();
+
+                if ($adviser && $adviser->user_id) {
+                    $adviserPayload = [
+                        'id' => (int) $adviser->user_id,
+                        'name' => trim((string) ($adviser->first_name ?? '').' '.(string) ($adviser->last_name ?? '')),
+                        'email' => $adviser->email,
+                        'school_id' => $adviser->school_id,
+                    ];
+                }
+            }
+
+            if (! $adviserPayload && $activeAdviser?->user) {
+                $adviserPayload = [
+                    'id' => (int) $activeAdviser->user->id,
+                    'name' => trim((string) ($activeAdviser->user->first_name ?? '').' '.(string) ($activeAdviser->user->last_name ?? '')),
+                    'email' => $activeAdviser->user->email,
+                    'school_id' => $activeAdviser->user->school_id,
+                ];
+            }
+
+            if (! $adviserPayload) {
+                $organizationAttributes = method_exists($organization, 'getAttributes')
+                    ? $organization->getAttributes()
+                    : [];
+                $possibleAdviserColumns = ['adviser_id', 'faculty_adviser_id', 'adviser_user_id', 'assigned_adviser_id'];
+
+                foreach ($possibleAdviserColumns as $column) {
+                    if (! array_key_exists($column, $organizationAttributes) || empty($organizationAttributes[$column])) {
+                        continue;
+                    }
+
+                    $userFromOrganizationColumn = User::query()->find((int) $organizationAttributes[$column]);
+                    if (! $userFromOrganizationColumn) {
+                        continue;
+                    }
+
+                    $adviserPayload = [
+                        'id' => (int) $userFromOrganizationColumn->id,
+                        'name' => trim((string) ($userFromOrganizationColumn->first_name ?? '').' '.(string) ($userFromOrganizationColumn->last_name ?? '')),
+                        'email' => $userFromOrganizationColumn->email,
+                        'school_id' => $userFromOrganizationColumn->school_id,
+                    ];
+                    break;
+                }
+            }
+
+            Log::info('organization adviser columns', [
+                'organization_id' => (int) $organization->id,
+                'adviser_id' => $organization->adviser_id ?? null,
+                'faculty_adviser_id' => $organization->faculty_adviser_id ?? null,
+                'adviser_user_id' => $organization->adviser_user_id ?? null,
+            ]);
+            Log::info('final adviser payload for organization profile', [
+                'organization_id' => (int) $organization->id,
+                'has_adviser_payload' => (bool) $adviserPayload,
+                'adviser_user_id' => $adviserPayload['id'] ?? null,
+            ]);
+        }
 
         return view('organizations.profile', [
             'organization' => $organization,
@@ -1312,6 +1445,7 @@ class OrganizationController extends Controller
             'revisionRegistration' => $revisionRegistration,
             'profileRevisionSummary' => $profileRevisionSummary,
             'activeAdviser' => $activeAdviser,
+            'adviser' => $adviserPayload,
         ]);
     }
 
