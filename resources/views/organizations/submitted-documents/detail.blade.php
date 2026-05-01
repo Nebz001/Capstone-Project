@@ -73,7 +73,15 @@
             <ul class="mt-2 space-y-1.5">
               @foreach (($section['items'] ?? []) as $item)
                 <li>
-                  @if (! empty($item['anchor_id']))
+                  @if (! empty($item['target_url']))
+                    <a
+                      href="{{ $item['target_url'] }}"
+                      class="inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-yellow-950 transition hover:bg-yellow-100/70 focus:outline-none focus:ring-2 focus:ring-yellow-400/60"
+                    >
+                      <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
+                      <span>— {{ $item['note'] ?? '' }}</span>
+                    </a>
+                  @elseif (! empty($item['anchor_id']))
                     <button
                       type="button"
                       class="inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-yellow-950 transition hover:bg-yellow-100/70 focus:outline-none focus:ring-2 focus:ring-yellow-400/60"
@@ -93,12 +101,10 @@
             </ul>
           </div>
         @endforeach
-        @if ($remarkHighlight)
-          <div class="rounded-lg border border-yellow-200/90 bg-white/60 px-3 py-3">
-            <p class="text-xs font-bold uppercase tracking-wide text-yellow-950">GENERAL REMARKS</p>
-            <p class="mt-1.5 whitespace-pre-wrap text-sm font-normal leading-relaxed text-yellow-950/90">{{ $remarkHighlight }}</p>
-          </div>
-        @endif
+        <div class="rounded-lg border border-yellow-200/90 bg-white/60 px-3 py-3">
+          <p class="text-xs font-bold uppercase tracking-wide text-yellow-950">GENERAL REMARKS</p>
+          <p class="mt-1.5 whitespace-pre-wrap text-sm font-normal leading-relaxed text-yellow-950/90">{{ $remarkHighlight ?: 'No general remarks provided.' }}</p>
+        </div>
       </div>
     </x-feedback.blocked-message>
   @endif

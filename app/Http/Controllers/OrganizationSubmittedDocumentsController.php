@@ -17,6 +17,7 @@ use App\Models\OrganizationSubmission;
 use App\Models\SubmissionRequirement;
 use App\Models\User;
 use App\Services\OrganizationNotificationService;
+use App\Services\OrganizationRegistrationRevisionSummaryService;
 use App\Support\SubmissionRoutingProgress;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
@@ -216,34 +217,29 @@ class OrganizationSubmittedDocumentsController extends Controller
         foreach ($pendingUpdateRows as $row) {
             $pendingRevisionItemSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
         }
-        $pendingRequirementUpdateKeySet = array_fill_keys($pendingRequirementUpdateKeys, true);
-        $rawRevisionSections = $this->moduleRevisionSections(is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
-        $revisionSections = [];
-        foreach ($rawRevisionSections as $section) {
-            $sectionKey = (string) ($section['section_key'] ?? '');
-            $items = collect((array) ($section['items'] ?? []))
-                ->filter(function ($item) use ($sectionKey, $pendingRequirementUpdateKeySet, $pendingRevisionItemSet): bool {
-                    if (! is_array($item)) {
-                        return false;
-                    }
-                    $fieldKey = (string) ($item['field_key'] ?? '');
-                    if ($fieldKey !== '' && isset($pendingRevisionItemSet[$sectionKey.'.'.$fieldKey])) {
-                        return false;
-                    }
-                    if ($sectionKey !== 'requirements') {
-                        return true;
-                    }
+        $revisionSummary = app(OrganizationRegistrationRevisionSummaryService::class)->buildForSubmission($submission);
+        $revisionSections = collect((array) ($revisionSummary['groups'] ?? []))
+            ->map(function ($section): array {
+                $sectionKey = (string) ($section['section_key'] ?? '');
+                $items = collect((array) ($section['items'] ?? []))
+                    ->map(function ($item) use ($sectionKey): array {
+                        if (! is_array($item)) {
+                            return [];
+                        }
+                        $item['target_url'] = $this->registrationRevisionItemTargetUrl($sectionKey, $item);
 
-                    return $fieldKey === '' || ! isset($pendingRequirementUpdateKeySet[$fieldKey]);
-                })
-                ->values()
-                ->all();
-            if ($items === []) {
-                continue;
-            }
-            $section['items'] = $items;
-            $revisionSections[] = $section;
-        }
+                        return $item;
+                    })
+                    ->filter(fn (array $item): bool => $item !== [])
+                    ->values()
+                    ->all();
+                $section['items'] = $items;
+
+                return $section;
+            })
+            ->filter(fn (array $section): bool => ($section['items'] ?? []) !== [])
+            ->values()
+            ->all();
         $hasOpenRevisionItems = $revisionSections !== [];
         $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingRevisionItemSet !== [];
         $statusForView = $isResubmittedPendingReview ? 'UNDER_REVIEW' : $submission->legacyStatus();
@@ -272,7 +268,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
             'metaRows' => $this->registrationMetaRowsFromSubmission($submission),
-            'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 220),
+            'remarkHighlight' => is_string($revisionSummary['general_remarks'] ?? null)
+                ? trim((string) $revisionSummary['general_remarks'])
+                : null,
             'revisionSections' => $revisionSections,
             'isResubmittedPendingReview' => $isResubmittedPendingReview,
             'fileLinks' => $fileLinks,
@@ -984,6 +982,57 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $sections;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function registrationRevisionItemTargetUrl(string $sectionKey, array $item): ?string
+    {
+        if ($sectionKey === 'requirements') {
+            return null;
+        }
+
+        $fieldKey = strtolower(trim((string) ($item['field_key'] ?? '')));
+        $fieldLabel = strtolower(trim((string) ($item['field'] ?? '')));
+        $profileFieldKeys = [
+            'organization',
+            'organization_name',
+            'org_name',
+            'name',
+            'description',
+            'organization_description',
+            'mission',
+            'vision',
+            'objectives',
+            'adviser',
+            'faculty_adviser',
+            'adviser_information',
+            'organization_email',
+            'email',
+            'college',
+            'program',
+            'department',
+            'school',
+            'purpose',
+            'date_organized',
+            'organization_type',
+            'contact_person',
+            'contact_no',
+            'contact_email',
+        ];
+
+        $isProfileField = in_array($fieldKey, $profileFieldKeys, true)
+            || str_contains($fieldLabel, 'organization')
+            || str_contains($fieldLabel, 'adviser')
+            || str_contains($fieldLabel, 'profile')
+            || in_array($sectionKey, ['application', 'contact', 'adviser', 'organizational'], true);
+
+        if (! $isProfileField) {
+            return null;
+        }
+
+        return route('organizations.profile', ['edit' => 1]);
     }
 
     /**

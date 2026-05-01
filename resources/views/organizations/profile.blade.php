@@ -203,6 +203,9 @@
                                                 class="inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-yellow-950 transition hover:bg-yellow-100/70 focus:outline-none focus:ring-2 focus:ring-yellow-400/60"
                                                 data-revision-target-id="{{ $item['anchor_id'] ?? '' }}"
                                                 data-revision-href="{{ $item['href'] ?? '' }}"
+                                                data-revision-section-key="{{ $group['section_key'] ?? '' }}"
+                                                data-revision-field-key="{{ $item['field_key'] ?? '' }}"
+                                                data-revision-field-label="{{ $item['field_label'] ?? '' }}"
                                             >
                                                 <span class="font-semibold underline underline-offset-2">{{ $item['field_label'] ?? 'Field' }}</span>
                                                 <span>— {{ $item['note'] ?? '' }}</span>
@@ -758,6 +761,59 @@
     const actions = document.querySelectorAll('[data-revision-target-id]');
     const headerOffset = 96;
     const flashClass = ['ring-2', 'ring-amber-300', 'bg-amber-50/80'];
+    const normalizeKey = (value) => String(value || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    const aliasToTargetId = {
+        organization: 'revision-field-application-organization',
+        organization_name: 'revision-field-application-organization',
+        org_name: 'revision-field-application-organization',
+        name: 'revision-field-application-organization',
+        adviser: 'revision-field-adviser-full-name',
+        adviser_information: 'revision-field-adviser-full-name',
+        faculty_adviser: 'revision-field-adviser-full-name',
+        organization_type: 'revision-field-organizational-organization-type',
+        school: 'revision-field-organizational-school',
+        college_department: 'revision-field-organizational-school',
+        date_organized: 'revision-field-organizational-date-organized',
+        founded_date: 'revision-field-organizational-date-organized',
+        purpose: 'revision-field-organizational-purpose',
+        contact_person: 'revision-field-contact-contact-person',
+        contact_no: 'revision-field-contact-contact-no',
+        contact_email: 'revision-field-contact-contact-email',
+        submitted_by: 'revision-field-application-submitted-by',
+        submitted_by_display: 'revision-field-application-submitted-by',
+    };
+    const resolveRevisionTarget = (button) => {
+        const explicitTargetId = button.getAttribute('data-revision-target-id') || '';
+        const fieldKeyRaw = button.getAttribute('data-revision-field-key') || '';
+        const fieldLabelRaw = button.getAttribute('data-revision-field-label') || '';
+        const sectionKeyRaw = button.getAttribute('data-revision-section-key') || '';
+        const fieldKey = normalizeKey(fieldKeyRaw).replace(/-/g, '_');
+        const fieldLabel = normalizeKey(fieldLabelRaw).replace(/-/g, '_');
+        const sectionKey = normalizeKey(sectionKeyRaw);
+        const inferredKey = fieldKey || fieldLabel;
+        const candidates = [
+            explicitTargetId,
+            sectionKey && inferredKey ? `revision-field-${sectionKey}-${normalizeKey(inferredKey)}` : '',
+            inferredKey ? aliasToTargetId[inferredKey] || '' : '',
+            inferredKey ? `revision-field-application-${normalizeKey(inferredKey)}` : '',
+            inferredKey ? `revision-field-organizational-${normalizeKey(inferredKey)}` : '',
+            inferredKey ? `revision-field-contact-${normalizeKey(inferredKey)}` : '',
+            inferredKey ? `revision-field-adviser-${normalizeKey(inferredKey)}` : '',
+        ].filter((id) => id !== '');
+
+        for (const candidateId of candidates) {
+            const target = document.getElementById(candidateId);
+            if (target) {
+                return target;
+            }
+        }
+
+        return null;
+    };
     actions.forEach((button) => {
         button.addEventListener('click', () => {
             const href = button.getAttribute('data-revision-href') || '';
@@ -765,9 +821,7 @@
                 window.location.href = href;
                 return;
             }
-            const targetId = button.getAttribute('data-revision-target-id') || '';
-            if (!targetId) return;
-            const target = document.getElementById(targetId);
+            const target = resolveRevisionTarget(button);
             if (!target) return;
 
             const top = target.getBoundingClientRect().top + window.scrollY - headerOffset;

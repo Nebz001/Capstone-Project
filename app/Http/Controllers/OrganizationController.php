@@ -22,6 +22,7 @@ use App\Models\Role;
 use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\OrganizationRegistrationRevisionSummaryService;
 use App\Services\OrganizationNotificationService;
 use App\Support\SubmissionRoutingProgress;
 use Carbon\CarbonImmutable;
@@ -1544,75 +1545,7 @@ class OrganizationController extends Controller
             return ['groups' => [], 'field_notes' => [], 'general_remarks' => null];
         }
 
-        $fieldReviews = $submission->isRenewal()
-            ? (is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [])
-            : (is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : []);
-        $sectionTitles = $submission->isRenewal()
-            ? [
-                'overview' => 'Application Information',
-                'contact' => 'Account and Contact Information',
-                'requirements' => 'Requirements Attached',
-            ]
-            : [
-                'application' => 'Application Information',
-                'contact' => 'Account and Contact Information',
-                'organizational' => 'Organization Information',
-                'requirements' => 'Requirements Attached',
-            ];
-
-        $groups = [];
-        $fieldNotes = [];
-        foreach ($fieldReviews as $sectionKey => $fields) {
-            if (! is_array($fields)) {
-                continue;
-            }
-            $items = [];
-            foreach ($fields as $fieldKey => $row) {
-                if ((string) $sectionKey === 'contact' && (string) $fieldKey === 'organization_name') {
-                    // Legacy duplicate field no longer shown in admin UI.
-                    continue;
-                }
-                if (! is_array($row)) {
-                    continue;
-                }
-                $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
-                if (! in_array($status, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
-                    continue;
-                }
-                $note = trim((string) ($row['note'] ?? ''));
-                if ($note === '') {
-                    continue;
-                }
-                $fieldLabel = trim((string) ($row['label'] ?? ''));
-                if ($fieldLabel === '') {
-                    $fieldLabel = ucwords(str_replace('_', ' ', (string) $fieldKey));
-                }
-                $anchorId = 'revision-field-'.$this->sanitizeAnchorSegment((string) $sectionKey).'-'.$this->sanitizeAnchorSegment((string) $fieldKey);
-                $items[] = [
-                    'field_key' => (string) $fieldKey,
-                    'field_label' => $fieldLabel,
-                    'note' => $note,
-                    'anchor_id' => $anchorId,
-                    'href' => ((string) $sectionKey === 'requirements' && ! $submission->isRenewal())
-                        ? route('organizations.submitted-documents.registrations.show', $submission).'?revision_target=revision-file-requirements-'.(string) $fieldKey
-                        : null,
-                ];
-                $fieldNotes[(string) $sectionKey.'.'.(string) $fieldKey] = $note;
-            }
-            if ($items !== []) {
-                $groups[] = [
-                    'section_key' => (string) $sectionKey,
-                    'section_title' => $sectionTitles[(string) $sectionKey] ?? ucwords(str_replace('_', ' ', (string) $sectionKey)),
-                    'items' => $items,
-                ];
-            }
-        }
-
-        return [
-            'groups' => $groups,
-            'field_notes' => $fieldNotes,
-            'general_remarks' => filled($submission->additional_remarks) ? trim((string) $submission->additional_remarks) : null,
-        ];
+        return app(OrganizationRegistrationRevisionSummaryService::class)->buildForSubmission($submission);
     }
 
     private function sanitizeAnchorSegment(string $value): string
