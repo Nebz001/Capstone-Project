@@ -174,7 +174,16 @@
                         <p class="mt-1 text-xs uppercase tracking-wide text-slate-500">{{ $row['type_label'] }}</p>
                       </td>
                       <td class="whitespace-nowrap px-4 py-3.5 align-top font-medium text-slate-700 sm:px-5">{{ $row['submitted_display'] }}</td>
-                      <td class="whitespace-nowrap px-4 py-3.5 align-top font-medium text-slate-700 sm:px-5">{{ $row['updated_display'] }}</td>
+                      <td class="px-4 py-3.5 align-top font-medium text-slate-700 sm:px-5">
+                        @if (! empty($row['last_updated_date'] ?? null) && ! empty($row['last_updated_time'] ?? null))
+                          <div class="flex flex-col">
+                            <span class="font-medium text-slate-900">{{ $row['last_updated_date'] }}</span>
+                            <span class="text-sm text-slate-500">{{ $row['last_updated_time'] }}</span>
+                          </div>
+                        @else
+                          <span class="whitespace-nowrap">{{ $row['updated_display'] }}</span>
+                        @endif
+                      </td>
                       <td class="px-4 py-3.5 align-top sm:px-5">
                         <span class="inline-flex shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold leading-none {{ $badgeByVariant[$row['status_variant']] ?? $badgeByVariant['neutral'] }}">
                           {{ $row['status_label'] }}

@@ -18,6 +18,7 @@ use App\Models\SubmissionRequirement;
 use App\Models\User;
 use App\Services\OrganizationNotificationService;
 use App\Services\OrganizationRegistrationRevisionSummaryService;
+use App\Support\ManilaDateTime;
 use App\Support\SubmissionRoutingProgress;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
@@ -1243,7 +1244,6 @@ class OrganizationSubmittedDocumentsController extends Controller
     {
         return [
             ['label' => 'Contact person', 'value' => $submission->contact_person ?? '—'],
-            ['label' => 'Adviser name', 'value' => $submission->adviser_name ?? '—'],
             ['label' => 'Contact number', 'value' => $submission->contact_no ?? '—'],
             ['label' => 'Contact email', 'value' => $submission->contact_email ?? '—'],
             ['label' => 'Academic year', 'value' => $submission->academicTerm?->academic_year ?? '—'],
@@ -1750,7 +1750,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'type_label' => 'Registration',
                 'title' => 'Organization Registration Application',
                 'submitted_display' => optional($submission->submission_date)->format('M j, Y') ?? '—',
-                'updated_display' => optional($submission->updated_at)->format('M j, Y') ?? '—',
+                'updated_display' => optional($submission->updated_at)->timezone('Asia/Manila')->format('M j, Y g:i A') ?? '—',
+                'last_updated_date' => ManilaDateTime::formatLastUpdatedDateLine($submission->updated_at),
+                'last_updated_time' => ManilaDateTime::formatLastUpdatedTimeLine($submission->updated_at),
                 'status_raw' => $statusForList,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
@@ -1779,7 +1781,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'type_label' => 'Renewal',
                 'title' => 'Organization Renewal Application',
                 'submitted_display' => optional($submission->submission_date)->format('M j, Y') ?? '—',
-                'updated_display' => optional($submission->updated_at)->format('M j, Y') ?? '—',
+                'updated_display' => optional($submission->updated_at)->timezone('Asia/Manila')->format('M j, Y g:i A') ?? '—',
+                'last_updated_date' => ManilaDateTime::formatLastUpdatedDateLine($submission->updated_at),
+                'last_updated_time' => ManilaDateTime::formatLastUpdatedTimeLine($submission->updated_at),
                 'status_raw' => $submission->legacyStatus(),
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
@@ -1813,7 +1817,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'type_label' => 'Activity Calendar',
                 'title' => $title,
                 'submitted_display' => optional($cal->submission_date)->format('M j, Y') ?? '—',
-                'updated_display' => optional($cal->updated_at)->format('M j, Y') ?? '—',
+                'updated_display' => optional($cal->updated_at)->timezone('Asia/Manila')->format('M j, Y g:i A') ?? '—',
+                'last_updated_date' => ManilaDateTime::formatLastUpdatedDateLine($cal->updated_at),
+                'last_updated_time' => ManilaDateTime::formatLastUpdatedTimeLine($cal->updated_at),
                 'status_raw' => $cal->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
@@ -1855,7 +1861,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'type_label' => 'Activity Proposal',
                 'title' => ($proposal->activity_title ?: 'Activity Proposal').' — Proposal',
                 'submitted_display' => optional($proposal->submission_date)->format('M j, Y') ?? '—',
-                'updated_display' => optional($proposal->updated_at)->format('M j, Y') ?? '—',
+                'updated_display' => optional($proposal->updated_at)->timezone('Asia/Manila')->format('M j, Y g:i A') ?? '—',
+                'last_updated_date' => ManilaDateTime::formatLastUpdatedDateLine($proposal->updated_at),
+                'last_updated_time' => ManilaDateTime::formatLastUpdatedTimeLine($proposal->updated_at),
                 'status_raw' => $proposal->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
@@ -1902,7 +1910,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'type_label' => 'After Activity Report',
                 'title' => 'After Activity Report — '.$eventTitle,
                 'submitted_display' => optional($report->report_submission_date)->format('M j, Y') ?? '—',
-                'updated_display' => optional($report->updated_at)->format('M j, Y') ?? '—',
+                'updated_display' => optional($report->updated_at)->timezone('Asia/Manila')->format('M j, Y g:i A') ?? '—',
+                'last_updated_date' => ManilaDateTime::formatLastUpdatedDateLine($report->updated_at),
+                'last_updated_time' => ManilaDateTime::formatLastUpdatedTimeLine($report->updated_at),
                 'status_raw' => $report->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
