@@ -110,7 +110,7 @@
 
     {{-- Manage Officers --}}
     <a
-      href="#"
+      href="{{ route('organizations.officers.index') }}{{ $saQ }}"
       class="group flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-300/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#003E9F]/15">
       <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#003E9F]/10 text-[#003E9F] transition group-hover:bg-[#003E9F]/15">
         <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">

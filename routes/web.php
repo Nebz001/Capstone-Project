@@ -9,6 +9,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationAdviserController;
 use App\Http\Controllers\OrganizationNotificationController;
+use App\Http\Controllers\OrganizationOfficerController;
 use App\Http\Controllers\OrganizationSubmittedDocumentsController;
 use App\Models\Organization;
 use App\Models\OrganizationSubmission;
@@ -122,6 +123,13 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'off
         Route::get('/submit-report', 'showSubmitReportHub')->name('submit-report');
         Route::get('/after-activity-report', 'showAfterActivityReportForm')->name('after-activity-report');
         Route::post('/after-activity-report', 'storeAfterActivityReport')->name('after-activity-report.store');
+    });
+
+    Route::controller(OrganizationOfficerController::class)->group(function () {
+        Route::get('/officers', 'index')->name('officers.index');
+        Route::post('/officers/secretary', 'storeSecretary')->name('officers.secretary.store');
+        Route::patch('/officers/secretary/{officer}/deactivate', 'deactivateSecretary')->name('officers.secretary.deactivate');
+        Route::post('/officers/secretary/replace', 'replaceSecretary')->name('officers.secretary.replace');
     });
 
     Route::controller(OrganizationNotificationController::class)->group(function () {
