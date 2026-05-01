@@ -191,9 +191,11 @@ class AdminController extends Controller
                 $legacyStatus = $record->legacyStatus();
                 $update = $updateAggregates->get($record->id);
                 $pendingUpdatesCount = $update ? (int) ($update->pending_updates_count ?? 0) : 0;
-                $isUpdated = $legacyStatus === 'REVISION' && $pendingUpdatesCount > 0;
-                $status = $isUpdated ? 'UPDATED' : $legacyStatus;
-                $statusLabel = $isUpdated ? 'UPDATED' : str_replace('_', ' ', $legacyStatus);
+                $isUpdated = $pendingUpdatesCount > 0 && in_array($legacyStatus, ['UNDER_REVIEW', 'PENDING', 'REVIEWED'], true);
+                $status = $legacyStatus === 'REVISION'
+                    ? 'REVISION'
+                    : ($isUpdated ? 'UPDATED' : $legacyStatus);
+                $statusLabel = $status === 'UPDATED' ? 'UPDATED' : str_replace('_', ' ', $status);
                 $lastResubmittedAt = $update && $update->last_resubmitted_at
                     ? \Illuminate\Support\Carbon::parse((string) $update->last_resubmitted_at)
                     : null;
