@@ -899,9 +899,29 @@ class AdminController extends Controller
         $this->autoAcknowledgeReviewedRegistrationFieldUpdates($submission, $normalizedFieldReviews, (int) $admin->id);
         $this->notifyRegistrationStatusChange($submission);
 
+        $submission->refresh();
+        $finalStatus = (string) ($submission->status ?? OrganizationSubmission::STATUS_PENDING);
+
+        $blockType = 'pending';
+        $blockTitle = 'Registration review saved';
+        $blockMessage = 'Your review progress has been saved.';
+        if ($finalStatus === OrganizationSubmission::STATUS_REVISION) {
+            $blockType = 'warning';
+            $blockTitle = 'Revision request sent';
+            $blockMessage = 'The organization registration has been returned for revision.';
+        } elseif ($finalStatus === OrganizationSubmission::STATUS_APPROVED) {
+            $blockType = 'success';
+            $blockTitle = 'Organization has been approved';
+            $blockMessage = 'The organization registration has been approved successfully.';
+        }
+
         return redirect()
             ->route('admin.registrations.show', $submission)
-            ->with('review_success', true);
+            ->with([
+                'review_block_type' => $blockType,
+                'review_block_title' => $blockTitle,
+                'review_block_message' => $blockMessage,
+            ]);
     }
 
     public function saveRegistrationReviewDraft(Request $request, OrganizationSubmission $submission): JsonResponse

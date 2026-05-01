@@ -209,7 +209,33 @@
     @enderror
   </div>
 
-  @if ($status === 'APPROVED' || session('review_success'))
+  @php
+    $reviewBlockType = (string) session('review_block_type', '');
+    $reviewBlockTitle = (string) session('review_block_title', '');
+    $reviewBlockMessage = (string) session('review_block_message', '');
+    $hasReviewBlockFlash = $reviewBlockTitle !== '' || $reviewBlockMessage !== '';
+    $reviewBlockVariant = match ($reviewBlockType) {
+      'success' => 'success',
+      'warning', 'pending' => 'warning',
+      'error' => 'error',
+      default => 'info',
+    };
+  @endphp
+
+  @if ($hasReviewBlockFlash)
+    <x-feedback.blocked-message variant="{{ $reviewBlockVariant }}" class="mb-6 items-start">
+      <p class="font-semibold">{{ $reviewBlockTitle }}</p>
+      <p class="mt-1 text-sm font-normal">{{ $reviewBlockMessage }}</p>
+      <p class="mt-2">
+        <a
+          href="{{ route('admin.registrations.index') }}"
+          class="text-sm font-semibold underline underline-offset-2 transition"
+        >
+          Back to registrations
+        </a>
+      </p>
+    </x-feedback.blocked-message>
+  @elseif ($status === 'APPROVED')
     <x-feedback.blocked-message variant="success" class="mb-6 items-start">
       <p class="font-semibold">Organization has been approved</p>
       <p class="mt-1 text-sm font-normal">The organization registration has been approved successfully.</p>
