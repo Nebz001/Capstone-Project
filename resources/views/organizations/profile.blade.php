@@ -48,6 +48,7 @@
     $revisionFieldNotes = is_array($profileRevisionSummary['field_notes'] ?? null) ? $profileRevisionSummary['field_notes'] : [];
     $revisionGroups = is_array($profileRevisionSummary['groups'] ?? null) ? $profileRevisionSummary['groups'] : [];
     $revisionGeneralRemarks = is_string($profileRevisionSummary['general_remarks'] ?? null) ? $profileRevisionSummary['general_remarks'] : null;
+    $hasActiveProfileRevisionItems = count($revisionGroups) > 0;
     $revisionEditMode = (bool) ($revisionEditMode ?? false);
     $revisionEditableFields = is_array($revisionEditableFields ?? null) ? $revisionEditableFields : [];
     $shouldShowField = static fn (string $field) => ! $revisionEditMode || in_array($field, $revisionEditableFields, true);
@@ -83,7 +84,8 @@
     $isProfileRevisionRequested = (bool) ($organization?->isProfileRevisionRequested());
     $reviewWorkflowStatus = strtoupper((string) ($applicationWorkflowStatus ?? ''));
     $isApprovedActiveState = $status === 'ACTIVE' && $reviewWorkflowStatus === 'APPROVED';
-    $isRevisionReviewState = ! $isApprovedActiveState
+    $isRevisionReviewState = $hasActiveProfileRevisionItems
+        && ! $isApprovedActiveState
         && (
             in_array($reviewWorkflowStatus, ['REVISION', 'REVISION_REQUIRED'], true)
             || $isProfileRevisionRequested

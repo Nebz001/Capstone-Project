@@ -349,6 +349,32 @@ class OrganizationController extends Controller
         $fileRevisionsByKey = [];
         $infoUpdatedByKey = [];
         $fileUpdatedByKey = [];
+        foreach ($pendingUpdateRows as $row) {
+            $sectionKey = (string) ($row->section_key ?? '');
+            $fieldKey = (string) ($row->field_key ?? '');
+            $compoundKey = $sectionKey.'.'.$fieldKey;
+            $label = trim((string) data_get($fieldReviews, $sectionKey.'.'.$fieldKey.'.label', ucwords(str_replace('_', ' ', $fieldKey))));
+            if ($sectionKey === 'requirements') {
+                $fileHref = route('organizations.submitted-documents.registrations.show', $submission).'?from=dashboard&revision_target=revision-file-'.$this->sanitizeAnchorSegment($fieldKey);
+                $newFileMeta = is_array($row->new_file_meta) ? $row->new_file_meta : [];
+                $newFileName = trim((string) ($newFileMeta['original_name'] ?? $newFileMeta['file_name'] ?? $newFileMeta['filename'] ?? ''));
+                $fileUpdatedByKey[$fieldKey] = [
+                    'field' => $label !== '' ? $label : ucwords(str_replace('_', ' ', $fieldKey)),
+                    'href' => $fileHref,
+                    'file_name' => $newFileName !== '' ? $newFileName : 'Updated file uploaded',
+                ];
+                continue;
+            }
+
+            $anchor = 'revision-field-'.$this->sanitizeAnchorSegment($sectionKey).'-'.$this->sanitizeAnchorSegment($fieldKey);
+            $infoHref = route('organizations.profile', ['edit' => 1, 'from' => 'dashboard']).'#'.$anchor;
+            $infoUpdatedByKey[$compoundKey] = [
+                'field' => $label !== '' ? $label : ucwords(str_replace('_', ' ', $fieldKey)),
+                'href' => $infoHref,
+                'old_value' => trim((string) ($row->old_value ?? '')),
+                'new_value' => trim((string) ($row->new_value ?? '')),
+            ];
+        }
         foreach ($fieldReviews as $sectionKey => $fields) {
             if (! is_array($fields)) {
                 continue;
@@ -372,14 +398,7 @@ class OrganizationController extends Controller
                 if ((string) $sectionKey === 'requirements') {
                     $fileHref = route('organizations.submitted-documents.registrations.show', $submission).'?from=dashboard&revision_target=revision-file-'.$this->sanitizeAnchorSegment((string) $fieldKey);
                     if (isset($pendingSet[$compoundKey])) {
-                        $meta = $pendingMetaByKey[$compoundKey] ?? ['new_file_meta' => []];
-                        $newFileMeta = is_array($meta['new_file_meta'] ?? null) ? $meta['new_file_meta'] : [];
-                        $newFileName = trim((string) ($newFileMeta['original_name'] ?? $newFileMeta['file_name'] ?? $newFileMeta['filename'] ?? ''));
-                        $fileUpdatedByKey[(string) $fieldKey] = [
-                            'field' => $label,
-                            'href' => $fileHref,
-                            'file_name' => $newFileName !== '' ? $newFileName : 'Updated file uploaded',
-                        ];
+                        // Keep as completed/updated under review; do not duplicate as active.
                     } else {
                         $fileRevisionsByKey[(string) $fieldKey] = [
                             'field' => $label,
@@ -392,13 +411,7 @@ class OrganizationController extends Controller
 
                 $infoHref = route('organizations.profile', ['edit' => 1, 'from' => 'dashboard']).'#'.$anchor;
                 if (isset($pendingSet[$compoundKey])) {
-                    $meta = $pendingMetaByKey[$compoundKey] ?? ['old_value' => '', 'new_value' => ''];
-                    $infoUpdatedByKey[$compoundKey] = [
-                        'field' => $label,
-                        'href' => $infoHref,
-                        'old_value' => (string) ($meta['old_value'] ?? ''),
-                        'new_value' => (string) ($meta['new_value'] ?? ''),
-                    ];
+                    // Keep as completed/updated under review; do not duplicate as active.
                 } else {
                     $infoRevisionsByKey[$compoundKey] = [
                         'field' => $label,
@@ -1706,6 +1719,7 @@ class OrganizationController extends Controller
 
         if ($latestRevisionSubmission && $editableComparedFields !== []) {
             $map = $this->profileFieldToRevisionKeyMap();
+            $createdRevisionUpdates = false;
             foreach ($editableComparedFields as $field) {
                 if (! array_key_exists($field, $validated) || ! isset($map[$field])) {
                     continue;
@@ -1725,6 +1739,13 @@ class OrganizationController extends Controller
                     'new_value' => $newValue !== '' ? $newValue : null,
                     'resubmitted_at' => now(),
                     'resubmitted_by' => $user->id,
+                ]);
+                $createdRevisionUpdates = true;
+            }
+
+            if ($createdRevisionUpdates && (string) $latestRevisionSubmission->status === OrganizationSubmission::STATUS_REVISION) {
+                $latestRevisionSubmission->update([
+                    'status' => OrganizationSubmission::STATUS_UNDER_REVIEW,
                 ]);
             }
         }

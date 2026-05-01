@@ -242,7 +242,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->all();
         $hasOpenRevisionItems = $revisionSections !== [];
         $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingRevisionItemSet !== [];
-        $statusForView = $isResubmittedPendingReview ? 'UNDER_REVIEW' : $submission->legacyStatus();
+        $statusForView = $hasOpenRevisionItems
+            ? 'REVISION'
+            : ($isResubmittedPendingReview ? 'UNDER_REVIEW' : $submission->legacyStatus());
         $sp = $this->submissionStatusPresentation($statusForView);
         $savedUpdatedKeys = OrganizationRevisionFieldUpdate::query()
             ->where('organization_submission_id', $submission->id)
@@ -1731,7 +1733,16 @@ class OrganizationSubmittedDocumentsController extends Controller
         $rows = collect();
 
         foreach (OrganizationSubmission::query()->registrations()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $submission) {
-            $sp = $this->submissionStatusPresentation($submission->legacyStatus());
+            $revisionSummary = app(OrganizationRegistrationRevisionSummaryService::class)->buildForSubmission($submission);
+            $hasOpenRevisionItems = ((array) ($revisionSummary['groups'] ?? [])) !== [];
+            $pendingRevisionUpdateCount = OrganizationRevisionFieldUpdate::query()
+                ->where('organization_submission_id', $submission->id)
+                ->whereNull('acknowledged_at')
+                ->count();
+            $statusForList = $hasOpenRevisionItems
+                ? 'REVISION'
+                : ($pendingRevisionUpdateCount > 0 ? 'UNDER_REVIEW' : $submission->legacyStatus());
+            $sp = $this->submissionStatusPresentation($statusForList);
             $nFiles = $submission->attachments()->where('file_type', 'like', Attachment::TYPE_REGISTRATION_REQUIREMENT.':%')->count();
             $detail = $qDetail(route('organizations.submitted-documents.registrations.show', $submission));
             $rows->push([
@@ -1740,7 +1751,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'title' => 'Organization Registration Application',
                 'submitted_display' => optional($submission->submission_date)->format('M j, Y') ?? '—',
                 'updated_display' => optional($submission->updated_at)->format('M j, Y') ?? '—',
-                'status_raw' => $submission->legacyStatus(),
+                'status_raw' => $statusForList,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
                 'academic_year' => $submission->academicTerm?->academic_year,
@@ -2379,6 +2390,11 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ]
             );
 
+            if ((string) $submission->status === OrganizationSubmission::STATUS_REVISION) {
+                $submission->update([
+                    'status' => OrganizationSubmission::STATUS_UNDER_REVIEW,
+                ]);
+            }
             $submission->touch();
         });
     }

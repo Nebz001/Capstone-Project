@@ -490,9 +490,46 @@
           replacementWarningEl.classList.remove('hidden');
           replacementWarningEl.textContent = message;
         };
+        const normalizeTargetId = (value) => String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^[-_]+|[-_]+$/g, '');
+        const resolveRevisionTargetElement = (targetId) => {
+          const normalized = normalizeTargetId(targetId);
+          if (!normalized) return null;
+          const requirementKey = normalized
+            .replace(/^revision-file-requirements-/, '')
+            .replace(/^revision-file-/, '');
+          const candidates = [
+            normalized,
+            normalized.replaceAll('_', '-'),
+            normalized.replaceAll('-', '_'),
+            normalized.startsWith('revision-file-') && !normalized.startsWith('revision-file-requirements-')
+              ? normalized.replace('revision-file-', 'revision-file-requirements-')
+              : '',
+            normalized.startsWith('revision-file-requirements-')
+              ? normalized.replace('revision-file-requirements-', 'revision-file-')
+              : '',
+            requirementKey ? `revision-file-requirements-${requirementKey}` : '',
+            requirementKey ? `revision-file-requirements-${requirementKey.replaceAll('-', '_')}` : '',
+            requirementKey ? `revision-file-requirements-${requirementKey.replaceAll('_', '-')}` : '',
+            requirementKey ? `revision-file-${requirementKey}` : '',
+            requirementKey ? `revision-file-${requirementKey.replaceAll('-', '_')}` : '',
+            requirementKey ? `revision-file-${requirementKey.replaceAll('_', '-')}` : '',
+          ].filter(Boolean);
+
+          for (const candidate of candidates) {
+            const target = document.getElementById(candidate);
+            if (target) return target;
+          }
+
+          return null;
+        };
         const scrollToTarget = (targetId) => {
           if (!targetId) return;
-          const target = document.getElementById(targetId);
+          const target = resolveRevisionTargetElement(targetId);
           if (!target) return;
           target.scrollIntoView({ behavior: 'smooth', block: 'center' });
           target.classList.add('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
