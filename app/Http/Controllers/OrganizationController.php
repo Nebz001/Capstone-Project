@@ -2195,20 +2195,28 @@ class OrganizationController extends Controller
             }
         }
 
+        self::assertSupabaseDiskIsConfigured();
+
         $basePath = 'activity-request-forms/'.$organization->id.'/'.Str::uuid()->toString();
+
+        Log::info('Activity request form file upload debug', [
+            'organization_id' => $organization->id,
+            'file_keys' => array_keys($request->allFiles()),
+        ]);
+
         $requestLetterPath = null;
         if ($request->hasFile('request_letter')) {
-            $requestLetterPath = $request->file('request_letter')->store($basePath, 'public');
+            $requestLetterPath = $request->file('request_letter')->store($basePath, 'supabase');
         }
 
         $speakerResumePath = null;
         if ($request->hasFile('speaker_resume')) {
-            $speakerResumePath = $request->file('speaker_resume')->store($basePath, 'public');
+            $speakerResumePath = $request->file('speaker_resume')->store($basePath, 'supabase');
         }
 
         $postSurveyPath = null;
         if ($request->hasFile('post_survey_form')) {
-            $postSurveyPath = $request->file('post_survey_form')->store($basePath, 'public');
+            $postSurveyPath = $request->file('post_survey_form')->store($basePath, 'supabase');
         }
 
         $payload = [
@@ -2677,23 +2685,31 @@ class OrganizationController extends Controller
             $submissionDate = now()->toDateString();
         }
 
+        self::assertSupabaseDiskIsConfigured();
+
         $basePath = 'activity-proposals/'.$organization->id;
+
+        Log::info('Activity proposal file upload debug', [
+            'proposal_id' => $existing->id ?? null,
+            'organization_id' => $organization->id,
+            'file_keys' => array_keys($request->allFiles()),
+        ]);
 
         $logoPath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_LOGO);
         if ($request->hasFile('organization_logo')) {
-            $logoPath = $request->file('organization_logo')->store($basePath, 'public');
+            $logoPath = $request->file('organization_logo')->store($basePath, 'supabase');
         }
 
         $resumePath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME);
         if ($request->hasFile('resume_resource_persons')) {
-            $resumePath = $request->file('resume_resource_persons')->store($basePath, 'public');
+            $resumePath = $request->file('resume_resource_persons')->store($basePath, 'supabase');
         }
 
         $externalFundingPath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING);
         if ($validated['source_of_funding'] !== 'External') {
             $externalFundingPath = null;
         } elseif ($request->hasFile('external_funding_support')) {
-            $externalFundingPath = $request->file('external_funding_support')->store($basePath, 'public');
+            $externalFundingPath = $request->file('external_funding_support')->store($basePath, 'supabase');
         }
 
         $summary = mb_substr(trim(strip_tags($validated['overall_goal'])), 0, 500);

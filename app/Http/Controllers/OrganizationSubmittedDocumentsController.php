@@ -498,9 +498,10 @@ class OrganizationSubmittedDocumentsController extends Controller
         $requestForm = $this->relatedRequestFormForProposal($proposal);
         $resolvedFilePaths = [];
         foreach (['logo', 'request_letter', 'speaker_resume', 'post_survey_form', 'external', 'resume'] as $fileKey) {
-            $resolvedPath = $this->proposalResolvedFilePathByKey($proposal, $requestForm, $fileKey);
-            if ($resolvedPath !== null) {
-                $resolvedFilePaths[$fileKey] = $resolvedPath;
+            $rawPath = $this->proposalFilePathByKey($proposal, $requestForm, $fileKey);
+            $normalizedPath = $this->normalizeStoredPublicPath($rawPath);
+            if (is_string($normalizedPath) && $normalizedPath !== '') {
+                $resolvedFilePaths[$fileKey] = $normalizedPath;
             }
         }
         $fileUrls = [];
@@ -508,7 +509,6 @@ class OrganizationSubmittedDocumentsController extends Controller
             $fileUrls[$fileKey] = route('organizations.submitted-documents.proposals.file', [
                 'proposal' => $proposal,
                 'key' => $fileKey,
-                'p' => $this->encodePathParam($resolvedPath),
             ]);
         }
 
@@ -719,25 +719,26 @@ class OrganizationSubmittedDocumentsController extends Controller
         ]);
     }
 
-    public function streamSubmittedActivityProposalFile(Request $request, ActivityProposal $proposal, string $key): StreamedResponse
+    public function streamSubmittedActivityProposalFile(Request $request, ActivityProposal $proposal, string $key): Response
     {
-        $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
+        $this->authorizeProposalFileView($request, $proposal);
+
         $requestForm = $this->relatedRequestFormForProposal($proposal);
-        $relativePath = $this->decodePathParam((string) $request->query('p'));
-        if (! $relativePath || ! $this->isPathAllowedForProposalOrganization($relativePath, (int) $proposal->organization_id)) {
-            $relativePath = $this->proposalResolvedFilePathByKey($proposal, $requestForm, $key);
-        }
+        $relativePath = $this->proposalFilePathByKey($proposal, $requestForm, $key);
+        $relativePath = $this->normalizeStoredPublicPath($relativePath);
+
+        Log::info('Activity proposal file view attempt', [
+            'proposal_id' => $proposal->id,
+            'organization_id' => $proposal->organization_id,
+            'key' => $key,
+            'stored_path' => $relativePath,
+        ]);
 
         if (! is_string($relativePath) || $relativePath === '') {
-            abort(404);
+            abort(404, 'No file has been uploaded for this proposal attachment.');
         }
 
-        $disk = Storage::disk('public');
-        if (! $disk->exists($relativePath)) {
-            abort(404);
-        }
-
-        return $disk->response($relativePath, basename($relativePath), [], 'inline');
+        return $this->redirectToProposalAttachmentSignedUrl($relativePath, $proposal);
     }
 
     public function showSubmittedAfterActivityReport(Request $request, ActivityReport $report): View
@@ -2028,17 +2029,23 @@ class OrganizationSubmittedDocumentsController extends Controller
 
     private function proposalResolvedFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
     {
-        $relativePath = $this->normalizeStoredPublicPath($this->proposalFilePathByKey($proposal, $requestForm, $key));
+        $rawPath = $this->proposalFilePathByKey($proposal, $requestForm, $key);
+        $relativePath = $this->normalizeStoredPublicPath($rawPath);
         if (! $relativePath || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
             return null;
         }
 
-        $disk = Storage::disk('public');
-        if (! $disk->exists($relativePath)) {
-            return null;
+        $disk = Storage::disk('supabase');
+        if ($disk->exists($relativePath)) {
+            return $relativePath;
         }
 
-        return $relativePath;
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            return $relativePath;
+        }
+
+        return null;
     }
 
     private function normalizeStoredPublicPath(?string $rawPath): ?string
@@ -2089,6 +2096,102 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $this->normalizeStoredPublicPath($decoded);
+    }
+
+    private function authorizeProposalFileView(Request $request, ActivityProposal $proposal): void
+    {
+        $user = $request->user();
+        if (! $user) {
+            abort(401, 'You must be logged in to view this file.');
+        }
+
+        if ($user->isSuperAdmin() || $user->isAdminRole()) {
+            return;
+        }
+
+        if ($user->isRoleBasedApprover()) {
+            $isAssigned = $proposal->workflowSteps()
+                ->where('assigned_to', $user->id)
+                ->exists();
+            if ($isAssigned) {
+                return;
+            }
+        }
+
+        $officer = OrganizationOfficer::query()
+            ->where('user_id', $user->id)
+            ->where('organization_id', $proposal->organization_id)
+            ->where('status', 'active')
+            ->first();
+        if ($officer) {
+            return;
+        }
+
+        $adviser = OrganizationAdviser::query()
+            ->where('user_id', $user->id)
+            ->where('organization_id', $proposal->organization_id)
+            ->first();
+        if ($adviser) {
+            return;
+        }
+
+        abort(403, 'You do not have permission to view this file.');
+    }
+
+    private function redirectToProposalAttachmentSignedUrl(string $relativePath, ActivityProposal $proposal): Response
+    {
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('supabase');
+        $existsInSupabase = false;
+
+        try {
+            $existsInSupabase = $disk->exists($relativePath);
+        } catch (\Throwable $e) {
+            Log::warning('Activity proposal attachment exists() check failed on Supabase.', [
+                'proposal_id' => $proposal->id,
+                'stored_path' => $relativePath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($existsInSupabase) {
+            try {
+                $temporaryUrl = $disk->temporaryUrl($relativePath, now()->addMinutes(15));
+
+                Log::info('Activity proposal attachment served via Supabase signed URL.', [
+                    'proposal_id' => $proposal->id,
+                    'stored_path' => $relativePath,
+                ]);
+
+                return redirect()->away($temporaryUrl);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to generate Supabase temporaryUrl for proposal attachment.', [
+                    'proposal_id' => $proposal->id,
+                    'stored_path' => $relativePath,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            Log::warning('Activity proposal attachment found on local public disk only (legacy).', [
+                'proposal_id' => $proposal->id,
+                'stored_path' => $relativePath,
+            ]);
+
+            return $publicDisk->response($relativePath, basename($relativePath), [], 'inline');
+        }
+
+        Log::warning('Activity proposal attachment missing from both Supabase and local storage.', [
+            'proposal_id' => $proposal->id,
+            'stored_path' => $relativePath,
+        ]);
+
+        abort(404, 'The file could not be found in Supabase Storage.');
     }
 
     private function isPathAllowedForProposalOrganization(string $relativePath, int $organizationId): bool

@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminController extends Controller
@@ -1388,26 +1389,65 @@ class AdminController extends Controller
         ]);
     }
 
-    public function streamProposalFile(Request $request, ActivityProposal $proposal, string $key): StreamedResponse
+    public function streamProposalFile(Request $request, ActivityProposal $proposal, string $key): Response
     {
         $this->authorizeAdmin($request);
         $proposal->loadMissing('attachments');
         $requestForm = $this->relatedRequestFormForProposal($proposal);
         $relativePath = $this->proposalReviewFilePathByKey($proposal, $requestForm, $key);
+
+        Log::info('Admin: activity proposal file view attempt', [
+            'proposal_id' => $proposal->id,
+            'key' => $key,
+            'stored_path' => $relativePath,
+        ]);
+
         if (! is_string($relativePath) || trim($relativePath) === '') {
-            abort(404);
+            abort(404, 'No file has been uploaded for this proposal attachment.');
         }
         $relativePath = trim($relativePath);
         if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
             abort(404);
         }
 
-        $disk = Storage::disk('public');
-        if (! $disk->exists($relativePath)) {
-            abort(404);
+        $disk = Storage::disk('supabase');
+        $existsInSupabase = false;
+
+        try {
+            $existsInSupabase = $disk->exists($relativePath);
+        } catch (\Throwable $e) {
+            Log::warning('Admin: proposal attachment exists() check failed on Supabase.', [
+                'proposal_id' => $proposal->id,
+                'stored_path' => $relativePath,
+                'error' => $e->getMessage(),
+            ]);
         }
 
-        return $disk->response($relativePath, basename($relativePath), [], 'inline');
+        if ($existsInSupabase) {
+            try {
+                $temporaryUrl = $disk->temporaryUrl($relativePath, now()->addMinutes(15));
+
+                return redirect()->away($temporaryUrl);
+            } catch (\Throwable $e) {
+                Log::warning('Admin: failed to generate Supabase temporaryUrl for proposal attachment.', [
+                    'proposal_id' => $proposal->id,
+                    'stored_path' => $relativePath,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            Log::warning('Admin: proposal attachment found on local public disk only (legacy).', [
+                'proposal_id' => $proposal->id,
+                'stored_path' => $relativePath,
+            ]);
+
+            return $publicDisk->response($relativePath, basename($relativePath), [], 'inline');
+        }
+
+        abort(404, 'The file could not be found in Supabase Storage.');
     }
 
     public function updateProposalWorkflow(Request $request, ActivityProposal $proposal): RedirectResponse
