@@ -13,11 +13,14 @@ use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\OrganizationRevisionFieldUpdate;
+use App\Models\ModuleRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
 use App\Models\SubmissionRequirement;
 use App\Models\User;
 use App\Services\OrganizationNotificationService;
 use App\Services\OrganizationRegistrationRevisionSummaryService;
+use App\Services\ReviewWorkflow\ReviewableUpdateRecorder;
+use App\Services\ReviewWorkflow\RevisionSummaryService;
 use App\Support\ManilaDateTime;
 use App\Support\OrganizationStoragePath;
 use App\Support\SubmissionRoutingProgress;
@@ -89,6 +92,88 @@ class OrganizationSubmittedDocumentsController extends Controller
         'financial_statement_previous_ay' => 'Financial statement (previous AY)',
         'evaluation_summary_past_projects' => 'Evaluation summary (past projects)',
         'others' => 'Other requirement',
+    ];
+
+    /**
+     * Map officer-facing proposal file keys to the metadata needed to:
+     *   - find the matching admin field review row
+     *     (admin_field_reviews JSON column on the activity_proposals row),
+     *   - resolve which underlying model the new attachment row should hang
+     *     off (the ActivityRequestForm for Step 1 files, the ActivityProposal
+     *     itself for Step 2 / additional files), and
+     *   - decide which Attachment.file_type constant to use so that the
+     *     existing read paths (admin streamProposalFile, officer
+     *     streamSubmittedActivityProposalFile) keep finding the file.
+     *
+     * @return array<string, array{section_key: string, field_key: string, file_type: string, attachable: 'proposal'|'request_form', label: string}>
+     */
+    private const PROPOSAL_FILE_KEY_MAP = [
+        'request_letter' => [
+            'section_key' => 'step1_request_form',
+            'field_key' => 'step1_request_letter',
+            'file_type' => Attachment::TYPE_REQUEST_LETTER,
+            'attachable' => 'request_form',
+            'label' => 'Request letter',
+        ],
+        'speaker_resume' => [
+            'section_key' => 'step1_request_form',
+            'field_key' => 'step1_speaker_resume',
+            'file_type' => Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+            'attachable' => 'request_form',
+            'label' => 'Resume of speaker',
+        ],
+        'post_survey_form' => [
+            'section_key' => 'step1_request_form',
+            'field_key' => 'step1_post_survey_form',
+            'file_type' => Attachment::TYPE_REQUEST_POST_SURVEY,
+            'attachable' => 'request_form',
+            'label' => 'Sample post-survey form',
+        ],
+        'logo' => [
+            'section_key' => 'step2_submission',
+            'field_key' => 'step2_organization_logo',
+            'file_type' => Attachment::TYPE_PROPOSAL_LOGO,
+            'attachable' => 'proposal',
+            'label' => 'Organization logo',
+        ],
+        'external' => [
+            'section_key' => 'step2_submission',
+            'field_key' => 'step2_external_funding_support',
+            'file_type' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
+            'attachable' => 'proposal',
+            'label' => 'External funding support',
+        ],
+        'resume' => [
+            'section_key' => 'additional',
+            'field_key' => 'step2_resume_resource_persons',
+            'file_type' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
+            'attachable' => 'proposal',
+            'label' => 'Resume of resource person/s',
+        ],
+    ];
+
+    /**
+     * Officer-facing report file keys → admin field review coordinates +
+     * Attachment.file_type. Reports only review the poster + attendance file
+     * in the admin schema; supporting photos / certificate / evaluation are
+     * still streamable but not flag-able. Keep both lists below in sync if
+     * the report review schema grows.
+     *
+     * @return array<string, array{section_key: string, field_key: string, file_type: string, label: string}>
+     */
+    private const REPORT_FILE_KEY_MAP = [
+        'poster' => [
+            'section_key' => 'files',
+            'field_key' => 'poster_file',
+            'file_type' => Attachment::TYPE_REPORT_POSTER,
+            'label' => 'Poster image',
+        ],
+        'attendance' => [
+            'section_key' => 'files',
+            'field_key' => 'attendance_file',
+            'file_type' => Attachment::TYPE_REPORT_ATTENDANCE,
+            'label' => 'Attendance sheet',
+        ],
     ];
 
     public function index(Request $request): View|RedirectResponse
@@ -377,9 +462,65 @@ class OrganizationSubmittedDocumentsController extends Controller
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
         $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
-        $sp = $this->submissionStatusPresentation($submission->legacyStatus());
-        $fileLinks = $this->renewalFileLinksFromSubmission($submission);
-        $revisionSections = $this->moduleRevisionSections(is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : []);
+        /*
+         * Mirror the Registration officer-side flow exactly:
+         *   1. Find every officer-side resubmission that the admin has not
+         *      acknowledged yet, so we can hide them from the active
+         *      revision list and instead show a "Resubmitted" banner.
+         *   2. Run the existing Registration revision summary builder
+         *      (which already understands renewals via $submission->isRenewal()).
+         *   3. Status precedence:
+         *        - any open revision item left → REVISION
+         *        - no open items but there ARE pending update rows → UNDER_REVIEW
+         *        - otherwise → submission's own legacyStatus
+         */
+        $pendingUpdateRows = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->whereNull('acknowledged_at')
+            ->get(['section_key', 'field_key', 'new_file_meta']);
+        $pendingRequirementUpdateKeys = $pendingUpdateRows
+            ->filter(fn ($row): bool => (string) $row->section_key === 'requirements' && is_array($row->new_file_meta))
+            ->pluck('field_key')
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+        $pendingRevisionItemSet = [];
+        foreach ($pendingUpdateRows as $row) {
+            $pendingRevisionItemSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
+
+        $revisionSummary = app(OrganizationRegistrationRevisionSummaryService::class)->buildForSubmission($submission);
+        $revisionSections = collect((array) ($revisionSummary['groups'] ?? []))
+            ->filter(fn (array $section): bool => ($section['items'] ?? []) !== [])
+            ->values()
+            ->all();
+        $hasOpenRevisionItems = $revisionSections !== [];
+        $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingRevisionItemSet !== [];
+        $statusForView = $hasOpenRevisionItems
+            ? 'REVISION'
+            : ($isResubmittedPendingReview ? 'UNDER_REVIEW' : $submission->legacyStatus());
+        $sp = $this->submissionStatusPresentation($statusForView);
+
+        $savedUpdatedKeys = OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->where('section_key', 'requirements')
+            ->whereNotNull('new_file_meta')
+            ->pluck('field_key')
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+        $recentlyReplacedKeys = collect((array) $request->session()->get('replaced_requirement_keys', []))
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+
+        $fileLinks = $this->renewalFileLinksFromSubmission(
+            $submission,
+            $revisionSections,
+            $savedUpdatedKeys,
+            $recentlyReplacedKeys,
+            $pendingRequirementUpdateKeys
+        );
         $adviserNomination = $this->submissionAdviserNomination($submission);
 
         return view('organizations.submitted-documents.detail', [
@@ -389,17 +530,22 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
             'metaRows' => $this->renewalMetaRowsFromSubmission($submission),
-            'remarkHighlight' => $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
+            'remarkHighlight' => is_string($revisionSummary['general_remarks'] ?? null)
+                ? trim((string) $revisionSummary['general_remarks'])
+                : $this->truncatePreview($submission->additional_remarks ?: $submission->notes, 160),
             'revisionSections' => $revisionSections,
+            'isResubmittedPendingReview' => $isResubmittedPendingReview,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->submissionWorkflowLinks($submission, route('organizations.renew')),
             'adviserNomination' => $adviserNomination,
             'canRenominateAdviser' => $adviserNomination?->status === 'rejected',
             'adviserRenominateActionUrl' => route('organizations.submitted-documents.adviser.renominate', $submission),
+            'submitActionUrl' => route('organizations.submitted-documents.renewals.resubmit', $submission),
+            'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Organization renewal',
-            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($submission->legacyStatus()),
-            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($submission->legacyStatus()),
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($statusForView),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($statusForView),
         ]);
     }
 
@@ -415,6 +561,93 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $this->streamSubmissionRequirementAttachment($submission, $key);
     }
 
+    /**
+     * Replace one renewal requirement file the admin flagged for revision.
+     *
+     * Mirrors `replaceSubmittedRegistrationRequirementFile` but writes to the
+     * renewal storage folder and validates against the renewal field-review
+     * JSON column. Reuses the same Supabase + audit-trail pattern so admins
+     * see the "Updated" badge through the existing
+     * `OrganizationRevisionFieldUpdate` table.
+     */
+    public function replaceSubmittedRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): RedirectResponse
+    {
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
+        abort_unless(in_array($key, self::RENEWAL_FILE_KEYS, true), 404);
+
+        $fieldReviews = is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [];
+        $status = (string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending');
+        abort_unless($status === 'flagged', 403);
+
+        $validated = $request->validate([
+            'replacement_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_file.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_file.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $upload = $validated['replacement_file'];
+        $this->applyRenewalRequirementReplacement($submission, $user, $key, $upload);
+        $this->notifyRenewalFileReplacementToAdmins($submission);
+
+        return back()
+            ->with('success', 'Replacement file uploaded successfully.')
+            ->with('replaced_requirement_keys', [$key]);
+    }
+
+    /**
+     * Resubmit batch of replaced renewal requirement files (one form post,
+     * multiple `replacement_files[$key]` upload inputs). Same shape as the
+     * registration counterpart so the existing officer detail blade works
+     * unchanged.
+     */
+    public function resubmitRenewalRevisionFiles(Request $request, OrganizationSubmission $submission): RedirectResponse
+    {
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
+
+        $fieldReviews = is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [];
+        $revisionKeys = collect(self::RENEWAL_FILE_KEYS)
+            ->filter(fn (string $key): bool => (string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending') === 'flagged')
+            ->values()
+            ->all();
+        if ($revisionKeys === []) {
+            return back()->with('error', 'No revised files are pending for replacement.');
+        }
+
+        $validated = $request->validate([
+            'replacement_files' => ['required', 'array'],
+            'replacement_files.*' => ['file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_files.*.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+        $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
+        $changedKeys = array_values(array_filter(
+            $revisionKeys,
+            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile
+        ));
+        if ($changedKeys === []) {
+            return back()->with('error', 'Replace at least one revised file before submitting.');
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        foreach ($changedKeys as $key) {
+            /** @var \Illuminate\Http\UploadedFile $upload */
+            $upload = $incoming[$key];
+            $this->applyRenewalRequirementReplacement($submission, $user, $key, $upload);
+        }
+        $this->notifyRenewalFileReplacementToAdmins($submission);
+
+        return back()
+            ->with('success', 'Updated file(s) submitted for review.')
+            ->with('replaced_requirement_keys', $changedKeys);
+    }
+
     public function showSubmittedActivityCalendar(Request $request, ActivityCalendar $calendar): View
     {
         $this->ensureOfficerOwnsOrganization($request, (int) $calendar->organization_id);
@@ -425,16 +658,85 @@ class OrganizationSubmittedDocumentsController extends Controller
             },
         ]);
 
-        $sp = $this->submissionStatusPresentation($calendar->status);
+        // Same revision-banner pattern as registration / renewal / proposal:
+        // pull pending updates first so the summary builder hides items the
+        // officer already resubmitted, and resolve `statusForView` based on
+        // whether anything is still open.
+        $calendarFieldReviews = is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [];
+        $recorder = app(ReviewableUpdateRecorder::class);
+        $pendingUpdates = $recorder->pendingForReviewable($calendar);
+        $pendingItemSet = [];
+        foreach ($pendingUpdates as $row) {
+            $pendingItemSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
+
+        $sectionTitles = ['submitted_files' => 'Submitted Files'];
+        foreach ($calendar->entries as $idx => $entry) {
+            $sectionTitles['entry_'.$entry->id] = 'Activity '.($idx + 1).': '.($entry->activity_name ?? 'Untitled');
+        }
+
+        $revisionSummary = app(RevisionSummaryService::class)->build(
+            $calendar,
+            'admin_field_reviews',
+            $sectionTitles,
+            (string) ($calendar->admin_review_remarks ?? ''),
+            null,
+            $pendingItemSet,
+        );
+        $revisionSections = $revisionSummary['groups'];
+        $hasOpenRevisionItems = $revisionSections !== [];
+        $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingItemSet !== [];
+        $statusForView = $hasOpenRevisionItems
+            ? 'REVISION'
+            : ($isResubmittedPendingReview ? 'UNDER_REVIEW' : strtoupper((string) ($calendar->status ?? 'pending')));
+        $sp = $this->submissionStatusPresentation($statusForView);
+
+        // Calendar only has one file-replaceable item today: the calendar
+        // file itself. Entry-level revisions are surfaced as banner notes
+        // and the officer fixes them through the existing edit/resubmit
+        // calendar form (we don't add a new per-entry edit endpoint).
+        $calendarFileFlaggedNote = null;
+        $calendarFileStatus = (string) data_get($calendarFieldReviews, 'submitted_files.calendar_file.status', 'pending');
+        if ($calendarFileStatus === 'flagged') {
+            $note = trim((string) data_get($calendarFieldReviews, 'submitted_files.calendar_file.note', ''));
+            $calendarFileFlaggedNote = $note !== '' ? $note : null;
+        }
+        $calendarFileIsPendingResubmit = isset($pendingItemSet['submitted_files.calendar_file']);
+
+        $recentlyReplacedKeys = collect((array) $request->session()->get('replaced_requirement_keys', []))
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+
+        $calendarFileSavedUpdated = ModuleRevisionFieldUpdate::query()
+            ->where('reviewable_type', $calendar->getMorphClass())
+            ->where('reviewable_id', (int) $calendar->id)
+            ->where('section_key', 'submitted_files')
+            ->where('field_key', 'calendar_file')
+            ->whereNotNull('new_file_meta')
+            ->exists();
+
         $fileLinks = [];
         if ($calendar->calendar_file) {
+            $isFlagged = $calendarFileFlaggedNote !== null || $calendarFileStatus === 'flagged';
+            $canReplace = $isFlagged && ! $calendarFileIsPendingResubmit;
             $fileLinks[] = [
                 'label' => 'Uploaded calendar file (PDF / document)',
                 'url' => route('organizations.submitted-documents.calendars.file', $calendar),
+                'key' => 'calendar_file',
+                'previous_file_name' => 'Previously uploaded file',
+                'anchor_id' => $this->revisionTargetAnchorId('submitted_files', 'calendar_file'),
+                'is_revised' => $isFlagged,
+                'revision_note' => $canReplace ? $calendarFileFlaggedNote : null,
+                'can_replace' => $canReplace,
+                'replace_url' => $canReplace
+                    ? route('organizations.submitted-documents.calendars.file.replace', ['calendar' => $calendar, 'key' => 'calendar_file'])
+                    : null,
+                'is_changed_saved' => $calendarFileSavedUpdated,
+                'is_changed_recent' => in_array('calendar_file', $recentlyReplacedKeys, true),
             ];
         }
 
-        $revisionSections = $this->moduleRevisionSections(is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : []);
         $term = $this->activityCalendarTermLabel($calendar->semester);
         $titleLine = trim(($calendar->academic_year ?? 'Academic year N/A').' · '.$term.' activity calendar');
 
@@ -455,15 +757,169 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ['label' => 'Date submitted', 'value' => optional($calendar->submission_date)->format('M j, Y') ?? '—'],
                 ['label' => 'Activities listed', 'value' => (string) $calendar->entries->count()],
             ],
-            'remarkHighlight' => $this->revisionSectionsPreview($revisionSections),
+            'remarkHighlight' => is_string($revisionSummary['general_remarks'] ?? null) && $revisionSummary['general_remarks'] !== ''
+                ? $revisionSummary['general_remarks']
+                : $this->revisionSectionsPreview($revisionSections),
             'revisionSections' => $revisionSections,
+            'isResubmittedPendingReview' => $isResubmittedPendingReview,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->activityCalendarWorkflowLinks($calendar),
+            'submitActionUrl' => route('organizations.submitted-documents.calendars.resubmit', $calendar),
+            'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => $calendar->entries,
             'progressDocumentLabel' => 'Activity calendar',
             'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($calendar->status),
             'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($calendar->status),
         ]);
+    }
+
+    /**
+     * Replace the activity-calendar PDF when the admin flags it for revision.
+     *
+     * Activity calendars only have one reviewable file (`calendar_file`) per
+     * the admin schema, so the officer-facing flow is intentionally narrow:
+     * verify the admin flagged it, upload to the canonical
+     * `activity-calendars/{org}/...` folder, and write the audit row through
+     * `ReviewableUpdateRecorder` so the admin "Updated" badge surfaces.
+     */
+    public function replaceSubmittedActivityCalendarFile(Request $request, ActivityCalendar $calendar, string $key): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $calendar->organization_id);
+        abort_unless($key === 'calendar_file', 404, 'Unknown activity calendar file key.');
+
+        $fieldReviews = is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [];
+        $status = (string) data_get($fieldReviews, 'submitted_files.calendar_file.status', 'pending');
+        abort_unless($status === 'flagged', 403, 'This calendar file was not requested for revision.');
+
+        $validated = $request->validate([
+            'replacement_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_file.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_file.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $this->applyActivityCalendarFileReplacement($calendar, $user, $validated['replacement_file']);
+        $this->notifyActivityCalendarFileReplacementToAdmins($calendar);
+
+        return back()
+            ->with('success', 'Replacement file uploaded successfully.')
+            ->with('replaced_requirement_keys', ['calendar_file']);
+    }
+
+    /**
+     * Batch resubmit handler for activity calendar files. Today only the
+     * calendar file is replaceable, but the same shape as the other modules
+     * is preserved so the existing detail blade form posts uniformly.
+     */
+    public function resubmitActivityCalendarRevisionFiles(Request $request, ActivityCalendar $calendar): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $calendar->organization_id);
+
+        $fieldReviews = is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [];
+        $status = (string) data_get($fieldReviews, 'submitted_files.calendar_file.status', 'pending');
+        if ($status !== 'flagged') {
+            return back()->with('error', 'No revised files are pending for replacement.');
+        }
+
+        $validated = $request->validate([
+            'replacement_files' => ['required', 'array'],
+            'replacement_files.calendar_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_files.calendar_file.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_files.calendar_file.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+        $upload = $validated['replacement_files']['calendar_file'] ?? null;
+        if (! $upload instanceof \Illuminate\Http\UploadedFile) {
+            return back()->with('error', 'Replace the revised file before submitting.');
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        $this->applyActivityCalendarFileReplacement($calendar, $user, $upload);
+        $this->notifyActivityCalendarFileReplacementToAdmins($calendar);
+
+        return back()
+            ->with('success', 'Updated file submitted for review.')
+            ->with('replaced_requirement_keys', ['calendar_file']);
+    }
+
+    /**
+     * Persist the new calendar file. Like the AAR pipeline, calendars use
+     * the `public` disk because `streamSubmittedActivityCalendarMainFile`
+     * resolves files through the public filesystem; we keep that contract
+     * and just update the `calendar_file` column to point at the new path.
+     */
+    private function applyActivityCalendarFileReplacement(
+        ActivityCalendar $calendar,
+        User $user,
+        \Illuminate\Http\UploadedFile $upload,
+    ): void {
+        $organizationId = (int) $calendar->organization_id;
+        $folder = 'activity-calendars/'.$organizationId.'/'.(int) $calendar->id;
+
+        $oldPath = (string) ($calendar->calendar_file ?? '');
+        $oldMeta = $oldPath !== ''
+            ? ['original_name' => basename($oldPath), 'stored_path' => $oldPath]
+            : null;
+
+        $storedPath = $upload->store($folder, 'public');
+        if (! is_string($storedPath) || $storedPath === '') {
+            abort(500, 'Failed to upload replacement file.');
+        }
+
+        $newMeta = [
+            'original_name' => (string) $upload->getClientOriginalName(),
+            'stored_path' => (string) $storedPath,
+            'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+            'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+        ];
+
+        $recorder = app(ReviewableUpdateRecorder::class);
+        DB::transaction(function () use ($calendar, $user, $storedPath, $oldMeta, $newMeta, $recorder): void {
+            // `calendar_file` is a legacy column that's not in $fillable on
+            // the ActivityCalendar model — match how the rest of the code
+            // reads from it by writing through forceFill().
+            $calendar->forceFill(['calendar_file' => $storedPath])->save();
+
+            $recorder->recordFieldUpdate(
+                reviewable: $calendar,
+                userId: (int) $user->id,
+                sectionKey: 'submitted_files',
+                fieldKey: 'calendar_file',
+                oldFileMeta: $oldMeta,
+                newFileMeta: $newMeta,
+            );
+
+            if ((string) $calendar->status === 'revision') {
+                $calendar->update(['status' => 'under_review']);
+            }
+            $calendar->touch();
+        });
+
+        Log::info('Review workflow: activity calendar file replaced by officer', [
+            'calendar_id' => (int) $calendar->id,
+            'organization_id' => (int) $calendar->organization_id,
+            'section_key' => 'submitted_files',
+            'field_key' => 'calendar_file',
+            'stored_path' => $storedPath,
+        ]);
+    }
+
+    private function notifyActivityCalendarFileReplacementToAdmins(ActivityCalendar $calendar): void
+    {
+        $adminUsers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $adminUsers,
+            'Activity Calendar File Replaced',
+            'A revised activity calendar file was uploaded and is ready for review.',
+            'info',
+            route('admin.calendars.show', $calendar),
+            $calendar
+        );
     }
 
     public function streamSubmittedActivityCalendarMainFile(Request $request, ActivityCalendar $calendar): StreamedResponse
@@ -494,8 +950,52 @@ class OrganizationSubmittedDocumentsController extends Controller
         $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
         $proposal->load(['calendar', 'calendarEntry', 'academicTerm', 'organization', 'budgetItems']);
 
-        $sp = $this->submissionStatusPresentation($proposal->status, true);
-        $revisionSections = $this->moduleRevisionSections(is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : []);
+        /*
+         * Same shape as registration / renewal:
+         *   - load polymorphic update audit (ModuleRevisionFieldUpdate, since
+         *     activity_proposals isn't an OrganizationSubmission),
+         *   - run RevisionSummaryService with admin_field_reviews JSON to get
+         *     a hydrated officer-side revision banner that filters out items
+         *     the officer already resubmitted,
+         *   - synthesize a status that reads "REVISION" while items remain
+         *     and "UNDER_REVIEW" once everything's been resubmitted but not
+         *     yet rerated.
+         */
+        $proposalFieldReviews = is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : [];
+        $recorder = app(ReviewableUpdateRecorder::class);
+        $pendingUpdates = $recorder->pendingForReviewable($proposal);
+        $pendingItemSet = [];
+        foreach ($pendingUpdates as $row) {
+            $pendingItemSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
+
+        $sectionTitles = [
+            'step1_request_form' => 'Step 1: Activity Request Form',
+            'step2_submission' => 'Step 2: Proposal Submission',
+            'additional' => 'Additional',
+        ];
+        $revisionSummary = app(RevisionSummaryService::class)->build(
+            $proposal,
+            'admin_field_reviews',
+            $sectionTitles,
+            (string) ($proposal->admin_review_remarks ?? ''),
+            null,
+            $pendingItemSet,
+        );
+        $revisionSections = $revisionSummary['groups'];
+        $hasOpenRevisionItems = $revisionSections !== [];
+        $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingItemSet !== [];
+
+        $statusForView = $hasOpenRevisionItems
+            ? 'REVISION'
+            : ($isResubmittedPendingReview ? 'UNDER_REVIEW' : strtoupper((string) ($proposal->status ?? 'pending')));
+        $sp = $this->submissionStatusPresentation($statusForView, true);
+
+        $recentlyReplacedKeys = collect((array) $request->session()->get('replaced_requirement_keys', []))
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+
         $requestForm = $this->relatedRequestFormForProposal($proposal);
         $resolvedFilePaths = [];
         foreach (['logo', 'request_letter', 'speaker_resume', 'post_survey_form', 'external', 'resume'] as $fileKey) {
@@ -681,14 +1181,78 @@ class OrganizationSubmittedDocumentsController extends Controller
             ];
         }
 
+        /*
+         * Build the rich file row shape the officer detail blade expects:
+         *   key, url, label, can_replace, replace_url, revision_note,
+         *   is_changed_saved (officer already resubmitted this file at some
+         *   point), is_changed_recent (officer just replaced it in this
+         *   request session). Keys that match the admin field-review JSON
+         *   get marked `can_replace=true` while flagged.
+         */
+        $proposalFlaggedNotesByOfficerKey = [];
+        foreach (self::PROPOSAL_FILE_KEY_MAP as $officerKey => $entry) {
+            $row = (array) data_get($proposalFieldReviews, $entry['section_key'].'.'.$entry['field_key'], []);
+            if (! is_array($row)) {
+                continue;
+            }
+            $status = (string) ($row['status'] ?? 'pending');
+            if ($status !== 'flagged') {
+                continue;
+            }
+            $note = trim((string) ($row['note'] ?? ''));
+            $proposalFlaggedNotesByOfficerKey[$officerKey] = $note !== '' ? $note : null;
+        }
+
+        $savedUpdatedKeys = ModuleRevisionFieldUpdate::query()
+            ->where('reviewable_type', $proposal->getMorphClass())
+            ->where('reviewable_id', (int) $proposal->id)
+            ->whereNotNull('new_file_meta')
+            ->get(['section_key', 'field_key'])
+            ->map(function ($row): ?string {
+                foreach (self::PROPOSAL_FILE_KEY_MAP as $officerKey => $entry) {
+                    if ($entry['section_key'] === (string) $row->section_key && $entry['field_key'] === (string) $row->field_key) {
+                        return $officerKey;
+                    }
+                }
+                return null;
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         $fileLinks = [];
-        foreach (array_merge($step1AttachmentRows, array_filter($step2Rows, fn (array $row): bool => ! empty($row['link_url'])), $additionalRows) as $row) {
+        $rowsWithLinks = array_merge(
+            $step1AttachmentRows,
+            array_filter($step2Rows, fn (array $row): bool => ! empty($row['link_url'])),
+            $additionalRows
+        );
+        foreach ($rowsWithLinks as $row) {
+            $url = (string) ($row['link_url'] ?? '');
+            if ($url === '') {
+                continue;
+            }
+            $officerKey = $this->resolveProposalOfficerKeyFromAdminRowKey((string) ($row['key'] ?? ''));
+            $isFlagged = $officerKey !== null && array_key_exists($officerKey, $proposalFlaggedNotesByOfficerKey);
+            $isPendingReviewAfterResubmit = $officerKey !== null
+                && isset($pendingItemSet[self::PROPOSAL_FILE_KEY_MAP[$officerKey]['section_key'].'.'.self::PROPOSAL_FILE_KEY_MAP[$officerKey]['field_key']]);
+            $canReplace = $isFlagged && ! $isPendingReviewAfterResubmit;
             $fileLinks[] = [
                 'label' => (string) ($row['label'] ?? 'File'),
-                'url' => (string) ($row['link_url'] ?? ''),
+                'url' => $url,
+                'key' => $officerKey,
+                'previous_file_name' => 'Previously uploaded file',
+                'anchor_id' => $officerKey ? $this->revisionTargetAnchorId('requirements', $officerKey) : '',
+                'is_revised' => $isFlagged,
+                'revision_note' => $canReplace ? ($proposalFlaggedNotesByOfficerKey[$officerKey] ?? null) : null,
+                'can_replace' => $canReplace,
+                'replace_url' => $canReplace
+                    ? route('organizations.submitted-documents.proposals.file.replace', ['proposal' => $proposal, 'key' => $officerKey])
+                    : null,
+                'is_changed_saved' => $officerKey !== null && in_array($officerKey, $savedUpdatedKeys, true),
+                'is_changed_recent' => $officerKey !== null && in_array($officerKey, $recentlyReplacedKeys, true),
             ];
         }
-        $fileLinks = array_values(array_filter($fileLinks, static fn (array $row): bool => ($row['url'] ?? '') !== ''));
 
         $metaSections = [
             ['title' => 'Step 1: Activity Request Form', 'rows' => array_merge($step1Rows, $step1AttachmentRows)],
@@ -709,15 +1273,38 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusClass' => $sp['badge_class'],
             'metaRows' => $step2Rows,
             'metaSections' => $metaSections,
-            'remarkHighlight' => $this->revisionSectionsPreview($revisionSections) ?: $this->truncatePreview($proposal->overall_goal, 220),
+            'remarkHighlight' => is_string($revisionSummary['general_remarks'] ?? null) && $revisionSummary['general_remarks'] !== ''
+                ? $revisionSummary['general_remarks']
+                : ($this->revisionSectionsPreview($revisionSections) ?: $this->truncatePreview($proposal->overall_goal, 220)),
             'revisionSections' => $revisionSections,
+            'isResubmittedPendingReview' => $isResubmittedPendingReview,
             'fileLinks' => $fileLinks,
             'workflowLinks' => $this->activityProposalWorkflowLinks($request, $proposal),
+            'submitActionUrl' => route('organizations.submitted-documents.proposals.resubmit', $proposal),
+            'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'Activity proposal',
             'progressStages' => SubmissionRoutingProgress::stagesForActivityProposal($proposal),
             'progressSummary' => SubmissionRoutingProgress::summaryForActivityProposal($proposal->status),
         ]);
+    }
+
+    /**
+     * The admin proposal review schema uses keys like `step1_request_letter`
+     * / `step2_organization_logo` for fields, while officer-facing routes
+     * still use the short `request_letter` / `logo` etc. Map back from the
+     * admin row key so the file row can be marked replaceable when its
+     * matching admin field is flagged.
+     */
+    private function resolveProposalOfficerKeyFromAdminRowKey(string $rowKey): ?string
+    {
+        foreach (self::PROPOSAL_FILE_KEY_MAP as $officerKey => $entry) {
+            if ($entry['field_key'] === $rowKey) {
+                return $officerKey;
+            }
+        }
+
+        return null;
     }
 
     public function streamSubmittedActivityProposalFile(Request $request, ActivityProposal $proposal, string $key): Response
@@ -749,33 +1336,346 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $this->redirectToProposalAttachmentSignedUrl($relativePath, $proposal);
     }
 
+    /**
+     * Replace one revised activity proposal file (Step 1 or Step 2 / additional).
+     *
+     * Mirrors `replaceSubmittedRegistrationRequirementFile`:
+     *   - Validates that the matching admin field review for $key is currently
+     *     `flagged` so officers can't sneak edits past the review controls.
+     *   - Streams the new file to Supabase under the canonical proposal /
+     *     request-form folder.
+     *   - Records the change polymorphically via ReviewableUpdateRecorder
+     *     (writes a row to `module_revision_field_updates` keyed on the
+     *     ActivityProposal so the admin "Updated" badge surfaces it).
+     *   - Bumps `activity_proposals.status` from `revision` → `under_review`
+     *     so admin lists reflect the resubmission.
+     */
+    public function replaceSubmittedActivityProposalFile(Request $request, ActivityProposal $proposal, string $key): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
+        abort_unless(array_key_exists($key, self::PROPOSAL_FILE_KEY_MAP), 404, 'Unknown activity proposal file key.');
+
+        $entry = self::PROPOSAL_FILE_KEY_MAP[$key];
+        $fieldReviews = is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : [];
+        $status = (string) data_get($fieldReviews, $entry['section_key'].'.'.$entry['field_key'].'.status', 'pending');
+        abort_unless($status === 'flagged', 403, 'This proposal file was not requested for revision.');
+
+        $validated = $request->validate([
+            'replacement_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_file.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_file.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $upload = $validated['replacement_file'];
+        $this->applyActivityProposalFileReplacement($proposal, $user, $key, $upload);
+        $this->notifyActivityProposalFileReplacementToAdmins($proposal);
+
+        return back()
+            ->with('success', 'Replacement file uploaded successfully.')
+            ->with('replaced_requirement_keys', [$key]);
+    }
+
+    /**
+     * Batch resubmit replaced proposal files. The detail blade posts every
+     * `replacement_files[$officer_key]` upload at once when the officer hits
+     * "Submit". Same shape as Registration / Renewal so the existing JS works.
+     */
+    public function resubmitActivityProposalRevisionFiles(Request $request, ActivityProposal $proposal): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
+
+        $fieldReviews = is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : [];
+        $revisionKeys = collect(array_keys(self::PROPOSAL_FILE_KEY_MAP))
+            ->filter(function (string $officerKey) use ($fieldReviews): bool {
+                $entry = self::PROPOSAL_FILE_KEY_MAP[$officerKey];
+                return (string) data_get($fieldReviews, $entry['section_key'].'.'.$entry['field_key'].'.status', 'pending') === 'flagged';
+            })
+            ->values()
+            ->all();
+        if ($revisionKeys === []) {
+            return back()->with('error', 'No revised files are pending for replacement.');
+        }
+
+        $validated = $request->validate([
+            'replacement_files' => ['required', 'array'],
+            'replacement_files.*' => ['file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_files.*.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+        $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
+        $changedKeys = array_values(array_filter(
+            $revisionKeys,
+            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile
+        ));
+        if ($changedKeys === []) {
+            return back()->with('error', 'Replace at least one revised file before submitting.');
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        foreach ($changedKeys as $key) {
+            $this->applyActivityProposalFileReplacement($proposal, $user, $key, $incoming[$key]);
+        }
+        $this->notifyActivityProposalFileReplacementToAdmins($proposal);
+
+        return back()
+            ->with('success', 'Updated file(s) submitted for review.')
+            ->with('replaced_requirement_keys', $changedKeys);
+    }
+
+    /**
+     * Core write path for proposal file replacement. Walks the
+     * PROPOSAL_FILE_KEY_MAP entry, picks the right Supabase folder + parent
+     * model (ActivityRequestForm vs ActivityProposal), and routes the audit
+     * row through `ReviewableUpdateRecorder` so the admin diff surfaces
+     * regardless of which step the file belongs to.
+     */
+    private function applyActivityProposalFileReplacement(
+        ActivityProposal $proposal,
+        User $user,
+        string $officerKey,
+        \Illuminate\Http\UploadedFile $upload,
+    ): void {
+        $entry = self::PROPOSAL_FILE_KEY_MAP[$officerKey];
+        $organization = $proposal->organization()->first();
+        $storagePath = app(OrganizationStoragePath::class);
+
+        OrganizationController::assertSupabaseDiskIsConfigured();
+
+        if ($entry['attachable'] === 'request_form') {
+            $requestForm = $this->relatedRequestFormForProposal($proposal);
+            if (! $requestForm) {
+                abort(409, 'No related Activity Request Form found for this proposal.');
+            }
+            $folderFieldKey = match ($officerKey) {
+                'request_letter' => 'request_letter',
+                'speaker_resume' => 'speaker_resume',
+                'post_survey_form' => 'post_survey_form',
+                default => $officerKey,
+            };
+            $folder = $organization
+                ? $storagePath->activityRequestFormFolder($organization, $requestForm, $folderFieldKey)
+                : 'activity-request-forms/'.(int) $proposal->organization_id.'/'.(int) $requestForm->id.'/'.$folderFieldKey;
+            $attachableType = ActivityRequestForm::class;
+            $attachableId = (int) $requestForm->id;
+
+            $oldAttachment = $requestForm->attachments()
+                ->where('file_type', $entry['file_type'])
+                ->latest('id')
+                ->first();
+        } else {
+            $folderFieldKey = match ($officerKey) {
+                'logo' => 'logo',
+                'external' => 'external_funding_support',
+                'resume' => 'resume_resource_persons',
+                default => $officerKey,
+            };
+            $folder = $organization
+                ? $storagePath->activityProposalFolder($organization, $proposal, $folderFieldKey)
+                : 'activity-proposals/'.(int) $proposal->organization_id.'/'.(int) $proposal->id.'/'.$folderFieldKey;
+            $attachableType = ActivityProposal::class;
+            $attachableId = (int) $proposal->id;
+
+            $oldAttachment = $proposal->attachments()
+                ->where('file_type', $entry['file_type'])
+                ->latest('id')
+                ->first();
+        }
+        $oldMeta = $oldAttachment ? $this->attachmentMeta($oldAttachment) : null;
+
+        $storedPath = $upload->store($folder, 'supabase');
+        if (! is_string($storedPath) || $storedPath === '') {
+            abort(500, 'Failed to upload replacement file to Supabase.');
+        }
+
+        $newMeta = [
+            'original_name' => (string) $upload->getClientOriginalName(),
+            'stored_path' => (string) $storedPath,
+            'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+            'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+        ];
+
+        $recorder = app(ReviewableUpdateRecorder::class);
+        DB::transaction(function () use ($proposal, $user, $entry, $upload, $storedPath, $oldMeta, $newMeta, $attachableType, $attachableId, $recorder): void {
+            Attachment::query()->create([
+                'attachable_type' => $attachableType,
+                'attachable_id' => $attachableId,
+                'uploaded_by' => (int) $user->id,
+                'file_type' => $entry['file_type'],
+                'original_name' => (string) $upload->getClientOriginalName(),
+                'stored_path' => (string) $storedPath,
+                'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+            ]);
+
+            $recorder->recordFieldUpdate(
+                reviewable: $proposal,
+                userId: (int) $user->id,
+                sectionKey: $entry['section_key'],
+                fieldKey: $entry['field_key'],
+                oldFileMeta: $oldMeta,
+                newFileMeta: $newMeta,
+            );
+
+            if ((string) $proposal->status === 'revision') {
+                $proposal->update(['status' => 'under_review']);
+            }
+            $proposal->touch();
+        });
+
+        Log::info('Review workflow: activity proposal file replaced by officer', [
+            'proposal_id' => (int) $proposal->id,
+            'organization_id' => (int) $proposal->organization_id,
+            'officer_key' => $officerKey,
+            'section_key' => $entry['section_key'],
+            'field_key' => $entry['field_key'],
+            'stored_path' => $storedPath,
+        ]);
+    }
+
+    private function notifyActivityProposalFileReplacementToAdmins(ActivityProposal $proposal): void
+    {
+        $adminUsers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $adminUsers,
+            'Activity Proposal File Replaced',
+            'A revised activity proposal file was uploaded and is ready for review.',
+            'info',
+            route('admin.proposals.show', $proposal),
+            $proposal
+        );
+    }
+
     public function showSubmittedAfterActivityReport(Request $request, ActivityReport $report): View
     {
         $this->ensureOfficerOwnsOrganization($request, (int) $report->organization_id);
         $report->load('proposal');
 
-        $sp = $this->submissionStatusPresentation($report->status, false, 'report');
-        $revisionSections = $this->moduleRevisionSections(is_array($report->admin_field_reviews) ? $report->admin_field_reviews : []);
+        // Same revision-banner / status-sync flow as registration / renewal /
+        // proposal: pull pending updates first so the summary builder can
+        // hide items the officer already resubmitted; flip status to
+        // UNDER_REVIEW once nothing remains open.
+        $reportFieldReviews = is_array($report->admin_field_reviews) ? $report->admin_field_reviews : [];
+        $recorder = app(ReviewableUpdateRecorder::class);
+        $pendingUpdates = $recorder->pendingForReviewable($report);
+        $pendingItemSet = [];
+        foreach ($pendingUpdates as $row) {
+            $pendingItemSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
+
+        $revisionSummary = app(RevisionSummaryService::class)->build(
+            $report,
+            'admin_field_reviews',
+            [
+                'overview' => 'Submission Overview',
+                'content' => 'Narrative Content',
+                'files' => 'Attached Files',
+            ],
+            (string) ($report->admin_review_remarks ?? ''),
+            null,
+            $pendingItemSet,
+        );
+        $revisionSections = $revisionSummary['groups'];
+        $hasOpenRevisionItems = $revisionSections !== [];
+        $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingItemSet !== [];
+        $statusForView = $hasOpenRevisionItems
+            ? 'REVISION'
+            : ($isResubmittedPendingReview ? 'UNDER_REVIEW' : strtoupper((string) ($report->status ?? 'pending')));
+        $sp = $this->submissionStatusPresentation($statusForView, false, 'report');
+
+        $recentlyReplacedKeys = collect((array) $request->session()->get('replaced_requirement_keys', []))
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+
+        $reportFlaggedNotesByOfficerKey = [];
+        foreach (self::REPORT_FILE_KEY_MAP as $officerKey => $entry) {
+            $row = (array) data_get($reportFieldReviews, $entry['section_key'].'.'.$entry['field_key'], []);
+            if (! is_array($row)) {
+                continue;
+            }
+            if ((string) ($row['status'] ?? 'pending') !== 'flagged') {
+                continue;
+            }
+            $note = trim((string) ($row['note'] ?? ''));
+            $reportFlaggedNotesByOfficerKey[$officerKey] = $note !== '' ? $note : null;
+        }
+
+        $savedUpdatedKeys = ModuleRevisionFieldUpdate::query()
+            ->where('reviewable_type', $report->getMorphClass())
+            ->where('reviewable_id', (int) $report->id)
+            ->whereNotNull('new_file_meta')
+            ->get(['section_key', 'field_key'])
+            ->map(function ($row): ?string {
+                foreach (self::REPORT_FILE_KEY_MAP as $officerKey => $entry) {
+                    if ($entry['section_key'] === (string) $row->section_key && $entry['field_key'] === (string) $row->field_key) {
+                        return $officerKey;
+                    }
+                }
+                return null;
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        /*
+         * Helper to attach the rich row shape (key, can_replace, replace_url,
+         * is_changed_*) only to files the admin actually flag-reviews
+         * (poster + attendance). Supporting photos / certificate /
+         * evaluation_form remain read-only because the report review schema
+         * doesn't include them today.
+         */
+        $buildLink = function (?string $officerKey, string $label, string $url) use (
+            $reportFlaggedNotesByOfficerKey,
+            $pendingItemSet,
+            $recentlyReplacedKeys,
+            $savedUpdatedKeys,
+            $report,
+        ): array {
+            $isFlagged = $officerKey !== null && array_key_exists($officerKey, $reportFlaggedNotesByOfficerKey);
+            $isPendingReviewAfterResubmit = $officerKey !== null
+                && isset($pendingItemSet[self::REPORT_FILE_KEY_MAP[$officerKey]['section_key'].'.'.self::REPORT_FILE_KEY_MAP[$officerKey]['field_key']]);
+            $canReplace = $isFlagged && ! $isPendingReviewAfterResubmit;
+            return [
+                'label' => $label,
+                'url' => $url,
+                'key' => $officerKey,
+                'previous_file_name' => 'Previously uploaded file',
+                'anchor_id' => $officerKey ? $this->revisionTargetAnchorId('requirements', $officerKey) : '',
+                'is_revised' => $isFlagged,
+                'revision_note' => $canReplace ? ($reportFlaggedNotesByOfficerKey[$officerKey] ?? null) : null,
+                'can_replace' => $canReplace,
+                'replace_url' => $canReplace
+                    ? route('organizations.submitted-documents.reports.file.replace', ['report' => $report, 'key' => $officerKey])
+                    : null,
+                'is_changed_saved' => $officerKey !== null && in_array($officerKey, $savedUpdatedKeys, true),
+                'is_changed_recent' => $officerKey !== null && in_array($officerKey, $recentlyReplacedKeys, true),
+            ];
+        };
 
         $fileLinks = [];
         if ($this->reportFilePathByKey($report, 'poster')) {
-            $fileLinks[] = ['label' => 'Poster image', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'poster'])];
+            $fileLinks[] = $buildLink('poster', 'Poster image', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'poster']));
         }
         $supportingPhotoKeys = $this->reportSupportingPhotoKeys($report);
         foreach ($supportingPhotoKeys as $i => $key) {
-            $fileLinks[] = [
-                'label' => 'Supporting photo '.($i + 1),
-                'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => $key]),
-            ];
+            $fileLinks[] = $buildLink(null, 'Supporting photo '.($i + 1), route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => $key]));
         }
         if ($this->reportFilePathByKey($report, 'certificate')) {
-            $fileLinks[] = ['label' => 'Certificate sample', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'certificate'])];
+            $fileLinks[] = $buildLink(null, 'Certificate sample', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'certificate']));
         }
         if ($this->reportFilePathByKey($report, 'evaluation_form')) {
-            $fileLinks[] = ['label' => 'Evaluation form sample', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'evaluation_form'])];
+            $fileLinks[] = $buildLink(null, 'Evaluation form sample', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'evaluation_form']));
         }
         if ($this->reportFilePathByKey($report, 'attendance')) {
-            $fileLinks[] = ['label' => 'Attendance sheet', 'url' => route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'attendance'])];
+            $fileLinks[] = $buildLink('attendance', 'Attendance sheet', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'attendance']));
         }
 
         $school = $report->school_code ? (self::SCHOOL_LABELS[$report->school_code] ?? $report->school_code) : '—';
@@ -796,12 +1696,17 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ['label' => 'Submitted', 'value' => optional($report->report_submission_date)->format('M j, Y') ?? '—'],
                 ['label' => 'Linked proposal', 'value' => $report->proposal?->activity_title ?? '—'],
             ],
-            'remarkHighlight' => $this->revisionSectionsPreview($revisionSections) ?: $this->truncatePreview($report->evaluation_report, 200),
+            'remarkHighlight' => is_string($revisionSummary['general_remarks'] ?? null) && $revisionSummary['general_remarks'] !== ''
+                ? $revisionSummary['general_remarks']
+                : ($this->revisionSectionsPreview($revisionSections) ?: $this->truncatePreview($report->evaluation_report, 200)),
             'revisionSections' => $revisionSections,
+            'isResubmittedPendingReview' => $isResubmittedPendingReview,
             'fileLinks' => $fileLinks,
             'workflowLinks' => [
                 ['label' => 'Submit another report', 'href' => $this->withSuperAdminOrgQuery($request, route('organizations.after-activity-report')), 'variant' => 'secondary'],
             ],
+            'submitActionUrl' => route('organizations.submitted-documents.reports.resubmit', $report),
+            'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => null,
             'progressDocumentLabel' => 'After activity report',
             'progressStages' => SubmissionRoutingProgress::stagesForActivityReport($report->status),
@@ -845,6 +1750,188 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $disk->response($relativePath, basename($relativePath), [], 'inline');
+    }
+
+    /**
+     * Replace a single revised After-Activity-Report file (poster /
+     * attendance — only those are flag-reviewable today).
+     *
+     * Same shape as `replaceSubmittedRegistrationRequirementFile`:
+     *   - validate that the matching admin field review is `flagged`
+     *   - upload to the canonical activity-reports Supabase folder
+     *   - record the audit row polymorphically (writes to
+     *     `module_revision_field_updates`)
+     *   - bump status revision → under_review when active revisions clear
+     */
+    public function replaceSubmittedAfterActivityReportFile(Request $request, ActivityReport $report, string $key): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $report->organization_id);
+        abort_unless(array_key_exists($key, self::REPORT_FILE_KEY_MAP), 404, 'Unknown after-activity-report file key.');
+
+        $entry = self::REPORT_FILE_KEY_MAP[$key];
+        $fieldReviews = is_array($report->admin_field_reviews) ? $report->admin_field_reviews : [];
+        $status = (string) data_get($fieldReviews, $entry['section_key'].'.'.$entry['field_key'].'.status', 'pending');
+        abort_unless($status === 'flagged', 403, 'This report file was not requested for revision.');
+
+        $validated = $request->validate([
+            'replacement_file' => ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_file.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_file.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $this->applyAfterActivityReportFileReplacement($report, $user, $key, $validated['replacement_file']);
+        $this->notifyAfterActivityReportFileReplacementToAdmins($report);
+
+        return back()
+            ->with('success', 'Replacement file uploaded successfully.')
+            ->with('replaced_requirement_keys', [$key]);
+    }
+
+    /**
+     * Batch resubmit replaced AAR files. Same flow as the proposal /
+     * registration handlers — iterate the flagged keys, replace each file,
+     * notify admins once.
+     */
+    public function resubmitAfterActivityReportRevisionFiles(Request $request, ActivityReport $report): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $report->organization_id);
+
+        $fieldReviews = is_array($report->admin_field_reviews) ? $report->admin_field_reviews : [];
+        $revisionKeys = collect(array_keys(self::REPORT_FILE_KEY_MAP))
+            ->filter(function (string $officerKey) use ($fieldReviews): bool {
+                $entry = self::REPORT_FILE_KEY_MAP[$officerKey];
+                return (string) data_get($fieldReviews, $entry['section_key'].'.'.$entry['field_key'].'.status', 'pending') === 'flagged';
+            })
+            ->values()
+            ->all();
+        if ($revisionKeys === []) {
+            return back()->with('error', 'No revised files are pending for replacement.');
+        }
+
+        $validated = $request->validate([
+            'replacement_files' => ['required', 'array'],
+            'replacement_files.*' => ['file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB],
+        ], [
+            'replacement_files.*.mimes' => 'Only PDF, Word, or image files are allowed.',
+            'replacement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
+        ]);
+        $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
+        $changedKeys = array_values(array_filter(
+            $revisionKeys,
+            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile
+        ));
+        if ($changedKeys === []) {
+            return back()->with('error', 'Replace at least one revised file before submitting.');
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        foreach ($changedKeys as $key) {
+            $this->applyAfterActivityReportFileReplacement($report, $user, $key, $incoming[$key]);
+        }
+        $this->notifyAfterActivityReportFileReplacementToAdmins($report);
+
+        return back()
+            ->with('success', 'Updated file(s) submitted for review.')
+            ->with('replaced_requirement_keys', $changedKeys);
+    }
+
+    /**
+     * Persist a single AAR file replacement.
+     *
+     * Note: After-Activity-Reports already stores its files through the
+     * polymorphic `attachments` table (see `reportFilePathByKey` which
+     * checks attachments first, then falls back to legacy columns). We
+     * preserve that pattern by writing a new Attachment row keyed off
+     * `Attachment::TYPE_REPORT_*` — that way the existing stream/view
+     * resolver picks up the new file via "latest('id')" without needing
+     * any column-level mutation.
+     */
+    private function applyAfterActivityReportFileReplacement(
+        ActivityReport $report,
+        User $user,
+        string $officerKey,
+        \Illuminate\Http\UploadedFile $upload,
+    ): void {
+        $entry = self::REPORT_FILE_KEY_MAP[$officerKey];
+        $organizationId = (int) $report->organization_id;
+        $folder = 'activity-reports/'.$organizationId.'/'.(int) $report->id.'/'.$officerKey;
+
+        $oldPath = $this->reportFilePathByKey($report, $officerKey);
+        $oldMeta = is_string($oldPath) && $oldPath !== ''
+            ? ['original_name' => basename($oldPath), 'stored_path' => $oldPath]
+            : null;
+
+        // AAR uploads continue to use the `public` disk because both
+        // `streamSubmittedAfterActivityReportFile` and `reportFilePathByKey`
+        // are wired to the public filesystem layout. Switching the disk
+        // would silently break existing reports, so we keep them aligned.
+        $storedPath = $upload->store($folder, 'public');
+        if (! is_string($storedPath) || $storedPath === '') {
+            abort(500, 'Failed to upload replacement file.');
+        }
+
+        $newMeta = [
+            'original_name' => (string) $upload->getClientOriginalName(),
+            'stored_path' => (string) $storedPath,
+            'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+            'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+        ];
+
+        $recorder = app(ReviewableUpdateRecorder::class);
+        DB::transaction(function () use ($report, $user, $entry, $upload, $storedPath, $oldMeta, $newMeta, $recorder): void {
+            Attachment::query()->create([
+                'attachable_type' => ActivityReport::class,
+                'attachable_id' => (int) $report->id,
+                'uploaded_by' => (int) $user->id,
+                'file_type' => $entry['file_type'],
+                'original_name' => (string) $upload->getClientOriginalName(),
+                'stored_path' => (string) $storedPath,
+                'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+            ]);
+
+            $recorder->recordFieldUpdate(
+                reviewable: $report,
+                userId: (int) $user->id,
+                sectionKey: $entry['section_key'],
+                fieldKey: $entry['field_key'],
+                oldFileMeta: $oldMeta,
+                newFileMeta: $newMeta,
+            );
+
+            if ((string) $report->status === 'revision') {
+                $report->update(['status' => 'under_review']);
+            }
+            $report->touch();
+        });
+
+        Log::info('Review workflow: AAR file replaced by officer', [
+            'report_id' => (int) $report->id,
+            'organization_id' => (int) $report->organization_id,
+            'officer_key' => $officerKey,
+            'section_key' => $entry['section_key'],
+            'field_key' => $entry['field_key'],
+            'stored_path' => $storedPath,
+        ]);
+    }
+
+    private function notifyAfterActivityReportFileReplacementToAdmins(ActivityReport $report): void
+    {
+        $adminUsers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $adminUsers,
+            'After Activity Report File Replaced',
+            'A revised after-activity-report file was uploaded and is ready for review.',
+            'info',
+            route('admin.reports.show', $report),
+            $report
+        );
     }
 
     private function resolveActiveOfficer(Request $request): OrganizationOfficer
@@ -1305,14 +2392,25 @@ class OrganizationSubmittedDocumentsController extends Controller
     /**
      * @return list<array{label: string, url: ?string, missing?: bool}>
      */
-    private function renewalFileLinksFromSubmission(OrganizationSubmission $submission): array
+    private function renewalFileLinksFromSubmission(
+        OrganizationSubmission $submission,
+        array $revisionSections = [],
+        array $savedUpdatedKeys = [],
+        array $recentlyReplacedKeys = [],
+        array $pendingRequirementUpdateKeys = []
+    ): array
     {
+        $revisionByKey = $this->revisionNoteMapByRequirementKey($revisionSections);
         return $this->submissionRequirementFileLinks(
             $submission,
             self::RENEWAL_FILE_KEYS,
             self::RENEWAL_FILE_LABELS,
             Attachment::TYPE_RENEWAL_REQUIREMENT,
-            'organizations.submitted-documents.renewals.file'
+            'organizations.submitted-documents.renewals.file',
+            $revisionByKey,
+            $savedUpdatedKeys,
+            $recentlyReplacedKeys,
+            $pendingRequirementUpdateKeys
         );
     }
 
@@ -1374,9 +2472,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                     'is_revised' => $isRevised,
                     'revision_note' => $canReplace ? ($revisionByKey[$key] ?? null) : null,
                     'can_replace' => $canReplace,
-                    'replace_url' => $submission->type === OrganizationSubmission::TYPE_REGISTRATION
-                        ? route('organizations.submitted-documents.registrations.file.replace', ['submission' => $submission, 'key' => $key])
-                        : null,
+                    'replace_url' => $this->resolveSubmissionFileReplaceUrl($submission, $key),
                     'is_changed_saved' => in_array($key, $savedUpdatedKeys, true),
                     'is_changed_recent' => in_array($key, $recentlyReplacedKeys, true),
                 ];
@@ -1391,9 +2487,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                     'is_revised' => $isRevised,
                     'revision_note' => $canReplace ? ($revisionByKey[$key] ?? null) : null,
                     'can_replace' => $canReplace,
-                    'replace_url' => $submission->type === OrganizationSubmission::TYPE_REGISTRATION
-                        ? route('organizations.submitted-documents.registrations.file.replace', ['submission' => $submission, 'key' => $key])
-                        : null,
+                    'replace_url' => $this->resolveSubmissionFileReplaceUrl($submission, $key),
                     'is_changed_saved' => in_array($key, $savedUpdatedKeys, true),
                     'is_changed_recent' => in_array($key, $recentlyReplacedKeys, true),
                 ];
@@ -1401,6 +2495,32 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $links;
+    }
+
+    /**
+     * Pick the right "Replace file" route for a submission requirement.
+     *
+     * Registration and Renewal each get their own resubmit/replace endpoint
+     * (so request validation can be scoped correctly per type). For any other
+     * submission type we return null and the file row stays read-only.
+     */
+    private function resolveSubmissionFileReplaceUrl(OrganizationSubmission $submission, string $key): ?string
+    {
+        if ($submission->type === OrganizationSubmission::TYPE_REGISTRATION) {
+            return route('organizations.submitted-documents.registrations.file.replace', [
+                'submission' => $submission,
+                'key' => $key,
+            ]);
+        }
+
+        if ($submission->type === OrganizationSubmission::TYPE_RENEWAL) {
+            return route('organizations.submitted-documents.renewals.file.replace', [
+                'submission' => $submission,
+                'key' => $key,
+            ]);
+        }
+
+        return null;
     }
 
     /**
@@ -2657,6 +3777,100 @@ class OrganizationSubmittedDocumentsController extends Controller
             'A revised registration requirement file was uploaded and is ready for review.',
             'info',
             route('admin.registrations.show', $submission),
+            $submission
+        );
+    }
+
+    /**
+     * Per-file Supabase replacement for a renewal requirement, mirroring
+     * `applyRegistrationRequirementReplacement` so admin "Updated" diffs and
+     * status auto-bump (revision → under_review) work identically.
+     *
+     * Differences from registration:
+     *   - Uses `renewals/{submission_id}` Supabase folder via OrganizationStoragePath.
+     *   - Uses `Attachment::TYPE_RENEWAL_REQUIREMENT` so the existing
+     *     namespaced `file_type` lookup keeps streaming the right file.
+     */
+    private function applyRenewalRequirementReplacement(
+        OrganizationSubmission $submission,
+        User $user,
+        string $key,
+        \Illuminate\Http\UploadedFile $upload
+    ): void {
+        $fileType = Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key;
+        $oldAttachment = $submission->attachments()
+            ->where('file_type', $fileType)
+            ->latest('id')
+            ->first();
+        $oldMeta = $oldAttachment ? $this->attachmentMeta($oldAttachment) : null;
+
+        OrganizationController::assertSupabaseDiskIsConfigured();
+        $organization = $submission->organization()->first();
+        $renewalFolder = $organization
+            ? app(OrganizationStoragePath::class)->renewalFolder($organization, (int) $submission->id)
+            : $submission->organization_id.'/renewals/'.$submission->id;
+        $storedPath = $upload->store($renewalFolder, 'supabase');
+
+        DB::transaction(function () use ($submission, $user, $key, $fileType, $upload, $storedPath, $oldMeta): void {
+            Attachment::query()->create([
+                'attachable_type' => OrganizationSubmission::class,
+                'attachable_id' => (int) $submission->id,
+                'uploaded_by' => (int) $user->id,
+                'file_type' => $fileType,
+                'original_name' => (string) $upload->getClientOriginalName(),
+                'stored_path' => (string) $storedPath,
+                'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+            ]);
+
+            OrganizationRevisionFieldUpdate::query()->updateOrCreate(
+                [
+                    'organization_submission_id' => (int) $submission->id,
+                    'section_key' => 'requirements',
+                    'field_key' => $key,
+                ],
+                [
+                    'old_file_meta' => $oldMeta,
+                    'new_file_meta' => [
+                        'original_name' => (string) $upload->getClientOriginalName(),
+                        'stored_path' => (string) $storedPath,
+                        'mime_type' => (string) ($upload->getClientMimeType() ?: ''),
+                        'file_size_kb' => (int) ceil(((int) $upload->getSize()) / 1024),
+                    ],
+                    'resubmitted_at' => now(),
+                    'resubmitted_by' => (int) $user->id,
+                    'acknowledged_at' => null,
+                    'acknowledged_by' => null,
+                ]
+            );
+
+            if ((string) $submission->status === OrganizationSubmission::STATUS_REVISION) {
+                $submission->update([
+                    'status' => OrganizationSubmission::STATUS_UNDER_REVIEW,
+                ]);
+            }
+            $submission->touch();
+        });
+
+        Log::info('Review workflow: renewal requirement replaced by officer', [
+            'submission_id' => (int) $submission->id,
+            'organization_id' => (int) $submission->organization_id,
+            'requirement_key' => $key,
+            'stored_path' => $storedPath,
+        ]);
+    }
+
+    private function notifyRenewalFileReplacementToAdmins(OrganizationSubmission $submission): void
+    {
+        $adminUsers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $adminUsers,
+            'Renewal File Replaced',
+            'A revised renewal requirement file was uploaded and is ready for review.',
+            'info',
+            route('admin.renewals.show', $submission),
             $submission
         );
     }

@@ -84,11 +84,31 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'off
         Route::post('/submitted-documents/registrations/{submission}/resubmit', 'resubmitRegistrationRevisionFiles')
             ->name('submitted-documents.registrations.resubmit');
         Route::get('/submitted-documents/renewals/{submission}', 'showSubmittedRenewal')->name('submitted-documents.renewals.show');
+        Route::post('/submitted-documents/renewals/{submission}/files/{key}/replace', 'replaceSubmittedRenewalRequirementFile')
+            ->name('submitted-documents.renewals.file.replace')
+            ->where('key', '[a-z0-9_]+');
+        Route::post('/submitted-documents/renewals/{submission}/resubmit', 'resubmitRenewalRevisionFiles')
+            ->name('submitted-documents.renewals.resubmit');
         Route::get('/submitted-documents/activity-calendars/{calendar}', 'showSubmittedActivityCalendar')->name('submitted-documents.calendars.show');
+        Route::post('/submitted-documents/activity-calendars/{calendar}/files/{key}/replace', 'replaceSubmittedActivityCalendarFile')
+            ->name('submitted-documents.calendars.file.replace')
+            ->where('key', '[a-z_]+');
+        Route::post('/submitted-documents/activity-calendars/{calendar}/resubmit', 'resubmitActivityCalendarRevisionFiles')
+            ->name('submitted-documents.calendars.resubmit');
         Route::get('/submitted-documents/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('submitted-documents.proposals.show');
+        Route::post('/submitted-documents/activity-proposals/{proposal}/files/{key}/replace', 'replaceSubmittedActivityProposalFile')
+            ->name('submitted-documents.proposals.file.replace')
+            ->where('key', '[a-z_]+');
+        Route::post('/submitted-documents/activity-proposals/{proposal}/resubmit', 'resubmitActivityProposalRevisionFiles')
+            ->name('submitted-documents.proposals.resubmit');
         Route::get('/activity-submission/activity-calendars/{calendar}', 'showSubmittedActivityCalendar')->name('activity-submission.calendars.show');
         Route::get('/activity-submission/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('activity-submission.proposals.show');
         Route::get('/submitted-documents/after-activity-reports/{report}', 'showSubmittedAfterActivityReport')->name('submitted-documents.reports.show');
+        Route::post('/submitted-documents/after-activity-reports/{report}/files/{key}/replace', 'replaceSubmittedAfterActivityReportFile')
+            ->name('submitted-documents.reports.file.replace')
+            ->where('key', '[a-z_]+');
+        Route::post('/submitted-documents/after-activity-reports/{report}/resubmit', 'resubmitAfterActivityReportRevisionFiles')
+            ->name('submitted-documents.reports.resubmit');
     });
 
     Route::controller(OrganizationController::class)->group(function () {
@@ -234,6 +254,7 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::get('/activity-calendars', 'calendars')->name('calendars.index');
     Route::get('/activity-calendars/{calendar}', 'showCalendar')->name('calendars.show');
     Route::get('/activity-calendars/{calendar}/file', 'streamCalendarFile')->name('calendars.file');
+    Route::get('/activity-calendars/{calendar}/file/download', 'downloadCalendarFile')->name('calendars.file.download');
     Route::patch('/activity-calendars/{calendar}/review-draft', 'saveCalendarReviewDraft')->name('calendars.review-draft');
     Route::patch('/activity-calendars/{calendar}/status', 'updateCalendarStatus')->name('calendars.update-status');
 
@@ -242,12 +263,21 @@ Route::prefix('admin')->name('admin.')->middleware('auth')->controller(AdminCont
     Route::get('/activity-proposals/{proposal}/files/{key}', 'streamProposalFile')
         ->name('proposals.file')
         ->where('key', '[a-z_]+');
+    Route::get('/activity-proposals/{proposal}/files/{key}/download', 'downloadProposalFile')
+        ->name('proposals.file.download')
+        ->where('key', '[a-z_]+');
     Route::patch('/activity-proposals/{proposal}/review-draft', 'saveProposalReviewDraft')->name('proposals.review-draft');
     Route::patch('/activity-proposals/{proposal}/status', 'updateProposalStatus')->name('proposals.update-status');
     Route::patch('/activity-proposals/{proposal}/workflow', 'updateProposalWorkflow')->name('proposals.workflow');
 
     Route::get('/after-activity-reports', 'reports')->name('reports.index');
     Route::get('/after-activity-reports/{report}', 'showReport')->name('reports.show');
+    Route::get('/after-activity-reports/{report}/files/{key}', 'streamReportFile')
+        ->name('reports.file')
+        ->where('key', '[a-z0-9_]+');
+    Route::get('/after-activity-reports/{report}/files/{key}/download', 'downloadReportFile')
+        ->name('reports.file.download')
+        ->where('key', '[a-z0-9_]+');
     Route::patch('/after-activity-reports/{report}/review-draft', 'saveReportReviewDraft')->name('reports.review-draft');
     Route::patch('/after-activity-reports/{report}/status', 'updateReportStatus')->name('reports.update-status');
 

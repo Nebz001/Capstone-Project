@@ -79,6 +79,30 @@
       $badge = $statusBadge((string) (data_get($persistedSectionReviews, ($section['key'] ?? '').'.status', 'pending')));
       $readonlyItemClass = 'field-review-card rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3.5';
       $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
+      $isRequirementsListLayout = (($moduleLabel ?? '') === 'Renewal' && ($section['key'] ?? '') === 'requirements')
+        || (($moduleLabel ?? '') === 'Activity Calendar' && ($section['key'] ?? '') === 'submitted_files')
+        || (($section['is_requirements_attached'] ?? false) === true);
+      $synthReqBadge = null;
+      if (($section['is_requirements_attached'] ?? false) && ! $sectionReviewable) {
+        $reviewableReqFields = collect($section['fields'] ?? [])->filter(fn ($f) => (bool) ($f['show_review_controls'] ?? true));
+        $reqStatuses = $reviewableReqFields->map(function ($f) use ($persistedFieldReviews) {
+          $sk = (string) ($f['review_section_key'] ?? '');
+          $fk = (string) ($f['review_field_key'] ?? $f['key'] ?? '');
+
+          return (string) data_get($persistedFieldReviews, $sk.'.'.$fk.'.status', 'pending');
+        });
+        if ($reqStatuses->isEmpty()) {
+          $synthStatusKey = 'pending';
+        } elseif ($reqStatuses->every(fn (string $s) => $s === 'passed')) {
+          $synthStatusKey = 'verified';
+        } elseif ($reqStatuses->contains(fn (string $s) => $s === 'flagged')) {
+          $synthStatusKey = 'needs_revision';
+        } else {
+          $synthStatusKey = 'pending';
+        }
+        $synthReqBadge = $statusBadge($synthStatusKey === 'verified' ? 'verified' : ($synthStatusKey === 'needs_revision' ? 'needs_revision' : 'pending'));
+      }
+      $requirementsDefaultReviewSection = ($section['key'] ?? '') === 'requirements' ? 'requirements' : ((($section['key'] ?? '') === 'submitted_files') ? 'submitted_files' : '');
     @endphp
     <x-ui.card padding="p-0" class="overflow-hidden" data-review-section-card data-section-key="{{ $section['key'] }}" data-section-label="{{ $section['title'] }}">
       <div class="border-b border-slate-100 bg-white px-6 py-4">
@@ -89,63 +113,25 @@
               <p class="mt-1 text-sm text-slate-500">{{ $section['subtitle'] }}</p>
             @endif
           </div>
-          @if ($sectionReviewable)
+          @if ($synthReqBadge)
+            <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $synthReqBadge['class'] }}" data-section-status-badge="{{ $section['key'] }}" data-synth-requirements-badge="1">{{ $synthReqBadge['label'] }}</span>
+          @elseif ($sectionReviewable)
             <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $badge['class'] }}" data-section-status-badge="{{ $section['key'] }}">{{ $badge['label'] }}</span>
           @endif
         </div>
       </div>
       <div class="bg-white px-6 py-5">
-        @if (($moduleLabel ?? '') === 'Renewal' && ($section['key'] ?? '') === 'requirements')
-          <ul class="space-y-3">
-            @foreach (($section['fields'] ?? []) as $field)
-              @php
-                $fieldUpdate = $fieldUpdateFor((string) ($section['key'] ?? ''), (string) ($field['key'] ?? ''));
-                $isFieldUpdated = (bool) data_get($fieldUpdate, 'is_updated', false);
-                $hasFile = ! empty(data_get($field, 'action.href'));
-                $fileUrl = data_get($field, 'action.href');
-                $downloadUrl = data_get($field, 'download_action.href');
-              @endphp
-              <li class="requirement-review-item rounded-xl border border-slate-200 bg-slate-50/80 p-3.5">
-                <div class="requirement-review-main-row flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div class="min-w-0 flex-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <p class="text-sm font-semibold text-slate-900">{{ $field['label'] }}</p>
-                      @if ($isFieldUpdated)
-                        <span class="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
-                      @endif
-                      <span class="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $field['file_badge_class'] ?? 'border-slate-200 bg-slate-100 text-slate-700' }}">{{ $field['file_badge_label'] ?? 'FILE' }}</span>
-                    </div>
-                    <p class="mt-0.5 text-xs text-slate-500">Marked as submitted: <span class="font-semibold text-slate-700">{{ ! empty($field['submitted']) ? 'Yes' : 'No' }}</span></p>
-                  </div>
-                  <div class="requirement-review-top-row flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
-                    <div class="shrink-0">
-                      @if ($hasFile)
-                        <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="File actions for {{ $field['label'] }}">
-                          <a href="{{ $fileUrl }}" target="_blank" rel="noopener noreferrer" class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30">View file</a>
-                          <span class="mx-1 h-4 w-px bg-slate-200"></span>
-                          <a href="{{ $downloadUrl }}" class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-[#003E9F] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003E9F]/30">Download</a>
-                        </div>
-                      @elseif (! empty($field['submitted']))
-                        <span class="text-xs font-medium text-amber-700">Marked yes - no file on record</span>
-                      @endif
-                    </div>
-                    <div class="ml-auto shrink-0 lg:ml-0">
-                      @include('admin.registrations.partials.field-review-control', [
-                        'sectionKey' => $section['key'],
-                        'fieldKey' => $field['key'],
-                        'fieldLabel' => $field['label'],
-                        'persistedFieldReviews' => $persistedFieldReviews,
-                        'persistedSectionReviews' => $persistedSectionReviews,
-                      ])
-                    </div>
-                  </div>
-                </div>
-                @if ($isFieldUpdated)
-                  <p class="mt-2 text-xs text-sky-800"><span class="font-semibold">Updated value:</span> {{ data_get($fieldUpdate, 'old_value') ?: '—' }} → {{ data_get($fieldUpdate, 'new_value') ?: '—' }}</p>
-                @endif
-              </li>
-            @endforeach
-          </ul>
+        @if ($isRequirementsListLayout)
+          @include('admin.reviews.partials.requirements-attached-rows', [
+            'fields' => $section['fields'] ?? [],
+            'fieldUpdateFor' => $fieldUpdateFor,
+            'persistedFieldReviews' => $persistedFieldReviews,
+            'persistedSectionReviews' => $persistedSectionReviews,
+            'defaultReviewSectionKey' => $requirementsDefaultReviewSection,
+          ])
+          @if (($moduleLabel ?? '') === 'Activity Proposal' && ($section['key'] ?? '') === 'requirements_attached')
+            @include('admin.registrations.partials.section-submit-control', ['sectionKey' => 'additional', 'persistedSectionReviews' => $persistedSectionReviews])
+          @endif
         @else
         <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
           @foreach (($section['fields'] ?? []) as $field)
@@ -352,7 +338,7 @@
   }
 
   function applySectionBadge(sectionKey, status) {
-    const badge = form.querySelector(`[data-section-status-badge="${sectionKey}"]`);
+    const badge = form.querySelector(`[data-section-status-badge="${sectionKey}"]:not([data-synth-requirements-badge])`);
     if (!badge) return;
     if (status === 'verified') {
       badge.className = 'inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700';
@@ -364,6 +350,32 @@
       badge.className = 'inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700';
       badge.textContent = 'Pending';
     }
+  }
+
+  function refreshSyntheticRequirementsBadges() {
+    form.querySelectorAll('[data-synth-requirements-badge]').forEach((badge) => {
+      const card = badge.closest('[data-review-section-card]');
+      if (!card) return;
+      const controls = card.querySelectorAll('[data-field-review]');
+      let pending = 0;
+      let flagged = 0;
+      controls.forEach((control) => {
+        const status = normalizeStatus(control.querySelector('.field-review-status')?.value || 'pending');
+        if (status === 'pending') pending += 1;
+        if (status === 'flagged') flagged += 1;
+      });
+      const st = controls.length === 0 ? 'pending' : (pending > 0 ? 'pending' : (flagged > 0 ? 'needs_revision' : 'verified'));
+      if (st === 'verified') {
+        badge.className = 'inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700';
+        badge.textContent = 'Verified';
+      } else if (st === 'needs_revision') {
+        badge.className = 'inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700';
+        badge.textContent = 'Needs Revision';
+      } else {
+        badge.className = 'inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700';
+        badge.textContent = 'Pending';
+      }
+    });
   }
 
   function syncSection(sectionRoot) {
@@ -568,6 +580,7 @@
         const sectionRoot = form.querySelector(`[data-section-submit][data-section-key="${control.dataset.sectionKey}"]`);
         if (sectionRoot) syncSection(sectionRoot);
         refreshSummary();
+        refreshSyntheticRequirementsBadges();
         refreshRevisionSummary();
         updateSaveReviewAvailability();
         scheduleDraftPersist();
@@ -578,6 +591,7 @@
       const sectionRoot = form.querySelector(`[data-section-submit][data-section-key="${control.dataset.sectionKey}"]`);
       if (sectionRoot) syncSection(sectionRoot);
       refreshSummary();
+      refreshSyntheticRequirementsBadges();
       refreshRevisionSummary();
       updateSaveReviewAvailability();
       scheduleDraftPersist();
@@ -586,6 +600,7 @@
 
   allSectionRoots().forEach((root) => syncSection(root));
   refreshSummary();
+  refreshSyntheticRequirementsBadges();
   refreshRevisionSummary();
   updateSaveReviewAvailability();
 

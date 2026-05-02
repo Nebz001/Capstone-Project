@@ -19,6 +19,7 @@ use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\OrganizationNotificationService;
+use App\Services\ReviewWorkflow\ReviewableUpdateRecorder;
 use App\Support\ManilaDateTime;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
@@ -1200,18 +1201,21 @@ class AdminController extends Controller
             'entries' => fn ($query) => $query->orderBy('activity_date')->orderBy('id'),
         ]);
 
+        [$effectiveFieldReviews, $fieldUpdateDiffs] = $this->loadModuleFieldUpdateContext($calendar, 'admin_field_reviews');
+
         return view('admin.reviews.module-show', [
             'pageTitle' => 'Activity Calendar Submission Details',
             'moduleLabel' => 'Activity Calendar',
             'status' => strtoupper((string) ($calendar->status ?? 'pending')),
             'sections' => $this->calendarReviewSections($calendar),
-            'persistedFieldReviews' => is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [],
+            'persistedFieldReviews' => $effectiveFieldReviews,
             'persistedSectionReviews' => is_array($calendar->admin_section_reviews) ? $calendar->admin_section_reviews : [],
             'persistedRemarks' => $calendar->admin_review_remarks ?? '',
             'saveRoute' => route('admin.calendars.update-status', $calendar),
             'draftRoute' => route('admin.calendars.review-draft', $calendar),
             'backRoute' => route('admin.calendars.index'),
             'backLabel' => 'Back to Activity Calendars',
+            'fieldUpdateDiffs' => $fieldUpdateDiffs,
         ]);
     }
 
@@ -1233,6 +1237,129 @@ class AdminController extends Controller
         }
 
         return $disk->response($relativePath, basename($relativePath), [], 'inline');
+    }
+
+    public function downloadCalendarFile(Request $request, ActivityCalendar $calendar): Response
+    {
+        $this->authorizeAdmin($request);
+        $relativePath = trim((string) ($calendar->calendar_file ?? ''));
+        if ($relativePath === '') {
+            abort(404);
+        }
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $safeFilename = basename($relativePath);
+        $safeFilename = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $safeFilename);
+        if ($safeFilename === '') {
+            $safeFilename = 'calendar-file';
+        }
+
+        $mime = 'application/octet-stream';
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            try {
+                $detected = $publicDisk->mimeType($relativePath);
+                if (is_string($detected) && trim($detected) !== '') {
+                    $mime = $detected;
+                }
+            } catch (\Throwable $e) {
+            }
+        }
+
+        return $this->downloadStoredPathPreferSupabase($relativePath, $safeFilename, $mime);
+    }
+
+    public function streamReportFile(Request $request, ActivityReport $report, string $key): StreamedResponse
+    {
+        $this->authorizeAdmin($request);
+        $allowed = in_array($key, ['poster', 'attendance', 'certificate', 'evaluation_form'], true)
+            || preg_match('/^supporting_\d+$/', $key) === 1;
+        abort_unless($allowed, 404);
+
+        $relativePath = $this->reportFilePathForAdmin($report, $key);
+        if (! is_string($relativePath) || $relativePath === '') {
+            abort(404);
+        }
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $organizationId = (int) $report->organization_id;
+        $expectedPrefixes = [
+            'activity-reports/'.$organizationId.'/',
+        ];
+        $ok = false;
+        foreach ($expectedPrefixes as $pfx) {
+            if (str_starts_with($relativePath, $pfx)) {
+                $ok = true;
+                break;
+            }
+        }
+        abort_unless($ok, 404);
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        return $disk->response($relativePath, basename($relativePath), [], 'inline');
+    }
+
+    public function downloadReportFile(Request $request, ActivityReport $report, string $key): Response
+    {
+        $this->authorizeAdmin($request);
+        $allowed = in_array($key, ['poster', 'attendance', 'certificate', 'evaluation_form'], true)
+            || preg_match('/^supporting_\d+$/', $key) === 1;
+        abort_unless($allowed, 404);
+
+        $report->loadMissing('attachments');
+        $attachment = $this->reportAttachmentForAdminKey($report, $key);
+        if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+            return $this->redirectAttachmentDownload($attachment);
+        }
+
+        $relativePath = $this->reportFilePathForAdmin($report, $key);
+        if (! is_string($relativePath) || $relativePath === '') {
+            abort(404);
+        }
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $organizationId = (int) $report->organization_id;
+        $expectedPrefixes = [
+            'activity-reports/'.$organizationId.'/',
+        ];
+        $ok = false;
+        foreach ($expectedPrefixes as $pfx) {
+            if (str_starts_with($relativePath, $pfx)) {
+                $ok = true;
+                break;
+            }
+        }
+        abort_unless($ok, 404);
+
+        $safeFilename = basename($relativePath);
+        $safeFilename = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $safeFilename);
+        if ($safeFilename === '') {
+            $safeFilename = 'download';
+        }
+
+        $mime = 'application/octet-stream';
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            try {
+                $detected = $publicDisk->mimeType($relativePath);
+                if (is_string($detected) && trim($detected) !== '') {
+                    $mime = $detected;
+                }
+            } catch (\Throwable $e) {
+            }
+        }
+
+        return $this->downloadStoredPathPreferSupabase($relativePath, $safeFilename, $mime);
     }
 
     public function showProposal(Request $request, ActivityProposal $proposal): View
@@ -1291,28 +1418,9 @@ class AdminController extends Controller
             ]);
         }
 
-        $step1AttachmentRows = [];
-        foreach ([
-            ['key' => 'request_letter', 'label' => 'Upload Request Letter'],
-            ['key' => 'speaker_resume', 'label' => 'Resume of Speaker'],
-            ['key' => 'post_survey_form', 'label' => 'Sample Post-Survey Form'],
-        ] as $item) {
-            $url = $this->proposalReviewFilePathByKey($proposal, $requestForm, $item['key']) !== null
-                ? route('admin.proposals.file', ['proposal' => $proposal, 'key' => $item['key']])
-                : null;
-            if (! $url) {
-                continue;
-            }
-            $step1AttachmentRows[] = [
-                'key' => 'step1_'.$item['key'],
-                'label' => $item['label'],
-                'value' => 'Submitted file attached.',
-                'action' => ['href' => $url],
-            ];
-        }
+        $proposalRequirementsFields = $this->proposalRequirementsAttachmentFields($proposal, $requestForm, $isExternalFunding);
 
         $step2Rows = [
-            ['key' => 'step2_organization_logo', 'label' => 'Organization Logo', 'value' => $this->proposalReviewFilePathByKey($proposal, $requestForm, 'organization_logo') ? 'Submitted file attached.' : '—', 'action' => $this->proposalReviewFilePathByKey($proposal, $requestForm, 'organization_logo') ? ['href' => route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'organization_logo'])] : null],
             ['key' => 'step2_organization', 'label' => 'Organization (Form)', 'value' => $proposal->organization?->organization_name ?: '—'],
             ['key' => 'step2_academic_year', 'label' => 'Academic Year', 'value' => $proposal->academicTerm?->academic_year ?: '—'],
             ['key' => 'step2_department', 'label' => 'Department', 'value' => $department !== '' ? $department : '—'],
@@ -1347,45 +1455,21 @@ class AdminController extends Controller
             ],
         ];
 
-        if ($isExternalFunding) {
-            $externalLink = $this->proposalReviewFilePathByKey($proposal, $requestForm, 'external_funding')
-                ? route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'external_funding'])
-                : null;
-            if ($externalLink) {
-                $step2Rows[] = [
-                    'key' => 'step2_external_funding_support',
-                    'label' => 'External Funding Support',
-                    'value' => 'Submitted file attached.',
-                    'action' => ['href' => $externalLink],
-                ];
-            }
-        }
-
-        $additionalRows = [];
-        $resourceResumeLink = $this->proposalReviewFilePathByKey($proposal, $requestForm, 'resource_resume')
-            ? route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'resource_resume'])
-            : null;
-        if ($resourceResumeLink) {
-            $additionalRows[] = [
-                'key' => 'step2_resume_resource_persons',
-                'label' => 'Resume of Resource Person/s',
-                'value' => 'Submitted file attached.',
-                'action' => ['href' => $resourceResumeLink],
-            ];
-        }
+        [$effectiveFieldReviews, $fieldUpdateDiffs] = $this->loadModuleFieldUpdateContext($proposal, 'admin_field_reviews');
 
         return view('admin.reviews.module-show', [
             'pageTitle' => 'Activity Proposal Submission Details',
             'moduleLabel' => 'Activity Proposal',
             'status' => strtoupper((string) ($proposal->status ?? 'pending')),
-            'sections' => $this->proposalReviewSections($step1Rows, $step1AttachmentRows, $step2Rows, $additionalRows),
-            'persistedFieldReviews' => is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : [],
+            'sections' => $this->proposalReviewSections($step1Rows, $step2Rows, $proposalRequirementsFields),
+            'persistedFieldReviews' => $effectiveFieldReviews,
             'persistedSectionReviews' => is_array($proposal->admin_section_reviews) ? $proposal->admin_section_reviews : [],
             'persistedRemarks' => $proposal->admin_review_remarks ?? '',
             'saveRoute' => route('admin.proposals.update-status', $proposal),
             'draftRoute' => route('admin.proposals.review-draft', $proposal),
             'backRoute' => route('admin.proposals.index'),
             'backLabel' => 'Back to Activity Proposals',
+            'fieldUpdateDiffs' => $fieldUpdateDiffs,
         ]);
     }
 
@@ -1448,6 +1532,19 @@ class AdminController extends Controller
         }
 
         abort(404, 'The file could not be found in Supabase Storage.');
+    }
+
+    public function downloadProposalFile(Request $request, ActivityProposal $proposal, string $key): Response
+    {
+        $this->authorizeAdmin($request);
+        $proposal->loadMissing('attachments');
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $attachment = $this->proposalAttachmentForReviewKey($proposal, $requestForm, $key);
+        if (! $attachment) {
+            abort(404, 'No file has been uploaded for this proposal attachment.');
+        }
+
+        return $this->redirectAttachmentDownload($attachment);
     }
 
     public function updateProposalWorkflow(Request $request, ActivityProposal $proposal): RedirectResponse
@@ -1561,9 +1658,6 @@ class AdminController extends Controller
 
         $report->load(['organization', 'user', 'attachments']);
 
-        $posterPath = $this->attachmentPathOrLegacy($report, Attachment::TYPE_REPORT_POSTER, $report->poster_image_path);
-        $attendancePath = $this->attachmentPathOrLegacy($report, Attachment::TYPE_REPORT_ATTENDANCE, $report->attendance_sheet_path);
-
         $schoolLabels = [
             'sace' => 'School of Architecture, Computer and Engineering',
             'sahs' => 'School of Allied Health and Sciences',
@@ -1587,22 +1681,23 @@ class AdminController extends Controller
             'Activity Evaluation' => $report->evaluation_report ?? 'N/A',
             'Participants Reached (%)' => $report->participants_reached_percent !== null ? (string) $report->participants_reached_percent.'%' : 'N/A',
             'Legacy Report File' => $report->report_file ?? 'N/A',
-            'Poster file' => $posterPath ? Storage::disk('public')->url($posterPath) : 'N/A',
-            'Attendance file' => $attendancePath ? Storage::disk('public')->url($attendancePath) : 'N/A',
         ];
+
+        [$effectiveFieldReviews, $fieldUpdateDiffs] = $this->loadModuleFieldUpdateContext($report, 'admin_field_reviews');
 
         return view('admin.reviews.module-show', [
             'pageTitle' => 'After Activity Report Submission Details',
             'moduleLabel' => 'After Activity Report',
             'status' => strtoupper((string) ($report->status ?? 'pending')),
             'sections' => $this->reportReviewSections($report, $details),
-            'persistedFieldReviews' => is_array($report->admin_field_reviews) ? $report->admin_field_reviews : [],
+            'persistedFieldReviews' => $effectiveFieldReviews,
             'persistedSectionReviews' => is_array($report->admin_section_reviews) ? $report->admin_section_reviews : [],
             'persistedRemarks' => $report->admin_review_remarks ?? '',
             'saveRoute' => route('admin.reports.update-status', $report),
             'draftRoute' => route('admin.reports.review-draft', $report),
             'backRoute' => route('admin.reports.index'),
             'backLabel' => 'Back to After Activity Reports',
+            'fieldUpdateDiffs' => $fieldUpdateDiffs,
         ]);
     }
 
@@ -1985,6 +2080,33 @@ class AdminController extends Controller
         return response()->json(['ok' => true, 'field_reviews' => $fieldReviews, 'section_reviews' => $sectionReviews]);
     }
 
+    /**
+     * Load polymorphic field-update audit rows for $reviewable and merge them
+     * into the shape the admin module-show view expects. Same intent as the
+     * Renewal/Registration flow that uses OrganizationRevisionFieldUpdate, but
+     * works for any model via the polymorphic ReviewableUpdateRecorder.
+     *
+     * Returns:
+     *   [
+     *     $effectiveFieldReviews,  // raw JSON with re-pended states for any flagged-then-resubmitted field
+     *     $fieldUpdateDiffs        // section_key => field_key => {is_updated, old_value, new_value, ...}
+     *   ]
+     *
+     * @return array{0: array<string, mixed>, 1: array<string, array<string, array<string, mixed>>>}
+     */
+    private function loadModuleFieldUpdateContext(Model $reviewable, string $fieldColumn): array
+    {
+        $stored = $reviewable->getAttribute($fieldColumn);
+        $stored = is_array($stored) ? $stored : [];
+
+        $recorder = app(ReviewableUpdateRecorder::class);
+        $latest = $recorder->latestForReviewable($reviewable);
+        $diffs = $recorder->diffMapFromLatestUpdates($latest);
+        $effective = $this->resetUpdatedFieldReviewStates($stored, $diffs);
+
+        return [$effective, $diffs];
+    }
+
     private function finalizeModuleReview(Request $request, Model $record, array $schema, string $fieldColumn, string $sectionColumn, string $remarksColumn, string $showRoute, string $backRoute, string $backLabel): RedirectResponse
     {
         $validated = $request->validate([
@@ -2018,6 +2140,20 @@ class AdminController extends Controller
             $payload['approval_decision'] = $nextStatus === 'approved' ? 'approved' : null;
         }
         $record->update($payload);
+
+        /*
+         * Auto-acknowledge any officer field updates whose matching review row
+         * just left `pending`. Mirrors
+         * `autoAcknowledgeReviewedRegistrationFieldUpdates` for the renewal
+         * flow but works polymorphically for Calendar / Proposal / Report via
+         * ReviewableUpdateRecorder.
+         */
+        app(ReviewableUpdateRecorder::class)->acknowledgeReviewedFields(
+            $record,
+            $fieldReviews,
+            (int) $request->user()->id
+        );
+
         $this->notifyModuleReviewResult($record, $nextStatus);
 
         return redirect()
@@ -2233,7 +2369,7 @@ class AdminController extends Controller
             ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Renewal context and submitter details.', 'fields' => []],
             ['key' => 'contact', 'title' => 'Contact Details', 'subtitle' => 'Primary point-of-contact for this renewal.', 'fields' => []],
             ['key' => 'adviser', 'title' => 'Adviser Information', 'subtitle' => 'Faculty adviser nomination linked to this submission.', 'fields' => []],
-            ['key' => 'requirements', 'title' => 'Requirements Attached', 'subtitle' => 'Uploaded requirement files for renewal.', 'fields' => []],
+            ['key' => 'requirements', 'title' => 'Requirements Attached', 'subtitle' => 'Checklist and uploaded files as declared on the application.', 'fields' => []],
         ];
         $sections[0]['fields'] = [
             ['key' => 'organization', 'label' => 'Organization', 'value' => $submission->organization?->organization_name ?? 'N/A'],
@@ -2338,15 +2474,20 @@ class AdminController extends Controller
             ]],
         ];
         if ($calendarFilePath !== '') {
+            $calBadge = $this->fileBadgeFromStoredPath($calendarFilePath);
             $sections[] = [
                 'key' => 'submitted_files',
-                'title' => 'Submitted Files',
-                'subtitle' => 'Files uploaded with this activity calendar submission.',
+                'title' => 'Requirements Attached',
+                'subtitle' => 'Checklist and uploaded files as declared on the application.',
                 'fields' => [[
                     'key' => 'calendar_file',
                     'label' => 'Calendar file',
                     'value' => 'File uploaded',
+                    'submitted' => true,
+                    'file_badge_label' => $calBadge['label'],
+                    'file_badge_class' => $calBadge['class'],
                     'action' => ['href' => route('admin.calendars.file', $calendar)],
+                    'download_action' => ['href' => route('admin.calendars.file.download', $calendar)],
                     'wide' => true,
                 ]],
             ];
@@ -2452,14 +2593,14 @@ class AdminController extends Controller
         ];
     }
 
-    private function proposalReviewSections(array $step1Rows, array $step1AttachmentRows, array $step2Rows, array $additionalRows): array
+    private function proposalReviewSections(array $step1Rows, array $step2Rows, array $requirementsAttachmentFields): array
     {
         $sections = [
             [
                 'key' => 'step1_request_form',
                 'title' => 'Step 1: Activity Request Form',
                 'subtitle' => 'Officer-submitted request form fields used to promote this proposal.',
-                'fields' => array_merge($step1Rows, $step1AttachmentRows),
+                'fields' => $step1Rows,
             ],
             [
                 'key' => 'step2_submission',
@@ -2468,16 +2609,97 @@ class AdminController extends Controller
                 'fields' => $step2Rows,
             ],
         ];
-        if ($additionalRows !== []) {
+        if ($requirementsAttachmentFields !== []) {
             $sections[] = [
-                'key' => 'additional',
-                'title' => 'Additional',
-                'subtitle' => 'Additional supporting documents submitted by the officer.',
-                'fields' => $additionalRows,
+                'key' => 'requirements_attached',
+                'title' => 'Requirements Attached',
+                'subtitle' => 'Checklist and uploaded files as declared on the application.',
+                'reviewable' => false,
+                'is_requirements_attached' => true,
+                'fields' => $requirementsAttachmentFields,
             ];
         }
 
         return $sections;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function proposalRequirementsAttachmentFields(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, bool $isExternalFunding): array
+    {
+        $rows = [];
+        foreach ([
+            ['file_key' => 'request_letter', 'review_section_key' => 'step1_request_form', 'review_field_key' => 'step1_request_letter', 'label' => 'Upload Request Letter'],
+            ['file_key' => 'speaker_resume', 'review_section_key' => 'step1_request_form', 'review_field_key' => 'step1_speaker_resume', 'label' => 'Resume of Speaker'],
+            ['file_key' => 'post_survey_form', 'review_section_key' => 'step1_request_form', 'review_field_key' => 'step1_post_survey_form', 'label' => 'Sample Post-Survey Form'],
+            ['file_key' => 'organization_logo', 'review_section_key' => 'step2_submission', 'review_field_key' => 'step2_organization_logo', 'label' => 'Organization Logo'],
+        ] as $def) {
+            $path = $this->proposalReviewFilePathByKey($proposal, $requestForm, $def['file_key']);
+            $badge = $this->fileBadgeFromStoredPath($path);
+            $rows[] = [
+                'key' => $def['review_field_key'],
+                'label' => $def['label'],
+                'review_section_key' => $def['review_section_key'],
+                'review_field_key' => $def['review_field_key'],
+                'submitted' => $path !== null,
+                'file_badge_label' => $badge['label'],
+                'file_badge_class' => $badge['class'],
+                'action' => $path !== null ? ['href' => route('admin.proposals.file', ['proposal' => $proposal, 'key' => $def['file_key']])] : null,
+                'download_action' => $path !== null ? ['href' => route('admin.proposals.file.download', ['proposal' => $proposal, 'key' => $def['file_key']])] : null,
+                'show_review_controls' => true,
+            ];
+        }
+        if ($isExternalFunding) {
+            $path = $this->proposalReviewFilePathByKey($proposal, $requestForm, 'external_funding');
+            $badge = $this->fileBadgeFromStoredPath($path);
+            $rows[] = [
+                'key' => 'step2_external_funding_support',
+                'label' => 'External Funding Support',
+                'review_section_key' => 'step2_submission',
+                'review_field_key' => 'step2_external_funding_support',
+                'submitted' => $path !== null,
+                'file_badge_label' => $badge['label'],
+                'file_badge_class' => $badge['class'],
+                'action' => $path !== null ? ['href' => route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'external_funding'])] : null,
+                'download_action' => $path !== null ? ['href' => route('admin.proposals.file.download', ['proposal' => $proposal, 'key' => 'external_funding'])] : null,
+                'show_review_controls' => true,
+            ];
+        }
+        $resPath = $this->proposalReviewFilePathByKey($proposal, $requestForm, 'resource_resume');
+        $resBadge = $this->fileBadgeFromStoredPath($resPath);
+        $rows[] = [
+            'key' => 'step2_resume_resource_persons',
+            'label' => 'Resume of Resource Person/s',
+            'review_section_key' => 'additional',
+            'review_field_key' => 'step2_resume_resource_persons',
+            'submitted' => $resPath !== null,
+            'file_badge_label' => $resBadge['label'],
+            'file_badge_class' => $resBadge['class'],
+            'action' => $resPath !== null ? ['href' => route('admin.proposals.file', ['proposal' => $proposal, 'key' => 'resource_resume'])] : null,
+            'download_action' => $resPath !== null ? ['href' => route('admin.proposals.file.download', ['proposal' => $proposal, 'key' => 'resource_resume'])] : null,
+            'show_review_controls' => true,
+        ];
+
+        return $rows;
+    }
+
+    /**
+     * @return array{label: string, class: string}
+     */
+    private function fileBadgeFromStoredPath(?string $storedPath): array
+    {
+        $extension = strtoupper((string) pathinfo((string) ($storedPath ?? ''), PATHINFO_EXTENSION));
+        $badgeLabel = in_array($extension, ['PDF', 'DOCX', 'PNG', 'JPG', 'JPEG'], true) ? $extension : 'FILE';
+        $badgeClass = match ($badgeLabel) {
+            'PDF' => 'border-red-200 bg-red-50 text-red-700',
+            'DOCX' => 'border-blue-200 bg-blue-50 text-blue-700',
+            'PNG' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+            'JPG', 'JPEG' => 'border-amber-200 bg-amber-50 text-amber-700',
+            default => 'border-slate-200 bg-slate-100 text-slate-700',
+        };
+
+        return ['label' => $badgeLabel, 'class' => $badgeClass];
     }
 
     private function relatedRequestFormForProposal(ActivityProposal $proposal): ?ActivityRequestForm
@@ -2507,7 +2729,105 @@ class AdminController extends Controller
             ->first();
     }
 
-    private function proposalReviewFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
+    /**
+     * Supabase signed download URL when the object exists there; otherwise
+     * streams from the public disk — mirrors the registration renewal
+     * download intent without changing officer-facing routes.
+     */
+    private function redirectAttachmentDownload(Attachment $attachment): Response
+    {
+        $relativePath = trim((string) $attachment->stored_path);
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $safeFilename = str_replace(['"', "\r", "\n"], '', (string) ($attachment->original_name ?: basename($relativePath)));
+        $safeFilename = (string) preg_replace('/[\x00-\x1F\\\\]/u', '', $safeFilename);
+        if ($safeFilename === '') {
+            $safeFilename = basename($relativePath);
+        }
+
+        $resolvedMime = ($attachment->mime_type !== null && trim((string) $attachment->mime_type) !== '')
+            ? trim((string) $attachment->mime_type)
+            : 'application/octet-stream';
+
+        $disk = Storage::disk('supabase');
+        try {
+            if ($disk->exists($relativePath)) {
+                $temporaryUrl = $disk->temporaryUrl(
+                    $relativePath,
+                    now()->addMinutes(15),
+                    [
+                        'ResponseContentDisposition' => 'attachment; filename="'.$safeFilename.'"',
+                        'ResponseContentType' => $resolvedMime,
+                    ]
+                );
+
+                return redirect()->away($temporaryUrl);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Admin: attachment download temporaryUrl failed.', [
+                'attachment_id' => $attachment->id,
+                'stored_path' => $relativePath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            return $publicDisk->download($relativePath, $safeFilename);
+        }
+
+        abort(404, 'The file could not be found.');
+    }
+
+    /**
+     * Path-only download (e.g. activity calendar main file) — tries Supabase
+     * first, then public disk.
+     */
+    private function downloadStoredPathPreferSupabase(string $relativePath, string $safeFilename, ?string $mimeType = null): Response
+    {
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $safeFilename = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $safeFilename);
+        if ($safeFilename === '') {
+            $safeFilename = basename($relativePath);
+        }
+
+        $resolvedMime = ($mimeType !== null && trim($mimeType) !== '') ? trim($mimeType) : 'application/octet-stream';
+
+        $disk = Storage::disk('supabase');
+        try {
+            if ($disk->exists($relativePath)) {
+                $temporaryUrl = $disk->temporaryUrl(
+                    $relativePath,
+                    now()->addMinutes(15),
+                    [
+                        'ResponseContentDisposition' => 'attachment; filename="'.$safeFilename.'"',
+                        'ResponseContentType' => $resolvedMime,
+                    ]
+                );
+
+                return redirect()->away($temporaryUrl);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Admin: stored-path download temporaryUrl failed.', [
+                'stored_path' => $relativePath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            return $publicDisk->download($relativePath, $safeFilename);
+        }
+
+        abort(404, 'The file could not be found.');
+    }
+
+    private function proposalAttachmentForReviewKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?Attachment
     {
         $proposalType = match ($key) {
             'organization_logo' => Attachment::TYPE_PROPOSAL_LOGO,
@@ -2521,7 +2841,7 @@ class AdminController extends Controller
                 ->latest('id')
                 ->first();
             if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
-                return trim($attachment->stored_path);
+                return $attachment;
             }
         }
 
@@ -2538,12 +2858,19 @@ class AdminController extends Controller
                     ->latest('id')
                     ->first();
                 if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
-                    return trim($attachment->stored_path);
+                    return $attachment;
                 }
             }
         }
 
         return null;
+    }
+
+    private function proposalReviewFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
+    {
+        $attachment = $this->proposalAttachmentForReviewKey($proposal, $requestForm, $key);
+
+        return $attachment ? trim((string) $attachment->stored_path) : null;
     }
 
     private function proposalTimeRangeLabel(ActivityProposal $proposal): string
@@ -2618,7 +2945,7 @@ class AdminController extends Controller
 
     private function reportReviewSections(ActivityReport $report, array $details): array
     {
-        return [
+        $sections = [
             ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Core after-activity report details.', 'fields' => [
                 ['key' => 'organization', 'label' => 'Organization', 'value' => $details['Organization'] ?? 'N/A'],
                 ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $details['Submitted By'] ?? 'N/A'],
@@ -2632,11 +2959,220 @@ class AdminController extends Controller
                 ['key' => 'evaluation', 'label' => 'Activity Evaluation', 'value' => $details['Activity Evaluation'] ?? 'N/A', 'wide' => true],
                 ['key' => 'participants_reached', 'label' => 'Participants Reached (%)', 'value' => $details['Participants Reached (%)'] ?? 'N/A'],
             ]],
-            ['key' => 'files', 'title' => 'Attached Files', 'subtitle' => 'Poster and attendance support files.', 'fields' => [
-                ['key' => 'poster_file', 'label' => 'Poster file', 'value' => (string) ($details['Poster file'] ?? 'N/A')],
-                ['key' => 'attendance_file', 'label' => 'Attendance file', 'value' => (string) ($details['Attendance file'] ?? 'N/A')],
-            ]],
         ];
+        $attachmentFields = $this->reportRequirementsAttachmentFields($report);
+        if ($attachmentFields !== []) {
+            $sections[] = [
+                'key' => 'requirements_attached',
+                'title' => 'Requirements Attached',
+                'subtitle' => 'Checklist and uploaded files as declared on the application.',
+                'reviewable' => false,
+                'is_requirements_attached' => true,
+                'fields' => $attachmentFields,
+            ];
+        }
+
+        return $sections;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function reportRequirementsAttachmentFields(ActivityReport $report): array
+    {
+        $rows = [];
+        $fileUrl = static fn (string $k) => route('admin.reports.file', ['report' => $report, 'key' => $k]);
+        $downloadUrl = static fn (string $k) => route('admin.reports.file.download', ['report' => $report, 'key' => $k]);
+
+        $posterPath = $this->reportFilePathForAdmin($report, 'poster');
+        $badge = $this->fileBadgeFromStoredPath($posterPath);
+        $rows[] = [
+            'key' => 'poster_file',
+            'review_section_key' => 'files',
+            'review_field_key' => 'poster_file',
+            'label' => 'Poster image',
+            'submitted' => $posterPath !== null,
+            'file_badge_label' => $badge['label'],
+            'file_badge_class' => $badge['class'],
+            'action' => $posterPath !== null ? ['href' => $fileUrl('poster')] : null,
+            'download_action' => $posterPath !== null ? ['href' => $downloadUrl('poster')] : null,
+            'show_review_controls' => true,
+        ];
+
+        foreach ($this->reportSupportingPhotoStreamKeys($report) as $idx => $streamKey) {
+            $path = $this->reportFilePathForAdmin($report, $streamKey);
+            if ($path === null) {
+                continue;
+            }
+            $pBadge = $this->fileBadgeFromStoredPath($path);
+            $rows[] = [
+                'key' => 'supporting_photo_'.$idx,
+                'label' => 'Supporting photo '.($idx + 1),
+                'submitted' => true,
+                'file_badge_label' => $pBadge['label'],
+                'file_badge_class' => $pBadge['class'],
+                'action' => ['href' => $fileUrl($streamKey)],
+                'download_action' => ['href' => $downloadUrl($streamKey)],
+                'show_review_controls' => false,
+            ];
+        }
+
+        $certPath = $this->reportFilePathForAdmin($report, 'certificate');
+        if ($certPath !== null) {
+            $cBadge = $this->fileBadgeFromStoredPath($certPath);
+            $rows[] = [
+                'key' => 'certificate_sample',
+                'label' => 'Certificate sample',
+                'submitted' => true,
+                'file_badge_label' => $cBadge['label'],
+                'file_badge_class' => $cBadge['class'],
+                'action' => ['href' => $fileUrl('certificate')],
+                'download_action' => ['href' => $downloadUrl('certificate')],
+                'show_review_controls' => false,
+            ];
+        }
+
+        $evalPath = $this->reportFilePathForAdmin($report, 'evaluation_form');
+        if ($evalPath !== null) {
+            $eBadge = $this->fileBadgeFromStoredPath($evalPath);
+            $rows[] = [
+                'key' => 'evaluation_form_sample',
+                'label' => 'Evaluation form sample',
+                'submitted' => true,
+                'file_badge_label' => $eBadge['label'],
+                'file_badge_class' => $eBadge['class'],
+                'action' => ['href' => $fileUrl('evaluation_form')],
+                'download_action' => ['href' => $downloadUrl('evaluation_form')],
+                'show_review_controls' => false,
+            ];
+        }
+
+        $attPath = $this->reportFilePathForAdmin($report, 'attendance');
+        $aBadge = $this->fileBadgeFromStoredPath($attPath);
+        $rows[] = [
+            'key' => 'attendance_file',
+            'review_section_key' => 'files',
+            'review_field_key' => 'attendance_file',
+            'label' => 'Attendance sheet',
+            'submitted' => $attPath !== null,
+            'file_badge_label' => $aBadge['label'],
+            'file_badge_class' => $aBadge['class'],
+            'action' => $attPath !== null ? ['href' => $fileUrl('attendance')] : null,
+            'download_action' => $attPath !== null ? ['href' => $downloadUrl('attendance')] : null,
+            'show_review_controls' => true,
+        ];
+
+        return $rows;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function reportSupportingPhotoStreamKeys(ActivityReport $report): array
+    {
+        $keys = [];
+        $seen = [];
+        foreach ($report->attachments()->orderBy('id')->get() as $attachment) {
+            $ft = (string) $attachment->file_type;
+            if (preg_match('/^'.preg_quote(Attachment::TYPE_REPORT_SUPPORTING_PHOTO, '/').':(\d+)$/', $ft, $m) === 1) {
+                $k = 'supporting_'.$m[1];
+                if (! isset($seen[$k]) && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                    $seen[$k] = true;
+                    $keys[] = $k;
+                }
+            }
+        }
+        if ($keys !== []) {
+            return $keys;
+        }
+        $legacyPhotos = $report->getAttribute('supporting_photo_paths');
+        $legacyPhotos = is_array($legacyPhotos) ? $legacyPhotos : [];
+        foreach ($legacyPhotos as $idx => $path) {
+            if (is_string($path) && $path !== '') {
+                $keys[] = 'supporting_'.(int) $idx;
+            }
+        }
+
+        return $keys;
+    }
+
+    private function reportAttachmentForAdminKey(ActivityReport $report, string $key): ?Attachment
+    {
+        if (preg_match('/^supporting_(\d+)$/', $key, $m) === 1) {
+            $attachment = $report->attachments()
+                ->where('file_type', Attachment::TYPE_REPORT_SUPPORTING_PHOTO.':'.((int) $m[1]))
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+                return $attachment;
+            }
+
+            return null;
+        }
+
+        $fileType = match ($key) {
+            'poster' => Attachment::TYPE_REPORT_POSTER,
+            'certificate' => Attachment::TYPE_REPORT_CERTIFICATE,
+            'evaluation_form' => Attachment::TYPE_REPORT_EVALUATION_FORM,
+            'attendance' => Attachment::TYPE_REPORT_ATTENDANCE,
+            default => null,
+        };
+        if ($fileType === null) {
+            return null;
+        }
+
+        $attachment = $report->attachments()
+            ->where('file_type', $fileType)
+            ->latest('id')
+            ->first();
+        if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+            return $attachment;
+        }
+
+        return null;
+    }
+
+    private function reportFilePathForAdmin(ActivityReport $report, string $key): ?string
+    {
+        $fileType = match ($key) {
+            'poster' => Attachment::TYPE_REPORT_POSTER,
+            'certificate' => Attachment::TYPE_REPORT_CERTIFICATE,
+            'evaluation_form' => Attachment::TYPE_REPORT_EVALUATION_FORM,
+            'attendance' => Attachment::TYPE_REPORT_ATTENDANCE,
+            default => null,
+        };
+
+        if (preg_match('/^supporting_(\d+)$/', $key, $m) === 1) {
+            $attachment = $report->attachments()
+                ->where('file_type', Attachment::TYPE_REPORT_SUPPORTING_PHOTO.':'.((int) $m[1]))
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                return $attachment->stored_path;
+            }
+            $legacyPhotos = $report->getAttribute('supporting_photo_paths');
+            $legacyPhotos = is_array($legacyPhotos) ? $legacyPhotos : [];
+
+            return $legacyPhotos[(int) $m[1]] ?? null;
+        }
+
+        if ($fileType !== null) {
+            $attachment = $report->attachments()
+                ->where('file_type', $fileType)
+                ->latest('id')
+                ->first();
+            if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+                return $attachment->stored_path;
+            }
+        }
+
+        return match ($key) {
+            'poster' => $report->poster_image_path ?? null,
+            'certificate' => $report->certificate_sample_path ?? null,
+            'evaluation_form' => $report->evaluation_form_sample_path ?? null,
+            'attendance' => $report->attendance_sheet_path ?? null,
+            default => null,
+        };
     }
 
     private function authorizeAdmin(Request $request): void
