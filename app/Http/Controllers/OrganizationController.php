@@ -24,6 +24,7 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\OrganizationRegistrationRevisionSummaryService;
 use App\Services\OrganizationNotificationService;
+use App\Support\OrganizationStoragePath;
 use App\Support\SubmissionRoutingProgress;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -900,7 +901,7 @@ class OrganizationController extends Controller
                 $request,
                 $reqs,
                 self::REGISTRATION_REQUIREMENT_KEYS,
-                "{$organization->id}/registration"
+                app(OrganizationStoragePath::class)->registrationFolder($organization)
             );
 
             $submission = OrganizationSubmission::create([
@@ -1140,7 +1141,7 @@ class OrganizationController extends Controller
             $request,
             $reqs,
             self::RENEWAL_REQUIREMENT_KEYS,
-            "{$organization->id}/renewals/{$submission->id}"
+            app(OrganizationStoragePath::class)->renewalFolder($organization, (int) $submission->id)
         );
 
         $this->syncSubmissionRequirements(
@@ -2197,28 +2198,6 @@ class OrganizationController extends Controller
 
         self::assertSupabaseDiskIsConfigured();
 
-        $basePath = 'activity-request-forms/'.$organization->id.'/'.Str::uuid()->toString();
-
-        Log::info('Activity request form file upload debug', [
-            'organization_id' => $organization->id,
-            'file_keys' => array_keys($request->allFiles()),
-        ]);
-
-        $requestLetterPath = null;
-        if ($request->hasFile('request_letter')) {
-            $requestLetterPath = $request->file('request_letter')->store($basePath, 'supabase');
-        }
-
-        $speakerResumePath = null;
-        if ($request->hasFile('speaker_resume')) {
-            $speakerResumePath = $request->file('speaker_resume')->store($basePath, 'supabase');
-        }
-
-        $postSurveyPath = null;
-        if ($request->hasFile('post_survey_form')) {
-            $postSurveyPath = $request->file('post_survey_form')->store($basePath, 'supabase');
-        }
-
         $payload = [
             'organization_id' => $organization->id,
             'submitted_by' => $user->id,
@@ -2238,11 +2217,47 @@ class OrganizationController extends Controller
             'promoted_at' => null,
         ];
 
+        // Persist the request form first so the storage helper can include
+        // its primary key in the per-form folder. New uploads then land
+        // under "{org-slug}-org-{org_id}/activity-request-forms/{form_id}/{field_key}/...".
         if ($editableRequest) {
             $editableRequest->update($payload);
             $activityRequest = $editableRequest;
         } else {
             $activityRequest = ActivityRequestForm::create($payload);
+        }
+
+        $storagePath = app(OrganizationStoragePath::class);
+
+        Log::info('Activity request form file upload debug', [
+            'organization_id' => $organization->id,
+            'activity_request_form_id' => $activityRequest->id,
+            'file_keys' => array_keys($request->allFiles()),
+            'organization_folder' => $storagePath->organizationFolder($organization),
+        ]);
+
+        $requestLetterPath = null;
+        if ($request->hasFile('request_letter')) {
+            $requestLetterPath = $request->file('request_letter')->store(
+                $storagePath->activityRequestFormFolder($organization, $activityRequest, 'request_letter'),
+                'supabase'
+            );
+        }
+
+        $speakerResumePath = null;
+        if ($request->hasFile('speaker_resume')) {
+            $speakerResumePath = $request->file('speaker_resume')->store(
+                $storagePath->activityRequestFormFolder($organization, $activityRequest, 'speaker_resume'),
+                'supabase'
+            );
+        }
+
+        $postSurveyPath = null;
+        if ($request->hasFile('post_survey_form')) {
+            $postSurveyPath = $request->file('post_survey_form')->store(
+                $storagePath->activityRequestFormFolder($organization, $activityRequest, 'post_survey_form'),
+                'supabase'
+            );
         }
 
         if ($request->hasFile('request_letter')) {
@@ -2687,31 +2702,6 @@ class OrganizationController extends Controller
 
         self::assertSupabaseDiskIsConfigured();
 
-        $basePath = 'activity-proposals/'.$organization->id;
-
-        Log::info('Activity proposal file upload debug', [
-            'proposal_id' => $existing->id ?? null,
-            'organization_id' => $organization->id,
-            'file_keys' => array_keys($request->allFiles()),
-        ]);
-
-        $logoPath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_LOGO);
-        if ($request->hasFile('organization_logo')) {
-            $logoPath = $request->file('organization_logo')->store($basePath, 'supabase');
-        }
-
-        $resumePath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME);
-        if ($request->hasFile('resume_resource_persons')) {
-            $resumePath = $request->file('resume_resource_persons')->store($basePath, 'supabase');
-        }
-
-        $externalFundingPath = $this->attachmentPath($existing, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING);
-        if ($validated['source_of_funding'] !== 'External') {
-            $externalFundingPath = null;
-        } elseif ($request->hasFile('external_funding_support')) {
-            $externalFundingPath = $request->file('external_funding_support')->store($basePath, 'supabase');
-        }
-
         $summary = mb_substr(trim(strip_tags($validated['overall_goal'])), 0, 500);
         $currentApprovalStep = $existing?->current_approval_step ?? 0;
 
@@ -2742,6 +2732,10 @@ class OrganizationController extends Controller
             'current_approval_step' => $currentApprovalStep,
         ];
 
+        // Persist the proposal before any uploads so the storage helper can
+        // include its primary key in the per-proposal folder. New uploads
+        // then land under
+        // "{org-slug}-org-{org_id}/activity-proposals/{proposal_id}/{field_key}/...".
         if ($existing) {
             $existing->update($payload);
             $proposal = $existing;
@@ -2749,6 +2743,41 @@ class OrganizationController extends Controller
             $proposal = ActivityProposal::create($payload);
         }
         $this->syncProposalBudgetItems($proposal, $normalizedBudgetItems);
+
+        $storagePath = app(OrganizationStoragePath::class);
+
+        Log::info('Activity proposal file upload debug', [
+            'proposal_id' => $proposal->id,
+            'organization_id' => $organization->id,
+            'file_keys' => array_keys($request->allFiles()),
+            'organization_folder' => $storagePath->organizationFolder($organization),
+        ]);
+
+        $logoPath = $this->attachmentPath($proposal, Attachment::TYPE_PROPOSAL_LOGO);
+        if ($request->hasFile('organization_logo')) {
+            $logoPath = $request->file('organization_logo')->store(
+                $storagePath->activityProposalFolder($organization, $proposal, 'logo'),
+                'supabase'
+            );
+        }
+
+        $resumePath = $this->attachmentPath($proposal, Attachment::TYPE_PROPOSAL_RESOURCE_RESUME);
+        if ($request->hasFile('resume_resource_persons')) {
+            $resumePath = $request->file('resume_resource_persons')->store(
+                $storagePath->activityProposalFolder($organization, $proposal, 'resume_resource_persons'),
+                'supabase'
+            );
+        }
+
+        $externalFundingPath = $this->attachmentPath($proposal, Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING);
+        if ($validated['source_of_funding'] !== 'External') {
+            $externalFundingPath = null;
+        } elseif ($request->hasFile('external_funding_support')) {
+            $externalFundingPath = $request->file('external_funding_support')->store(
+                $storagePath->activityProposalFolder($organization, $proposal, 'external_funding_support'),
+                'supabase'
+            );
+        }
 
         if ($request->hasFile('organization_logo')) {
             $this->upsertSingleAttachment(

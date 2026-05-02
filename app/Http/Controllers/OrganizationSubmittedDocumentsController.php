@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Services\OrganizationNotificationService;
 use App\Services\OrganizationRegistrationRevisionSummaryService;
 use App\Support\ManilaDateTime;
+use App\Support\OrganizationStoragePath;
 use App\Support\SubmissionRoutingProgress;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
@@ -2201,8 +2202,32 @@ class OrganizationSubmittedDocumentsController extends Controller
             return false;
         }
 
-        return str_starts_with($normalized, 'activity-proposals/'.$organizationId.'/')
-            || str_starts_with($normalized, 'activity-request-forms/'.$organizationId.'/');
+        // Legacy paths stored proposals/request-forms outside the org folder.
+        // We keep accepting them so files uploaded before the storage path
+        // refactor stay viewable.
+        if (str_starts_with($normalized, 'activity-proposals/'.$organizationId.'/')
+            || str_starts_with($normalized, 'activity-request-forms/'.$organizationId.'/')
+        ) {
+            return true;
+        }
+
+        // New paths live under the organization folder, e.g.
+        // "{org-slug}-org-{id}/activity-proposals/{proposal_id}/{field_key}/file.pdf".
+        $organization = Organization::query()->find($organizationId);
+        if (! $organization) {
+            return false;
+        }
+
+        $storagePath = app(OrganizationStoragePath::class);
+        foreach ($storagePath->organizationPathPrefixes($organization) as $prefix) {
+            if (str_starts_with($normalized, $prefix.'activity-proposals/')
+                || str_starts_with($normalized, $prefix.'activity-request-forms/')
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2467,8 +2492,15 @@ class OrganizationSubmittedDocumentsController extends Controller
         OrganizationController::assertSupabaseDiskIsConfigured();
         // Upload the replacement file to Supabase Storage. The bucket is set
         // on the `supabase` disk (SUPABASE_STORAGE_BUCKET), so the stored path
-        // stays bucket-relative — e.g. "{organizationId}/registration/<rand>.pdf".
-        $storedPath = $upload->store($submission->organization_id.'/registration', 'supabase');
+        // stays bucket-relative. New uploads use the organization-name
+        // folder convention — e.g. "{org-slug}-org-{id}/registration/<rand>.pdf".
+        // Older replacements stored under "{organization_id}/registration/..."
+        // remain readable through `attachments.stored_path`.
+        $organization = $submission->organization()->first();
+        $registrationFolder = $organization
+            ? app(OrganizationStoragePath::class)->registrationFolder($organization)
+            : $submission->organization_id.'/registration';
+        $storedPath = $upload->store($registrationFolder, 'supabase');
 
         DB::transaction(function () use ($submission, $user, $key, $fileType, $upload, $storedPath, $oldMeta): void {
             Attachment::query()->create([
