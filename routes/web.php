@@ -64,7 +64,7 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth'])->gr
         Route::get('/submitted-documents/activity-calendars/{calendar}/file', 'streamSubmittedActivityCalendarMainFile')->name('submitted-documents.calendars.file');
         Route::get('/submitted-documents/activity-proposals/{proposal}/files/{key}', 'streamSubmittedActivityProposalFile')
             ->name('submitted-documents.proposals.file')
-            ->where('key', '[a-z]+');
+            ->where('key', '[a-z0-9_]+');
         Route::get('/submitted-documents/after-activity-reports/{report}/files/{key}', 'streamSubmittedAfterActivityReportFile')
             ->name('submitted-documents.reports.file')
             ->where('key', '[a-z0-9_]+');

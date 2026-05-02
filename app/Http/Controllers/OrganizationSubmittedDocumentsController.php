@@ -725,13 +725,20 @@ class OrganizationSubmittedDocumentsController extends Controller
         $this->authorizeProposalFileView($request, $proposal);
 
         $requestForm = $this->relatedRequestFormForProposal($proposal);
-        $relativePath = $this->proposalFilePathByKey($proposal, $requestForm, $key);
-        $relativePath = $this->normalizeStoredPublicPath($relativePath);
+        [$attachment, $rawPath] = $this->resolveActivityProposalFileAttachmentAndPath($proposal, $requestForm, $key);
+        $normalizedKey = $this->normalizeActivityProposalFileKey($key);
+        $relativePath = $this->normalizeStoredPublicPath($rawPath);
 
-        Log::info('Activity proposal file view attempt', [
+        Log::info('Organization-side activity file view attempt', [
+            'user_id' => auth()->id(),
             'proposal_id' => $proposal->id,
             'organization_id' => $proposal->organization_id,
-            'key' => $key,
+            'key' => $normalizedKey,
+            'attachment_found' => (bool) $attachment,
+            'attachment_id' => $attachment->id ?? null,
+            'attachable_type' => $attachment->attachable_type ?? null,
+            'attachable_id' => $attachment->attachable_id ?? null,
+            'file_type' => $attachment->file_type ?? null,
             'stored_path' => $relativePath,
         ]);
 
@@ -1940,9 +1947,23 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $rows;
     }
 
-    private function proposalFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
+    private function normalizeActivityProposalFileKey(string $key): string
     {
-        $fileType = match ($key) {
+        $key = strtolower(trim($key));
+
+        return match ($key) {
+            'resume_of_speaker' => 'speaker_resume',
+            'sample_post_survey_form' => 'post_survey_form',
+            default => $key,
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function proposalAttachmentFileTypeSuffixes(string $normalizedKey): array
+    {
+        $canonical = match ($normalizedKey) {
             'logo' => Attachment::TYPE_PROPOSAL_LOGO,
             'resume' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
             'external' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
@@ -1952,17 +1973,86 @@ class OrganizationSubmittedDocumentsController extends Controller
             default => null,
         };
 
-        if (in_array($key, ['request_letter', 'speaker_resume', 'post_survey_form'], true) && $requestForm !== null && $fileType !== null) {
-            $attachment = $requestForm->attachments()
-                ->where('file_type', $fileType)
-                ->latest('id')
-                ->first();
+        if ($canonical === null) {
+            return [];
+        }
+
+        $aliases = match ($normalizedKey) {
+            'post_survey_form' => ['sample_post_survey_form'],
+            'speaker_resume' => ['resume_of_speaker'],
+            default => [],
+        };
+
+        return array_values(array_unique(array_filter(
+            array_merge([$canonical, $normalizedKey], $aliases),
+            static fn ($s) => is_string($s) && $s !== ''
+        )));
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Relations\MorphMany<Attachment, \Illuminate\Database\Model>  $relation
+     */
+    private function latestAttachmentForMorphRelationByFlexibleTypes($relation, array $suffixes): ?Attachment
+    {
+        $suffixes = array_values(array_unique(array_filter($suffixes, static fn ($s) => is_string($s) && $s !== '')));
+        if ($suffixes === []) {
+            return null;
+        }
+
+        return $relation
+            ->where(function ($q) use ($suffixes): void {
+                foreach ($suffixes as $suffix) {
+                    $q->orWhere('file_type', $suffix)
+                        ->orWhere('file_type', 'proposal_attachment:'.$suffix)
+                        ->orWhere('file_type', 'activity_request_form_attachment:'.$suffix)
+                        ->orWhere('file_type', 'like', '%:'.$suffix);
+                }
+            })
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<ActivityRequestForm>  $query
+     */
+    private function scopeRequestFormsWithFlexibleAttachmentTypes($query, array $suffixes): void
+    {
+        $suffixes = array_values(array_unique(array_filter($suffixes, static fn ($s) => is_string($s) && $s !== '')));
+        if ($suffixes === []) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->whereHas('attachments', function ($q) use ($suffixes): void {
+            $q->where(function ($q2) use ($suffixes): void {
+                foreach ($suffixes as $suffix) {
+                    $q2->orWhere('file_type', $suffix)
+                        ->orWhere('file_type', 'proposal_attachment:'.$suffix)
+                        ->orWhere('file_type', 'activity_request_form_attachment:'.$suffix)
+                        ->orWhere('file_type', 'like', '%:'.$suffix);
+                }
+            });
+        });
+    }
+
+    private function proposalAttachmentRecordByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $normalizedKey): ?Attachment
+    {
+        $suffixes = $this->proposalAttachmentFileTypeSuffixes($normalizedKey);
+        if ($suffixes === []) {
+            return null;
+        }
+
+        $step1Keys = ['request_letter', 'speaker_resume', 'post_survey_form'];
+
+        if (in_array($normalizedKey, $step1Keys, true) && $requestForm !== null) {
+            $attachment = $this->latestAttachmentForMorphRelationByFlexibleTypes($requestForm->attachments(), $suffixes);
             if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
-                return $attachment->stored_path;
+                return $attachment;
             }
         }
 
-        if (in_array($key, ['request_letter', 'speaker_resume', 'post_survey_form'], true) && $fileType !== null) {
+        if (in_array($normalizedKey, $step1Keys, true)) {
             $requestFormFallback = ActivityRequestForm::query()
                 ->where('organization_id', $proposal->organization_id)
                 ->where('submitted_by', $proposal->submitted_by)
@@ -1981,51 +2071,63 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ->latest('id')
                 ->first();
             if ($requestFormFallback) {
-                $attachment = $requestFormFallback->attachments()
-                    ->where('file_type', $fileType)
-                    ->latest('id')
-                    ->first();
+                $attachment = $this->latestAttachmentForMorphRelationByFlexibleTypes($requestFormFallback->attachments(), $suffixes);
                 if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
-                    return $attachment->stored_path;
+                    return $attachment;
                 }
             }
 
-            // Last-resort fallback: pick the latest request form by this officer/org
-            // that actually has the requested file type attached.
             $latestWithRequestedAttachment = ActivityRequestForm::query()
                 ->where('organization_id', $proposal->organization_id)
                 ->where('submitted_by', $proposal->submitted_by)
-                ->whereHas('attachments', fn ($q) => $q->where('file_type', $fileType))
+                ->tap(fn ($q) => $this->scopeRequestFormsWithFlexibleAttachmentTypes($q, $suffixes))
                 ->latest('updated_at')
                 ->latest('id')
                 ->first();
             if ($latestWithRequestedAttachment) {
-                $attachment = $latestWithRequestedAttachment->attachments()
-                    ->where('file_type', $fileType)
-                    ->latest('id')
-                    ->first();
+                $attachment = $this->latestAttachmentForMorphRelationByFlexibleTypes($latestWithRequestedAttachment->attachments(), $suffixes);
                 if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
-                    return $attachment->stored_path;
+                    return $attachment;
                 }
             }
         }
 
-        if ($fileType !== null && ! in_array($key, ['request_letter', 'speaker_resume', 'post_survey_form'], true)) {
-            $attachment = $proposal->attachments()
-                ->where('file_type', $fileType)
-                ->latest('id')
-                ->first();
+        if (! in_array($normalizedKey, $step1Keys, true)) {
+            $attachment = $this->latestAttachmentForMorphRelationByFlexibleTypes($proposal->attachments(), $suffixes);
             if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
-                return $attachment->stored_path;
+                return $attachment;
             }
         }
 
-        return match ($key) {
+        return null;
+    }
+
+    /**
+     * @return array{0: ?Attachment, 1: ?string}
+     */
+    private function resolveActivityProposalFileAttachmentAndPath(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): array
+    {
+        $normalizedKey = $this->normalizeActivityProposalFileKey($key);
+        $attachment = $this->proposalAttachmentRecordByKey($proposal, $requestForm, $normalizedKey);
+        if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
+            return [$attachment, $attachment->stored_path];
+        }
+
+        $legacy = match ($normalizedKey) {
             'logo' => $proposal->organization_logo_path,
             'resume' => $proposal->resume_resource_persons_path,
             'external' => $proposal->external_funding_support_path,
             default => null,
         };
+
+        return [null, is_string($legacy) && $legacy !== '' ? $legacy : null];
+    }
+
+    private function proposalFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
+    {
+        [, $path] = $this->resolveActivityProposalFileAttachmentAndPath($proposal, $requestForm, $key);
+
+        return $path;
     }
 
     private function proposalResolvedFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
