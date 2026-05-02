@@ -182,17 +182,24 @@
               <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 @foreach (($section['rows'] ?? []) as $row)
                   <div class="{{ $readonlyItemClass }} {{ !empty($row['wide']) || !empty($row['table']) ? 'md:col-span-2' : '' }}">
-                    <dt class="{{ $readonlyLabelClass }}">{{ $row['label'] }}</dt>
-                    <dd class="{{ $readonlyValueClass }}">{{ $row['value'] }}</dd>
                     @if (! empty($row['link_url']))
-                      <a
-                        href="{{ $row['link_url'] }}"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="mt-2 inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F]"
-                      >
-                        View file
-                      </a>
+                      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div class="min-w-0">
+                          <dt class="{{ $readonlyLabelClass }}">{{ $row['label'] }}</dt>
+                          <dd class="{{ $readonlyValueClass }}">{{ $row['value'] }}</dd>
+                        </div>
+                        <a
+                          href="{{ $row['link_url'] }}"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="mt-2 inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#003E9F] transition hover:border-[#003E9F]/35 hover:bg-[#003E9F]/5 hover:text-[#00327F]"
+                        >
+                          View file
+                        </a>
+                      </div>
+                    @else
+                      <dt class="{{ $readonlyLabelClass }}">{{ $row['label'] }}</dt>
+                      <dd class="{{ $readonlyValueClass }}">{{ $row['value'] }}</dd>
                     @endif
                     @if (! empty($row['table']) && is_array($row['table']))
                       <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
