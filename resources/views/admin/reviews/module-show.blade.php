@@ -100,6 +100,45 @@
     <x-feedback.blocked-message variant="error" :message="$message" />
   @enderror
 
+  @php
+    $updatedInformationGroups = is_array($updatedInformationGroups ?? null) ? $updatedInformationGroups : [];
+  @endphp
+  @if (($moduleLabel ?? '') === 'Activity Calendar' && $updatedInformationGroups !== [])
+    <x-feedback.blocked-message variant="info" :icon="false" class="mb-6">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100/90" aria-hidden="true">
+          <svg class="h-4.5 w-4.5 text-sky-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25 11.25 16.5M12 7.5h.008v.008H12V7.5Zm0 13.5c-4.97 0-9-4.03-9-9s4.03-9 9-9 9 4.03 9 9-4.03 9-9 9Z" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <p class="font-semibold">Updated information submitted</p>
+          <p class="mt-1 text-sm font-normal">The organization officer has updated the fields below. Review each updated field and provide a new response.</p>
+        </div>
+      </div>
+      <div class="mt-4 space-y-3">
+        @foreach ($updatedInformationGroups as $group)
+          <div class="rounded-lg border border-sky-200/90 bg-white/60 px-3 py-3">
+            <p class="text-xs font-bold uppercase tracking-wide text-sky-950">{{ $group['label'] }} ({{ count($group['fields']) }})</p>
+            <ul class="mt-2 space-y-1.5">
+              @foreach ($group['fields'] as $uf)
+                <li>
+                  <button
+                    type="button"
+                    class="updated-summary-link inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-sky-950 transition hover:bg-sky-100/70 focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                    data-scroll-target="{{ $uf['anchor'] }}"
+                  >
+                    <span class="font-semibold underline underline-offset-2">{{ $uf['label'] }}</span>
+                  </button>
+                </li>
+              @endforeach
+            </ul>
+          </div>
+        @endforeach
+      </div>
+    </x-feedback.blocked-message>
+  @endif
+
   <x-ui.card padding="p-5" class="border border-slate-200 bg-slate-50/70">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
@@ -179,15 +218,37 @@
         @else
         <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
           @foreach (($section['fields'] ?? []) as $field)
-            <div class="{{ $readonlyItemClass }} {{ ($field['wide'] ?? false) ? 'md:col-span-2' : '' }}">
-              <dt class="{{ $readonlyLabelClass }}">{{ $field['label'] }}</dt>
-              @php
-                $fieldUpdate = $fieldUpdateFor((string) ($section['key'] ?? ''), (string) ($field['key'] ?? ''));
-                $isFieldUpdated = (bool) data_get($fieldUpdate, 'is_updated', false);
-              @endphp
+            @php
+              $isCalendarEntry = ($moduleLabel ?? '') === 'Activity Calendar' && str_starts_with((string) ($section['key'] ?? ''), 'entry_');
+              $calAnchor = '';
+              if ($isCalendarEntry && preg_match('/^entry_(\d+)_(.+)$/', (string) ($field['key'] ?? ''), $calM)) {
+                $calSuffix = match ($calM[2]) {
+                  'name' => 'activity_name',
+                  'date' => 'date',
+                  'venue' => 'venue',
+                  'sdg' => 'sdgs',
+                  'participants' => 'participants',
+                  'budget' => 'budget',
+                  'program' => 'program',
+                  default => $calM[2],
+                };
+                $calAnchor = 'activity-calendar-entry-'.$calM[1].'-'.$calSuffix;
+              }
+              $fieldUpdate = $fieldUpdateFor((string) ($section['key'] ?? ''), (string) ($field['key'] ?? ''));
+              $isFieldUpdated = (bool) data_get($fieldUpdate, 'is_updated', false);
+            @endphp
+            <div
+              class="{{ $readonlyItemClass }} {{ ($field['wide'] ?? false) ? 'md:col-span-2' : '' }}"
+              @if ($calAnchor !== '') id="{{ $calAnchor }}" @endif
+            >
+              <dt class="{{ $readonlyLabelClass }}">{{ $field['label'] }}
+                @if ($isFieldUpdated && $isCalendarEntry)
+                  <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                @endif
+              </dt>
               <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                 <dd class="text-sm font-semibold text-slate-900">{{ $field['value'] }}</dd>
-                @if ($isFieldUpdated)
+                @if ($isFieldUpdated && ! $isCalendarEntry)
                   <span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">Updated</span>
                 @endif
                 @if (! empty($field['action'] ?? null))
@@ -200,10 +261,13 @@
                     'fieldLabel' => $field['label'],
                     'persistedFieldReviews' => $persistedFieldReviews,
                     'persistedSectionReviews' => $persistedSectionReviews,
+                    'cardScrollId' => $calAnchor !== '' ? $calAnchor : null,
                   ])
                 @endif
               </div>
-              @if ($isFieldUpdated)
+              @if ($isFieldUpdated && $isCalendarEntry)
+                @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdate])
+              @elseif ($isFieldUpdated)
                 <p class="mt-2 text-xs text-sky-800">
                   <span class="font-semibold">Updated value:</span>
                   {{ data_get($fieldUpdate, 'old_value') ?: '—' }} → {{ data_get($fieldUpdate, 'new_value') ?: '—' }}
@@ -600,6 +664,15 @@
   }
 
   form.querySelectorAll('[data-field-review]').forEach((control) => {
+    const parentCard = control.closest('.field-review-card');
+    const requirementCard = control.closest('.requirement-review-item');
+    const anchorId = control.dataset.anchorId || '';
+    if (anchorId) {
+      const anchorTarget = parentCard || requirementCard || control;
+      if (anchorTarget && (!anchorTarget.id || anchorTarget.id === anchorId)) {
+        anchorTarget.id = anchorId;
+      }
+    }
     const noteWrap = control.querySelector('.field-review-note');
     const noteInput = control.querySelector('.field-review-note-input');
     if (noteWrap) {
@@ -656,6 +729,29 @@
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     target.classList.add('ring-2', 'ring-amber-300', 'bg-amber-50/80');
     window.setTimeout(() => target.classList.remove('ring-2', 'ring-amber-300', 'bg-amber-50/80'), 1800);
+  });
+
+  let activeUpdatedFlashTimer = null;
+  function scrollToUpdatedTarget(targetId) {
+    if (!targetId) return;
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const highlightTarget = target.closest('.field-review-card') || target.closest('.requirement-review-item') || target;
+    highlightTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    highlightTarget.classList.add('ring-2', 'ring-sky-300', 'bg-sky-50/70', 'transition');
+    if (activeUpdatedFlashTimer) {
+      window.clearTimeout(activeUpdatedFlashTimer);
+    }
+    activeUpdatedFlashTimer = window.setTimeout(() => {
+      highlightTarget.classList.remove('ring-2', 'ring-sky-300', 'bg-sky-50/70', 'transition');
+    }, 1800);
+  }
+
+  form.querySelectorAll('.updated-summary-link').forEach((action) => {
+    action.addEventListener('click', () => {
+      const targetId = action.dataset.scrollTarget || '';
+      scrollToUpdatedTarget(targetId);
+    });
   });
 
   remarks?.addEventListener('input', scheduleDraftPersist);

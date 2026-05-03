@@ -9,6 +9,7 @@ use App\Models\ActivityRequestForm;
 use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
 use App\Models\Attachment;
+use App\Models\ModuleRevisionFieldUpdate;
 use App\Models\Organization;
 use App\Models\OrganizationAdviser;
 use App\Models\OrganizationProfileRevision;
@@ -326,16 +327,44 @@ class AdminController extends Controller
             ->latest('submission_date')
             ->latest('id')
             ->paginate(10);
+        $calendarIds = $records->getCollection()->pluck('id')->all();
+        $lastResubmittedByCalendar = collect();
+        if ($calendarIds !== []) {
+            $lastResubmittedByCalendar = ModuleRevisionFieldUpdate::query()
+                ->where('reviewable_type', (new ActivityCalendar)->getMorphClass())
+                ->whereIn('reviewable_id', $calendarIds)
+                ->selectRaw('reviewable_id, MAX(resubmitted_at) as last_resubmitted_at')
+                ->groupBy('reviewable_id')
+                ->get()
+                ->keyBy('reviewable_id');
+        }
 
         return view('admin.review-index', [
             'pageTitle' => 'Activity Calendar Review',
             'pageSubtitle' => 'Monitor submitted activity calendars by organization.',
             'routeBase' => 'admin.calendars.show',
-            'rows' => $records->through(function (ActivityCalendar $record): array {
+            'rows' => $records->through(function (ActivityCalendar $record) use ($lastResubmittedByCalendar): array {
+                $agg = $lastResubmittedByCalendar->get($record->id);
+                $lastResubmittedAt = $agg && $agg->last_resubmitted_at
+                    ? Carbon::parse((string) $agg->last_resubmitted_at)
+                    : null;
+                $submittedAt = $record->submission_date
+                    ? Carbon::parse($record->submission_date->format('Y-m-d'))->startOfDay()
+                    : null;
+                $lastUpdatedAt = $lastResubmittedAt
+                    ?? $record->updated_at
+                    ?? $submittedAt
+                    ?? $record->created_at;
+
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => 'Organization Submission',
                     'submission_date' => optional($record->submission_date)->format('M d, Y') ?? 'N/A',
+                    'last_updated_date' => ManilaDateTime::formatLastUpdatedDateLine($lastUpdatedAt),
+                    'last_updated_time' => ManilaDateTime::formatLastUpdatedTimeLine($lastUpdatedAt),
+                    'last_updated' => $lastUpdatedAt
+                        ? ManilaDateTime::inManila($lastUpdatedAt)->format('M d, Y, h:i A').' PHT'
+                        : '—',
                     'status' => strtoupper((string) ($record->status ?? 'pending')),
                     'id' => $record->id,
                 ];
@@ -1315,6 +1344,7 @@ class AdminController extends Controller
             'backRoute' => route('admin.calendars.index'),
             'backLabel' => 'Back to Activity Calendars',
             'fieldUpdateDiffs' => $fieldUpdateDiffs,
+            'updatedInformationGroups' => $this->activityCalendarUpdatedInformationGroups($fieldUpdateDiffs, $calendar),
         ]);
     }
 
@@ -2239,7 +2269,20 @@ class AdminController extends Controller
 
         $recorder = app(ReviewableUpdateRecorder::class);
         $latest = $recorder->latestForReviewable($reviewable);
+        if ($latest->isNotEmpty()) {
+            $latest->loadMissing(['resubmittedBy:id,first_name,last_name']);
+        }
         $diffs = $recorder->diffMapFromLatestUpdates($latest);
+        foreach ($latest as $row) {
+            $sk = (string) $row->section_key;
+            $fk = (string) $row->field_key;
+            if (! isset($diffs[$sk][$fk])) {
+                continue;
+            }
+            $diffs[$sk][$fk]['section_key'] = $sk;
+            $diffs[$sk][$fk]['field_key'] = $fk;
+            $diffs[$sk][$fk]['resubmitted_by'] = $row->resubmittedBy?->full_name ?? 'Unknown';
+        }
         $effective = $this->resetUpdatedFieldReviewStates($stored, $diffs);
 
         return [$effective, $diffs];
@@ -2604,6 +2647,92 @@ class AdminController extends Controller
         }
 
         return $sections;
+    }
+
+    /**
+     * @param  array<string, array<string, array<string, mixed>>>  $fieldUpdateDiffs
+     * @return list<array{label: string, fields: list<array{label: string, anchor: string}>}>
+     */
+    private function activityCalendarUpdatedInformationGroups(array $fieldUpdateDiffs, ActivityCalendar $calendar): array
+    {
+        $bySection = [];
+        foreach ($fieldUpdateDiffs as $sectionKey => $fields) {
+            if (! is_array($fields) || ! str_starts_with((string) $sectionKey, 'entry_')) {
+                continue;
+            }
+            $items = [];
+            foreach ($fields as $fieldKey => $update) {
+                if (! ((bool) data_get($update, 'is_updated', false))) {
+                    continue;
+                }
+                $anchor = $this->activityCalendarReviewFieldAnchor((string) $fieldKey);
+                if ($anchor === '') {
+                    continue;
+                }
+                $items[] = [
+                    'label' => $this->activityCalendarReviewFieldLabel((string) $fieldKey),
+                    'anchor' => $anchor,
+                ];
+            }
+            if ($items !== []) {
+                $bySection[(string) $sectionKey] = $items;
+            }
+        }
+        $groups = [];
+        foreach ($calendar->entries as $index => $entry) {
+            $sk = 'entry_'.$entry->id;
+            if (! isset($bySection[$sk])) {
+                continue;
+            }
+            $num = $index + 1;
+            $actLabel = strtoupper(trim((string) ($entry->activity_name ?? '')));
+            if ($actLabel === '') {
+                $actLabel = 'ACTIVITY';
+            }
+            $groups[] = [
+                'label' => 'ACTIVITY '.$num.': '.$actLabel,
+                'fields' => $bySection[$sk],
+            ];
+        }
+
+        return $groups;
+    }
+
+    private function activityCalendarReviewFieldAnchor(string $fieldKey): string
+    {
+        if (! preg_match('/^entry_(\d+)_(.+)$/', $fieldKey, $m)) {
+            return '';
+        }
+        $suffix = match ($m[2]) {
+            'name' => 'activity_name',
+            'date' => 'date',
+            'venue' => 'venue',
+            'sdg' => 'sdgs',
+            'participants' => 'participants',
+            'budget' => 'budget',
+            'program' => 'program',
+            default => $m[2],
+        };
+
+        return 'activity-calendar-entry-'.$m[1].'-'.$suffix;
+    }
+
+    private function activityCalendarReviewFieldLabel(string $fieldKey): string
+    {
+        if (! preg_match('/^entry_\d+_(.+)$/', $fieldKey, $m)) {
+            return ucwords(str_replace('_', ' ', $fieldKey));
+        }
+
+        return match ($m[1]) {
+            'name' => 'Activity Name',
+            'date' => 'Date',
+            'venue' => 'Venue',
+            'sdg' => 'Target SDG',
+            'participants' => 'Participants',
+            'budget' => 'Estimated Budget',
+            'program' => 'Program',
+            default => ucwords(str_replace('_', ' ', $m[1])),
+        };
     }
 
     private function calendarReviewSchema(ActivityCalendar $calendar): array
