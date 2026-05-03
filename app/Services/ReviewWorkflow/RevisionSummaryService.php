@@ -68,7 +68,7 @@ class RevisionSummaryService
 
                 $note = trim((string) ($row['note'] ?? ''));
                 if ($note === '') {
-                    continue;
+                    $note = 'Revision requested.';
                 }
 
                 $fieldKeyValue = (string) $fieldKey;

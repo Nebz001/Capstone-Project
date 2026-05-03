@@ -3,18 +3,20 @@
 use App\Http\Controllers\AdminAnnouncementController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdminSubmissionController;
-use App\Http\Controllers\ApproverDashboardController;
 use App\Http\Controllers\AnnouncementDismissController;
+use App\Http\Controllers\ApproverDashboardController;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationAdviserController;
+use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationNotificationController;
 use App\Http\Controllers\OrganizationOfficerController;
 use App\Http\Controllers\OrganizationSubmittedDocumentsController;
+use App\Models\Attachment;
 use App\Models\Organization;
 use App\Models\OrganizationSubmission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::get('/', function () {
     $approvedOrganizations = Organization::query()
@@ -114,6 +116,8 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'off
         Route::post('/submitted-documents/activity-calendars/{calendar}/entry-revisions', 'submitActivityCalendarEntryRevisions')
             ->name('submitted-documents.calendars.entry-revisions.submit');
         Route::get('/submitted-documents/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('submitted-documents.proposals.show');
+        Route::get('/submitted-documents/activity-proposals/{proposal}/revise', 'showReviseActivityProposalForm')->name('submitted-documents.activity-proposals.revise');
+        Route::put('/submitted-documents/activity-proposals/{proposal}/revise', 'updateReviseActivityProposal')->name('submitted-documents.activity-proposals.revise.update');
         Route::post('/submitted-documents/activity-proposals/{proposal}/files/{key}/replace', 'replaceSubmittedActivityProposalFile')
             ->name('submitted-documents.proposals.file.replace')
             ->where('key', '[a-z_]+');
@@ -211,6 +215,9 @@ Route::prefix('approver')->name('approver.')->middleware('auth')->controller(App
     Route::get('/assignments/{step}', 'showAssignment')->name('assignments.show');
     Route::get('/assignments/{step}/proposal-files/{key}', 'streamAssignmentProposalFile')
         ->name('assignments.proposals.file')
+        ->where('key', '[a-z_]+');
+    Route::get('/assignments/{step}/proposal-files/{key}/download', 'downloadAssignmentProposalFile')
+        ->name('assignments.proposals.file.download')
         ->where('key', '[a-z_]+');
     Route::patch('/assignments/{step}', 'decide')->name('assignments.decide');
 });
@@ -324,8 +331,8 @@ Route::bind('submission', function (string $value): OrganizationSubmission {
  */
 if (app()->environment('local')) {
     Route::get('/debug-attachment/{id}', function ($id) {
-        $attachment = \App\Models\Attachment::findOrFail($id);
-        $disk = \Illuminate\Support\Facades\Storage::disk('supabase');
+        $attachment = Attachment::findOrFail($id);
+        $disk = Storage::disk('supabase');
 
         $storedPath = (string) $attachment->stored_path;
         $publicUrl = rtrim((string) env('SUPABASE_STORAGE_PUBLIC_URL'), '/')
@@ -376,11 +383,11 @@ if (app()->environment('local')) {
         }
 
         $path = 'debug/test-'.now()->format('YmdHis').'.txt';
-        $disk = \Illuminate\Support\Facades\Storage::disk('supabase');
+        $disk = Storage::disk('supabase');
 
         try {
             $disk->put($path, 'Supabase storage test '.now()->toIso8601String());
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return response()->json([
                 'ok' => false,
                 'error' => 'put() failed: '.$e->getMessage(),

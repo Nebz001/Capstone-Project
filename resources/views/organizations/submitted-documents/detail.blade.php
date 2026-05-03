@@ -63,7 +63,21 @@
     />
   @endif
 
-  @if (! empty($isResubmittedPendingReview ?? false))
+  @if (session('activity_proposal_revision_success'))
+    <x-feedback.blocked-message variant="info" :icon="false" class="mb-5">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100/90" aria-hidden="true">
+          <svg class="h-4.5 w-4.5 text-sky-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 0 1 1.06.852l-.708 2.836a.75.75 0 0 0 1.06.852l.041-.02M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <p class="font-semibold">Submission resubmitted successfully.</p>
+          <p class="mt-1 text-sm font-normal">Your updated activity proposal is now under review.</p>
+        </div>
+      </div>
+    </x-feedback.blocked-message>
+  @elseif (! empty($isResubmittedPendingReview ?? false))
     <x-feedback.blocked-message variant="info" :icon="false" class="mb-5">
       <div class="flex items-start gap-3">
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100/90" aria-hidden="true">
@@ -89,6 +103,9 @@
           @if (! empty($isActivityCalendarDetail ?? false))
             <p class="font-semibold">Activity calendar — For revision</p>
             <p class="mt-1 text-sm font-normal">SDAO requested changes. Follow each link to the field, edit the activity row, then use <span class="font-semibold">Submit Activity Calendar</span> when every flagged field has been updated.</p>
+          @elseif (! empty($isActivityProposalDetail ?? false))
+            <p class="font-semibold">Activity proposal — For revision</p>
+            <p class="mt-1 text-sm font-normal">The approver requested changes. Follow each link to the field or file, update the requested items, then submit the revised proposal for review. Use <span class="font-semibold">Address revision</span> to open the revision form.</p>
           @else
             <p class="font-semibold">Profile / Submission Information — For revision</p>
             <p class="mt-1 text-sm font-normal">SDAO has requested updates to your registration submission. Update the sections noted below and resubmit for review.</p>
@@ -102,9 +119,9 @@
             <ul class="mt-2 space-y-1.5">
               @foreach (($section['items'] ?? []) as $item)
                 <li>
-                  @if (! empty($item['target_url']))
+                  @if (! empty($item['target_url'] ?? $item['href'] ?? null))
                     <a
-                      href="{{ $item['target_url'] }}"
+                      href="{{ $item['target_url'] ?? $item['href'] }}"
                       class="inline-flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs text-yellow-950 transition hover:bg-yellow-100/70 focus:outline-none focus:ring-2 focus:ring-yellow-400/60"
                     >
                       <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
@@ -230,7 +247,10 @@
               <h3 class="mb-2 text-sm font-semibold text-slate-900">{{ $section['title'] ?? 'Details' }}</h3>
               <dl class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 @foreach (($section['rows'] ?? []) as $row)
-                  <div class="{{ $readonlyItemClass }} {{ !empty($row['wide']) || !empty($row['table']) ? 'md:col-span-2' : '' }}">
+                  <div
+                    @if (! empty($row['anchor_id'])) id="{{ $row['anchor_id'] }}" @endif
+                    class="{{ $readonlyItemClass }} {{ !empty($row['wide']) || !empty($row['table']) ? 'md:col-span-2' : '' }}"
+                  >
                     @if (! empty($row['link_url']))
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div class="min-w-0">
@@ -249,6 +269,9 @@
                     @else
                       <dt class="{{ $readonlyLabelClass }}">{{ $row['label'] }}</dt>
                       <dd class="{{ $readonlyValueClass }}">{{ $row['value'] }}</dd>
+                    @endif
+                    @if (! empty($row['revision_note']))
+                      <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word"><span class="font-semibold">Revision note:</span> {{ $row['revision_note'] }}</p>
                     @endif
                     @if (! empty($row['table']) && is_array($row['table']))
                       <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">

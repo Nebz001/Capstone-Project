@@ -56,11 +56,92 @@
       @foreach ($detailSections as $section)
         <section class="{{ ($isProposalReview ?? false) ? 'rounded-xl border border-slate-200 bg-white p-4' : '' }}" data-review-section-card="{{ ($isProposalReview ?? false) ? '1' : '0' }}" data-section-key="section_{{ $loop->index }}">
           <div class="flex items-start justify-between gap-3">
-            <h2 class="text-base font-bold text-slate-900">{{ $section['title'] }}</h2>
+            <div>
+              <h2 class="text-base font-bold text-slate-900">{{ $section['title'] }}</h2>
+              @if (! empty($section['subtitle'] ?? ''))
+                <p class="mt-1 text-xs text-slate-500">{{ $section['subtitle'] }}</p>
+              @endif
+            </div>
             @if ($isProposalReview ?? false)
               <span class="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700" data-section-status-badge="section_{{ $loop->index }}">Pending</span>
             @endif
           </div>
+          @if (($section['rows'] ?? []) === [] && ($section['title'] ?? '') === 'Submitted files')
+            <p class="mt-4 text-sm text-slate-500">No file attachments uploaded for this proposal.</p>
+          @elseif (($section['title'] ?? '') === 'Submitted files')
+            <div class="mt-4 space-y-3">
+              @foreach (($section['rows'] ?? []) as $row)
+                @if (! empty($row['file_row']))
+                  <div class="field-review-card rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div class="flex min-w-0 items-start gap-3 sm:items-center">
+                        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#003E9F]/10 text-[#003E9F]" aria-hidden="true">
+                          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 0H5.625C5.004 2.25 4.5 2.754 4.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                          </svg>
+                        </div>
+                        <div class="min-w-0">
+                          <p class="text-sm font-bold text-slate-900">{{ $row['label'] }}</p>
+                          @if (trim((string) ($row['file_name'] ?? '')) !== '')
+                            <p class="mt-0.5 truncate text-sm text-slate-700">
+                              <span class="font-semibold text-slate-800">Current file:</span>
+                              {{ $row['file_name'] }}
+                            </p>
+                          @else
+                            <p class="mt-0.5 text-sm text-slate-700">{{ $row['value'] }}</p>
+                          @endif
+                          @include('approver.partials.proposal-revision-diff', ['row' => $row])
+                        </div>
+                      </div>
+                      <div class="flex w-full min-w-0 shrink-0 flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
+                        @if (! empty($row['view_url']))
+                          <a
+                            href="{{ $row['view_url'] }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-[#003DA5] transition hover:bg-blue-50"
+                          >View file</a>
+                        @endif
+                        @if (! empty($row['download_url']))
+                          <a
+                            href="{{ $row['download_url'] }}"
+                            class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-[#003DA5] transition hover:bg-blue-50"
+                          >Download</a>
+                        @endif
+                        @if (($isProposalReview ?? false) && ($row['reviewable'] ?? true))
+                          @php
+                            $fieldKey = (string) ($row['key'] ?? '');
+                            $savedStatus = (string) ($row['review']['status'] ?? '');
+                            $fieldStatus = old("field_reviews.{$fieldKey}.status", $savedStatus === 'approved' ? 'passed' : ($savedStatus === 'revision' ? 'revision' : 'pending'));
+                            if (! in_array($fieldStatus, ['pending', 'passed', 'revision'], true)) {
+                              $fieldStatus = 'pending';
+                            }
+                            $fieldComment = old("field_reviews.{$fieldKey}.comment", $row['review']['comment'] ?? '');
+                          @endphp
+                          <div class="field-review-control min-w-0" data-field-review data-section-key="section_{{ $loop->parent->index }}" data-field-key="{{ $fieldKey }}" data-field-label="{{ $row['label'] }}">
+                            <input type="hidden" name="field_reviews[{{ $fieldKey }}][label]" value="{{ $row['label'] }}" form="proposal-field-review-form" />
+                            <div class="inline-flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="Field review for {{ $row['label'] }}">
+                              <button type="button" class="field-review-btn rounded-md px-2.5 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50 {{ $fieldStatus === 'passed' ? 'ring-2 ring-emerald-400' : '' }}" data-status-value="passed" aria-pressed="{{ $fieldStatus === 'passed' ? 'true' : 'false' }}">Passed</button>
+                              <button type="button" class="field-review-btn rounded-md px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-50 {{ $fieldStatus === 'revision' ? 'ring-2 ring-amber-400' : '' }}" data-status-value="revision" aria-pressed="{{ $fieldStatus === 'revision' ? 'true' : 'false' }}">Revision</button>
+                            </div>
+                            <input type="hidden" class="field-review-status" name="field_reviews[{{ $fieldKey }}][status]" value="{{ $fieldStatus }}" form="proposal-field-review-form" />
+                            <div class="field-review-note mt-2 w-full min-w-0 sm:min-w-[18rem] {{ $fieldStatus === 'revision' ? '' : 'hidden' }}">
+                              <x-forms.textarea class="field-review-note-input" name="field_reviews[{{ $fieldKey }}][comment]" form="proposal-field-review-form" :rows="2" placeholder="Add revision note for this field...">{{ $fieldComment }}</x-forms.textarea>
+                              <p class="mt-1 text-xs text-slate-500">Required when this field needs revision.</p>
+                              <p class="field-review-note-error mt-1 hidden text-xs font-medium text-rose-700">Revision note is required.</p>
+                            </div>
+                            @error("field_reviews.{$fieldKey}.comment")
+                              <p class="mt-2 text-xs font-medium text-rose-600">{{ $message }}</p>
+                            @enderror
+                          </div>
+                        @endif
+                      </div>
+                    </div>
+                  </div>
+                @endif
+              @endforeach
+            </div>
+          @else
           <dl class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             @foreach (($section['rows'] ?? []) as $row)
               <div class="field-review-card rounded-xl border border-slate-200 bg-slate-50/90 p-4 {{ !empty($row['table']) || ($row['wide'] ?? false) ? 'md:col-span-2' : '' }}">
@@ -98,8 +179,9 @@
                         <span class="ml-1 text-slate-400" aria-hidden="true">↗</span>
                       </a>
                     @endif
+                    @include('approver.partials.proposal-revision-diff', ['row' => $row])
                   </div>
-                @if ($isProposalReview ?? false)
+                @if (($isProposalReview ?? false) && ($row['reviewable'] ?? true))
                   @php
                     $fieldKey = (string) ($row['key'] ?? '');
                     $savedStatus = (string) ($row['review']['status'] ?? '');
@@ -130,6 +212,7 @@
               </div>
             @endforeach
           </dl>
+          @endif
         </section>
       @endforeach
     </div>
@@ -190,35 +273,80 @@
       $submittedByLabel = (string) ($details['Submitted By'] ?? 'System');
       $submittedOnLabel = (string) ($details['Submitted On'] ?? '—');
       $selectedStageId = old('workflow_stage_id', 'submitted');
-      $workflowStageNodes = [[
-        'id' => 'submitted',
-        'label' => 'Submitted',
-        'status' => 'SUBMITTED',
-        'reviewer' => $submittedByLabel,
-        'acted_at' => $submittedOnLabel,
-        'is_current' => false,
-        'state' => 'completed',
-        'step_order' => 0,
-      ]];
-      foreach ($workflowSteps as $step) {
-        $statusText = strtoupper((string) $step->status);
-        $isCurrent = (bool) $step->is_current_step;
-        $state = match ($statusText) {
-          'APPROVED' => 'completed',
-          'REJECTED' => 'danger',
-          'REVISION_REQUIRED' => 'warning',
-          default => ($isCurrent ? 'current' : 'pending'),
-        };
-        $workflowStageNodes[] = [
-          'id' => 'step_'.$step->id,
-          'label' => (string) ($step->role?->display_name ?? $step->role?->name ?? ('Step #'.$step->step_order)),
-          'status' => $statusText !== '' ? $statusText : 'PENDING',
-          'reviewer' => (string) ($step->assignedTo?->full_name ?? '—'),
-          'acted_at' => (string) (optional($step->acted_at)->format('M d, Y g:i A') ?? '—'),
-          'is_current' => $isCurrent,
-          'state' => $state,
-          'step_order' => (int) $step->step_order,
-        ];
+      $approvableModel = $workflowCurrentStep->approvable ?? null;
+
+      if ($approvableModel instanceof \App\Models\ActivityProposal) {
+        $proposalStages = \App\Support\SubmissionRoutingProgress::stagesForActivityProposal($approvableModel);
+        $workflowStageNodes = [];
+        foreach ($proposalStages as $idx => $stage) {
+          $state = (string) ($stage['state'] ?? 'pending');
+          $label = (string) ($stage['label'] ?? '—');
+          if ($idx === 0) {
+            $workflowStageNodes[] = [
+              'id' => 'submitted',
+              'label' => $label,
+              'status' => 'SUBMITTED',
+              'reviewer' => $submittedByLabel,
+              'acted_at' => $submittedOnLabel,
+              'is_current' => $state === 'current',
+              'state' => $state,
+              'step_order' => 0,
+            ];
+            continue;
+          }
+          $stepRow = $workflowSteps->first(fn ($s) => (int) $s->step_order === $idx);
+          $statusText = $stepRow
+            ? (strtoupper((string) $stepRow->status) ?: 'PENDING')
+            : match ($state) {
+              'success' => 'APPROVED',
+              'danger' => 'REJECTED',
+              'warning' => 'REVISION_REQUIRED',
+              'completed' => 'APPROVED',
+              'current' => 'PENDING',
+              default => 'PENDING',
+            };
+          $workflowStageNodes[] = [
+            'id' => $stepRow ? 'step_'.$stepRow->id : ('canonical_'.$idx),
+            'label' => $label,
+            'status' => $statusText,
+            'reviewer' => $stepRow ? (string) ($stepRow->assignedTo?->full_name ?? '—') : '—',
+            'acted_at' => $stepRow ? (string) (optional($stepRow->acted_at)->format('M d, Y g:i A') ?? '—') : '—',
+            'is_current' => $state === 'current',
+            'state' => $state,
+            'step_order' => $idx,
+          ];
+        }
+      } else {
+        $workflowStageNodes = [[
+          'id' => 'submitted',
+          'label' => 'Submitted',
+          'status' => 'SUBMITTED',
+          'reviewer' => $submittedByLabel,
+          'acted_at' => $submittedOnLabel,
+          'is_current' => false,
+          'state' => 'completed',
+          'step_order' => 0,
+        ]];
+        foreach ($workflowSteps as $step) {
+          $statusText = strtoupper((string) $step->status);
+          $isCurrent = (bool) $step->is_current_step;
+          $state = match ($statusText) {
+            'APPROVED' => 'completed',
+            'REJECTED' => 'danger',
+            'REVISION_REQUIRED' => 'warning',
+            default => ($isCurrent ? 'current' : 'pending'),
+          };
+          $workflowStageNodes[] = [
+            'id' => 'step_'.$step->id,
+            'label' => (string) ($step->role?->display_name ?? $step->role?->name ?? ('Step #'.$step->step_order)),
+            'status' => $statusText !== '' ? $statusText : 'PENDING',
+            'reviewer' => (string) ($step->assignedTo?->full_name ?? '—'),
+            'acted_at' => (string) (optional($step->acted_at)->format('M d, Y g:i A') ?? '—'),
+            'is_current' => $isCurrent,
+            'state' => $state,
+            'step_order' => (int) $step->step_order,
+          ];
+        }
       }
       $hasCurrent = collect($workflowStageNodes)->contains(fn ($node) => $node['is_current']);
       if (! collect($workflowStageNodes)->contains(fn ($node) => $node['id'] === $selectedStageId)) {
@@ -235,13 +363,13 @@
             $nodeState = (string) $node['state'];
             $isSelected = $selectedStageId === $node['id'];
             $circleClass = match ($nodeState) {
-              'completed' => 'border-emerald-500 bg-emerald-500 text-white',
+              'completed', 'success' => 'border-emerald-500 bg-emerald-500 text-white',
               'current' => 'border-[#003E9F] bg-[#003E9F]/10 text-[#003E9F]',
               'warning' => 'border-orange-400 bg-orange-50 text-orange-700',
               'danger' => 'border-rose-400 bg-rose-50 text-rose-700',
               default => 'border-slate-300 bg-slate-50 text-slate-500',
             };
-            $lineClass = in_array($nodeState, ['completed', 'current'], true) ? 'bg-emerald-300' : 'bg-slate-200';
+            $lineClass = in_array($nodeState, ['completed', 'current', 'success'], true) ? 'bg-emerald-300' : 'bg-slate-200';
           @endphp
           <div class="flex min-w-0 flex-1 flex-col items-center px-1">
             <button
@@ -251,7 +379,7 @@
               aria-pressed="{{ $isSelected ? 'true' : 'false' }}"
             >
               <span class="flex h-9 w-9 items-center justify-center rounded-full border text-xs font-bold shadow-sm transition {{ $circleClass }} {{ $isSelected ? 'ring-2 ring-[#003E9F]/25' : '' }}">
-                @if ($nodeState === 'completed')
+                @if ($nodeState === 'completed' || $nodeState === 'success')
                   ✓
                 @elseif ($nodeState === 'current')
                   <span class="h-2.5 w-2.5 rounded-full bg-[#003E9F]"></span>

@@ -5,7 +5,7 @@ namespace App\Support;
 use App\Models\ActivityProposal;
 
 /**
- * Builds approval-routing step lists for RSO-facing progress UI.
+ * Builds approval-routing step lists for activity proposals (RSO progress + approver workflow UI).
  * Flows follow NU Lipa SDAO conventions: 3-step (SDAO pipeline) vs 8-step (activity proposal).
  */
 final class SubmissionRoutingProgress

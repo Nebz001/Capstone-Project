@@ -4,16 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
-use App\Models\ActivityRequestForm;
 use App\Models\ActivityReport;
-use App\Models\Attachment;
+use App\Models\ActivityRequestForm;
 use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
+use App\Models\Attachment;
 use App\Models\Notification;
 use App\Models\OrganizationSubmission;
 use App\Models\ProposalFieldReview;
 use App\Models\User;
 use App\Services\OrganizationNotificationService;
+use App\Services\ReviewWorkflow\ActivityProposalAdminFieldReviewSync;
+use App\Services\ReviewWorkflow\ReviewableUpdateRecorder;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -26,7 +28,6 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ApproverDashboardController extends Controller
 {
@@ -224,8 +225,8 @@ class ApproverDashboardController extends Controller
             abort(404);
         }
 
-        $relativePath = trim($relativePath);
-        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+        $relativePath = $this->normalizeStoredPublicPathApprover($relativePath) ?? '';
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
             abort(404);
         }
 
@@ -275,6 +276,46 @@ class ApproverDashboardController extends Controller
         abort(404, 'The file could not be found in Supabase Storage.');
     }
 
+    public function downloadAssignmentProposalFile(Request $request, ApprovalWorkflowStep $step, string $key): Response
+    {
+        $user = $this->requireApprover($request);
+        $step = $this->resolveAuthorizedCurrentStep($step, $user);
+        $approvable = $step->approvable;
+        if (! $approvable instanceof ActivityProposal) {
+            abort(404);
+        }
+
+        $proposal = $approvable;
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        [$attachment, $relativePath] = $this->proposalReviewAttachmentAndNormalizedPath($proposal, $requestForm, $key);
+        if (! is_string($relativePath) || $relativePath === '') {
+            abort(404);
+        }
+
+        $downloadName = trim((string) ($attachment?->original_name ?? ''));
+        if ($downloadName === '') {
+            $downloadName = basename($relativePath);
+        }
+        $mime = $attachment && $attachment->mime_type ? (string) $attachment->mime_type : null;
+
+        Log::info('Approver: activity proposal file download attempt', [
+            'proposal_id' => $proposal->id,
+            'key' => $key,
+            'stored_path' => $relativePath,
+        ]);
+
+        return $this->redirectApproverProposalAttachmentDownload(
+            $relativePath,
+            $downloadName,
+            $mime,
+            [
+                'proposal_id' => $proposal->id,
+                'key' => $key,
+                'download' => true,
+            ]
+        );
+    }
+
     public function decide(Request $request, ApprovalWorkflowStep $step): RedirectResponse
     {
         $user = $this->requireApprover($request);
@@ -296,6 +337,7 @@ class ApproverDashboardController extends Controller
             $detailSnapshot = $this->buildReviewDetails($approvable, $currentStep);
             $reviewableKeys = collect((array) ($detailSnapshot['detail_sections'] ?? []))
                 ->flatMap(fn (array $section): array => (array) ($section['rows'] ?? []))
+                ->filter(fn (array $row): bool => (bool) ($row['reviewable'] ?? true))
                 ->map(fn (array $row): string => (string) ($row['key'] ?? ''))
                 ->filter(fn (string $key): bool => $key !== '')
                 ->values()
@@ -418,6 +460,12 @@ class ApproverDashboardController extends Controller
                 if ($comments === '' && $action !== 'approve') {
                     $comments = 'Field-level review marked this proposal for '.$action.'.';
                 }
+
+                app(ActivityProposalAdminFieldReviewSync::class)->syncFromProposalFieldReviews(
+                    $approvable,
+                    $persistedReviews,
+                    $reviewableKeys,
+                );
             }
 
             $toStatus = $fromStatus;
@@ -667,8 +715,18 @@ class ApproverDashboardController extends Controller
             $base['Venue'] = $approvable->venue ?? 'N/A';
 
             $step1Rows = [
-                ['key' => 'step1_proposal_option', 'label' => 'Proposal Option', 'value' => $approvable->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar'],
-                ['key' => 'step1_rso_name', 'label' => 'RSO Name', 'value' => $requestForm?->rso_name ?: ($approvable->organization?->organization_name ?? '—')],
+                [
+                    'key' => 'step1_proposal_option',
+                    'label' => 'Proposal Option',
+                    'value' => $approvable->activity_calendar_entry_id ? 'From submitted Activity Calendar' : 'Activity not in submitted calendar',
+                    'reviewable' => false,
+                ],
+                [
+                    'key' => 'step1_rso_name',
+                    'label' => 'RSO Name',
+                    'value' => $requestForm?->rso_name ?: ($approvable->organization?->organization_name ?? '—'),
+                    'reviewable' => false,
+                ],
                 ['key' => 'step1_activity_title', 'label' => 'Title of Activity', 'value' => $requestForm?->activity_title ?: '—'],
                 ['key' => 'step1_partner_entities', 'label' => 'Partner Entities', 'value' => $requestForm?->partner_entities ?: '—'],
                 ['key' => 'step1_nature_of_activity', 'label' => 'Nature of Activity', 'value' => $this->requestFormOptionsLabel((array) ($requestForm?->nature_of_activity ?? []), $requestForm?->nature_other)],
@@ -687,9 +745,18 @@ class ApproverDashboardController extends Controller
             }
 
             $step2Rows = [
-                ['key' => 'step2_organization_logo', 'label' => 'Organization Logo', 'value' => $this->proposalReviewFilePathByKey($approvable, $requestForm, 'organization_logo') ? 'Submitted file attached.' : '—', 'link_url' => $this->proposalReviewFilePathByKey($approvable, $requestForm, 'organization_logo') ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => 'organization_logo']) : null],
-                ['key' => 'step2_organization', 'label' => 'Organization (Form)', 'value' => $approvable->organization?->organization_name ?: '—'],
-                ['key' => 'step2_academic_year', 'label' => 'Academic Year', 'value' => $approvable->academicTerm?->academic_year ?: '—'],
+                [
+                    'key' => 'step2_organization',
+                    'label' => 'RSO Name',
+                    'value' => $approvable->organization?->organization_name ?: '—',
+                    'reviewable' => false,
+                ],
+                [
+                    'key' => 'step2_academic_year',
+                    'label' => 'Academic Year',
+                    'value' => $approvable->academicTerm?->academic_year ?: '—',
+                    'reviewable' => false,
+                ],
                 ['key' => 'step2_department', 'label' => 'Department', 'value' => $department !== '' ? $department : '—'],
                 ['key' => 'step2_program', 'label' => 'Program', 'value' => $approvable->program ?: '—'],
                 ['key' => 'step2_activity_title', 'label' => 'Project / Activity Title', 'value' => $approvable->activity_title ?: '—'],
@@ -711,6 +778,7 @@ class ApproverDashboardController extends Controller
                     'value' => $budgetRows->count() > 0 ? ('Rows: '.$budgetRows->count().' · Total: '.number_format((float) $budgetRowsTotal, 2)) : 'No rows submitted.',
                     'table' => $budgetRows->map(function ($row): array {
                         $material = trim((string) ($row->item_description ?? $row->particulars ?? ''));
+
                         return [
                             'material' => $material !== '' ? $material : '—',
                             'quantity' => $row->quantity !== null ? (string) $row->quantity : '—',
@@ -720,64 +788,71 @@ class ApproverDashboardController extends Controller
                     })->all(),
                 ],
             ];
-            if ($isExternalFunding) {
-                $externalLink = $this->proposalReviewFilePathByKey($approvable, $requestForm, 'external_funding')
-                    ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => 'external_funding'])
-                    : null;
-                $step2Rows[] = [
-                    'key' => 'step2_external_funding_support',
-                    'label' => 'External Funding Support',
-                    'value' => $externalLink ? 'Submitted file attached.' : 'Missing required file.',
-                    'link_url' => $externalLink,
-                ];
-            }
-            $additionalRows = [];
-            $resourceResumeLink = $this->proposalReviewFilePathByKey($approvable, $requestForm, 'resource_resume')
-                ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => 'resource_resume'])
-                : null;
-            if ($resourceResumeLink) {
-                $additionalRows[] = [
-                    'key' => 'step2_resume_resource_persons',
-                    'label' => 'Resume of Resource Person/s',
-                    'value' => 'Submitted file attached.',
-                    'link_url' => $resourceResumeLink,
+
+            $updateRecorder = app(ReviewableUpdateRecorder::class);
+            $pendingFieldUpdates = $updateRecorder->pendingForReviewable($approvable);
+            $pendingFieldUpdates->loadMissing('resubmittedBy:id,first_name,last_name');
+            $pendingDiffBySectionKey = [];
+            foreach ($pendingFieldUpdates as $upd) {
+                $pendingDiffBySectionKey[(string) $upd->section_key][(string) $upd->field_key] = [
+                    'is_updated' => true,
+                    'old_value' => $upd->old_value,
+                    'new_value' => $upd->new_value,
+                    'old_file_meta' => is_array($upd->old_file_meta) ? $upd->old_file_meta : null,
+                    'new_file_meta' => is_array($upd->new_file_meta) ? $upd->new_file_meta : null,
+                    'resubmitted_at' => $upd->resubmitted_at,
+                    'resubmitted_by_name' => $upd->resubmittedBy?->full_name ?? '—',
                 ];
             }
 
-            $mapReview = function (array $row) use ($existingFieldReviews): array {
+            $attachPendingOfficerDiff = function (array $row) use ($pendingDiffBySectionKey): array {
+                $key = (string) ($row['key'] ?? '');
+                $section = ActivityProposalAdminFieldReviewSync::adminSectionForFieldKey($key);
+                if ($section === null) {
+                    return $row;
+                }
+                $cell = $pendingDiffBySectionKey[$section][$key] ?? null;
+                if (! is_array($cell)) {
+                    return $row;
+                }
+                $row['revision_diff'] = $cell;
+
+                return $row;
+            };
+
+            $mapReview = function (array $row) use ($existingFieldReviews, $attachPendingOfficerDiff): array {
                 $review = $existingFieldReviews->get($row['key']);
                 $row['review'] = [
                     'status' => (string) ($review?->status ?? ''),
                     'comment' => (string) ($review?->comment ?? ''),
                 ];
 
-                return $row;
+                return $attachPendingOfficerDiff($row);
             };
             $step1Rows = array_map($mapReview, $step1Rows);
             $step2Rows = array_map($mapReview, $step2Rows);
-            $step1AttachmentRows = [];
-            foreach ([
-                ['key' => 'request_letter', 'label' => 'Upload Request Letter'],
-                ['key' => 'speaker_resume', 'label' => 'Resume of Speaker'],
-                ['key' => 'post_survey_form', 'label' => 'Sample Post-Survey Form'],
-            ] as $item) {
-                $url = $this->proposalReviewFilePathByKey($approvable, $requestForm, $item['key']) !== null
-                    ? route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => $item['key']])
-                    : null;
-                if (! $url) {
-                    continue;
-                }
-                $step1AttachmentRows[] = $mapReview([
-                    'key' => 'step1_'.$item['key'],
-                    'label' => $item['label'],
-                    'value' => 'Submitted file attached.',
-                    'link_url' => $url,
-                ]);
-            }
-            $additionalRows = array_map($mapReview, $additionalRows);
 
-            $reviewableKeys = collect([$step1Rows, $step1AttachmentRows, $step2Rows, $additionalRows])
-                ->flatten(1)
+            $submittedFileRows = $this->buildApproverProposalSubmittedFileRows(
+                $approvable,
+                $requestForm,
+                $step,
+                $mapReview,
+                $isExternalFunding
+            );
+
+            $detailSections = [
+                ['title' => 'Step 1: Activity Request Form', 'rows' => $step1Rows],
+                ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
+                [
+                    'title' => 'Submitted files',
+                    'subtitle' => 'Open or download documents uploaded for this proposal.',
+                    'rows' => $submittedFileRows,
+                ],
+            ];
+
+            $reviewableKeys = collect($detailSections)
+                ->flatMap(fn (array $section): array => (array) ($section['rows'] ?? []))
+                ->filter(fn (array $row): bool => (bool) ($row['reviewable'] ?? true))
                 ->map(fn (array $row): string => (string) ($row['key'] ?? ''))
                 ->filter(fn (string $key): bool => $key !== '')
                 ->values()
@@ -787,11 +862,7 @@ class ApproverDashboardController extends Controller
             return [
                 'page_title' => $this->resolveDocumentType($approvable)['label'].' Review',
                 'details' => $base,
-                'detail_sections' => [
-                    ['title' => 'Step 1: Activity Request Form', 'rows' => array_merge($step1Rows, $step1AttachmentRows)],
-                    ['title' => 'Step 2: Proposal Submission', 'rows' => $step2Rows],
-                    ...($additionalRows !== [] ? [['title' => 'Additional', 'rows' => $additionalRows]] : []),
-                ],
+                'detail_sections' => $detailSections,
                 'proposal_file_links' => [],
                 'is_proposal_review' => true,
                 'scoped_status' => $stageStatus,
@@ -858,6 +929,211 @@ class ApproverDashboardController extends Controller
             ->latest('promoted_at')
             ->latest('id')
             ->first();
+    }
+
+    /**
+     * @param  callable(array): array  $mapReview
+     * @return list<array<string, mixed>>
+     */
+    private function buildApproverProposalSubmittedFileRows(
+        ActivityProposal $proposal,
+        ?ActivityRequestForm $requestForm,
+        ApprovalWorkflowStep $step,
+        callable $mapReview,
+        bool $isExternalFunding
+    ): array {
+        $rows = [];
+        $pushFile = function (
+            string $reviewFieldKey,
+            string $label,
+            string $routeKey,
+            bool $includeWhenNoFile = false
+        ) use (&$rows, $proposal, $requestForm, $step, $mapReview): void {
+            [$attachment, $path] = $this->proposalReviewAttachmentAndNormalizedPath($proposal, $requestForm, $routeKey);
+            if ($path === null || $path === '') {
+                if (! $includeWhenNoFile) {
+                    return;
+                }
+                $rows[] = $mapReview([
+                    'key' => $reviewFieldKey,
+                    'label' => $label,
+                    'value' => 'No file uploaded.',
+                    'file_row' => true,
+                    'file_name' => '',
+                    'view_url' => null,
+                    'download_url' => null,
+                    'reviewable' => true,
+                ]);
+
+                return;
+            }
+            $displayName = trim((string) ($attachment?->original_name ?? ''));
+            if ($displayName === '') {
+                $displayName = basename($path);
+            }
+            $rows[] = $mapReview([
+                'key' => $reviewFieldKey,
+                'label' => $label,
+                'value' => 'Current file: '.$displayName,
+                'file_row' => true,
+                'file_name' => $displayName,
+                'view_url' => route('approver.assignments.proposals.file', ['step' => $step->id, 'key' => $routeKey]),
+                'download_url' => route('approver.assignments.proposals.file.download', ['step' => $step->id, 'key' => $routeKey]),
+                'reviewable' => true,
+            ]);
+        };
+
+        $pushFile('step1_request_letter', 'Request letter', 'request_letter');
+        $pushFile('step1_speaker_resume', 'Resume of speaker', 'speaker_resume');
+        $pushFile('step1_post_survey_form', 'Sample post-survey form', 'post_survey_form');
+        $pushFile('step2_organization_logo', 'Organization logo', 'organization_logo');
+
+        if ($isExternalFunding) {
+            $pushFile('step2_external_funding_support', 'External funding support', 'external_funding', true);
+        }
+
+        $pushFile('step2_resume_resource_persons', 'Resume of resource person/s', 'resource_resume');
+
+        return $rows;
+    }
+
+    private function proposalReviewAttachmentByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?Attachment
+    {
+        $proposalType = match ($key) {
+            'organization_logo' => Attachment::TYPE_PROPOSAL_LOGO,
+            'resource_resume' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME,
+            'external_funding' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING,
+            default => null,
+        };
+        if ($proposalType !== null) {
+            return $proposal->attachments()
+                ->where('file_type', $proposalType)
+                ->latest('id')
+                ->first();
+        }
+
+        if ($requestForm) {
+            $requestType = match ($key) {
+                'request_letter' => Attachment::TYPE_REQUEST_LETTER,
+                'speaker_resume' => Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+                'post_survey_form' => Attachment::TYPE_REQUEST_POST_SURVEY,
+                default => null,
+            };
+            if ($requestType !== null) {
+                return $requestForm->attachments()
+                    ->where('file_type', $requestType)
+                    ->latest('id')
+                    ->first();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{0: ?Attachment, 1: ?string}
+     */
+    private function proposalReviewAttachmentAndNormalizedPath(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): array
+    {
+        $attachment = $this->proposalReviewAttachmentByKey($proposal, $requestForm, $key);
+        if ($attachment && is_string($attachment->stored_path) && trim($attachment->stored_path) !== '') {
+            $normalized = $this->normalizeStoredPublicPathApprover(trim($attachment->stored_path));
+
+            return [$attachment, $normalized];
+        }
+
+        $legacy = $this->proposalReviewFilePathByKey($proposal, $requestForm, $key);
+        $normalized = $this->normalizeStoredPublicPathApprover($legacy ?? '');
+
+        return [null, ($normalized !== null && $normalized !== '') ? $normalized : null];
+    }
+
+    private function normalizeStoredPublicPathApprover(?string $rawPath): ?string
+    {
+        if (! is_string($rawPath)) {
+            return null;
+        }
+
+        $path = trim($rawPath);
+        if ($path === '') {
+            return null;
+        }
+
+        if (filter_var($path, FILTER_VALIDATE_URL)) {
+            $parsedPath = parse_url($path, PHP_URL_PATH);
+            if (is_string($parsedPath) && $parsedPath !== '') {
+                $path = $parsedPath;
+            }
+        }
+
+        $path = str_replace('\\', '/', $path);
+        if (str_starts_with($path, '/storage/')) {
+            $path = substr($path, strlen('/storage/'));
+        } elseif (str_starts_with($path, 'storage/')) {
+            $path = substr($path, strlen('storage/'));
+        }
+        $path = ltrim($path, '/');
+
+        return $path !== '' ? $path : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $logContext
+     */
+    private function redirectApproverProposalAttachmentDownload(
+        string $relativePath,
+        string $downloadFilename,
+        ?string $mimeType,
+        array $logContext = []
+    ): Response {
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('supabase');
+        $existsInSupabase = false;
+
+        try {
+            $existsInSupabase = $disk->exists($relativePath);
+        } catch (\Throwable $e) {
+            Log::warning('Approver attachment exists() check failed on Supabase.', array_merge($logContext, [
+                'stored_path' => $relativePath,
+                'error' => $e->getMessage(),
+            ]));
+        }
+
+        $safeFilename = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $downloadFilename);
+        if ($safeFilename === '') {
+            $safeFilename = basename($relativePath);
+        }
+        $resolvedMime = ($mimeType !== null && trim($mimeType) !== '') ? trim($mimeType) : 'application/octet-stream';
+
+        if ($existsInSupabase) {
+            try {
+                $temporaryUrl = $disk->temporaryUrl($relativePath, now()->addMinutes(15), [
+                    'ResponseContentDisposition' => 'attachment; filename="'.$safeFilename.'"',
+                    'ResponseContentType' => $resolvedMime,
+                ]);
+
+                Log::info('Approver attachment download via Supabase signed URL.', array_merge($logContext, [
+                    'stored_path' => $relativePath,
+                ]));
+
+                return redirect()->away($temporaryUrl);
+            } catch (\Throwable $e) {
+                Log::warning('Approver: failed to generate Supabase temporaryUrl for download.', array_merge($logContext, [
+                    'stored_path' => $relativePath,
+                    'error' => $e->getMessage(),
+                ]));
+            }
+        }
+
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            return $publicDisk->download($relativePath, $safeFilename);
+        }
+
+        abort(404, 'The file could not be found in Supabase Storage.');
     }
 
     private function proposalReviewFilePathByKey(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $key): ?string
@@ -1107,4 +1383,3 @@ class ApproverDashboardController extends Controller
         };
     }
 }
-

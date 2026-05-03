@@ -11,6 +11,7 @@ class ActivityRequestForm extends Model
     protected $fillable = [
         'organization_id',
         'submitted_by',
+        'rso_name',
         'activity_calendar_entry_id',
         'promoted_to_proposal_id',
         'promoted_at',

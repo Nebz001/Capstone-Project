@@ -1152,7 +1152,7 @@ class OrganizationController extends Controller
         if (in_array($statusUpper, ['REVISION', 'REVISION_REQUIRED'], true)) {
             $primaryAction = [
                 'label' => 'Address revision',
-                'href' => route('organizations.activity-proposal-submission'),
+                'href' => route('organizations.submitted-documents.activity-proposals.revise', $proposal),
             ];
         } elseif ($statusUpper === 'DRAFT') {
             $primaryAction = [

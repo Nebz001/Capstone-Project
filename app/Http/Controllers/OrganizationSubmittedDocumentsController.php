@@ -7,6 +7,7 @@ use App\Models\ActivityCalendarEntry;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
 use App\Models\ActivityRequestForm;
+use App\Models\ApprovalLog;
 use App\Models\Attachment;
 use App\Models\ModuleRevisionFieldUpdate;
 use App\Models\Organization;
@@ -16,10 +17,13 @@ use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\OrganizationRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
+use App\Models\ProposalFieldReview;
+use App\Models\ProposalBudgetItem;
 use App\Models\SubmissionRequirement;
 use App\Models\User;
 use App\Services\OrganizationNotificationService;
 use App\Services\OrganizationRegistrationRevisionSummaryService;
+use App\Services\ReviewWorkflow\ActivityProposalAdminFieldReviewSync;
 use App\Services\ReviewWorkflow\ReviewableUpdateRecorder;
 use App\Services\ReviewWorkflow\RevisionSummaryService;
 use App\Support\ManilaDateTime;
@@ -39,7 +43,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -159,6 +165,34 @@ class OrganizationSubmittedDocumentsController extends Controller
             'attachable' => 'proposal',
             'label' => 'Resume of resource person/s',
         ],
+    ];
+
+    /**
+     * Step 1 request form: option keys (labels rendered in the revise blade).
+     *
+     * @var list<string>
+     */
+    private const ACTIVITY_REQUEST_NATURE_OPTION_KEYS = [
+        'co_curricular',
+        'non_curricular',
+        'community_extension',
+        'others',
+    ];
+
+    /**
+     * @var list<string>
+     */
+    private const ACTIVITY_REQUEST_TYPE_OPTION_KEYS = [
+        'seminar_workshop',
+        'general_assembly',
+        'orientation',
+        'competition',
+        'recruitment_audition',
+        'donation_drive_fundraising',
+        'outreach_donation',
+        'fundraising_activity',
+        'off_campus_activity',
+        'others',
     ];
 
     /**
@@ -1272,6 +1306,16 @@ class OrganizationSubmittedDocumentsController extends Controller
             $pendingItemSet,
         );
         $revisionSections = $revisionSummary['groups'];
+        foreach ($revisionSections as $gi => $group) {
+            $sectionKey = (string) ($group['section_key'] ?? '');
+            foreach (($group['items'] ?? []) as $ii => $item) {
+                $fieldKey = (string) ($item['field_key'] ?? '');
+                $anchorId = $this->proposalDetailRevisionAnchorId($sectionKey, $fieldKey);
+                $revisionSections[$gi]['items'][$ii]['anchor_id'] = $anchorId;
+                $revisionSections[$gi]['items'][$ii]['target_url'] = $this->activityProposalSubmittedDetailUrl($request, $proposal).'#'.$anchorId;
+            }
+        }
+        $revisionSections = $this->regroupActivityProposalRevisionSummarySections($revisionSections);
         $hasOpenRevisionItems = $revisionSections !== [];
         $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingItemSet !== [];
 
@@ -1370,6 +1414,8 @@ class OrganizationSubmittedDocumentsController extends Controller
             ]);
         }
 
+        $step1Rows = $this->attachProposalMetaRevisionNotes($step1Rows, $proposalFieldReviews, $pendingItemSet);
+
         $step1AttachmentRows = [];
         if (isset($resolvedFilePaths['request_letter'])) {
             $step1AttachmentRows[] = [
@@ -1401,6 +1447,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'link_url' => $fileUrls['post_survey_form'] ?? null,
             ];
         }
+
+        $step1AttachmentRows = $this->attachProposalMetaRevisionNotes($step1AttachmentRows, $proposalFieldReviews, $pendingItemSet);
 
         $budgetRows = $proposal->budgetItems->values();
         $budgetRowsTotal = $budgetRows->sum(fn ($row) => (float) ($row->total_cost ?? 0));
@@ -1460,6 +1508,8 @@ class OrganizationSubmittedDocumentsController extends Controller
             ];
         }
 
+        $step2Rows = $this->attachProposalMetaRevisionNotes($step2Rows, $proposalFieldReviews, $pendingItemSet);
+
         $additionalRows = [];
         if (isset($resolvedFilePaths['resume'])) {
             $additionalRows[] = [
@@ -1469,6 +1519,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'link_url' => $fileUrls['resume'] ?? null,
             ];
         }
+
+        $additionalRows = $this->attachProposalMetaRevisionNotes($additionalRows, $proposalFieldReviews, $pendingItemSet);
 
         /*
          * Build the rich file row shape the officer detail blade expects:
@@ -1489,7 +1541,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 continue;
             }
             $note = trim((string) ($row['note'] ?? ''));
-            $proposalFlaggedNotesByOfficerKey[$officerKey] = $note !== '' ? $note : null;
+            $proposalFlaggedNotesByOfficerKey[$officerKey] = $note !== '' ? $note : 'Revision requested.';
         }
 
         $savedUpdatedKeys = ModuleRevisionFieldUpdate::query()
@@ -1555,9 +1607,14 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'key' => $officerKey,
                 'previous_file_name' => $displayName,
                 'file_badge_label' => $fileBadge,
-                'anchor_id' => $officerKey ? $this->revisionTargetAnchorId('requirements', $officerKey) : '',
+                'anchor_id' => $officerKey
+                    ? $this->proposalDetailRevisionAnchorId(
+                        self::PROPOSAL_FILE_KEY_MAP[$officerKey]['section_key'],
+                        self::PROPOSAL_FILE_KEY_MAP[$officerKey]['field_key'],
+                    )
+                    : '',
                 'is_revised' => $isFlagged,
-                'revision_note' => $canReplace ? ($proposalFlaggedNotesByOfficerKey[$officerKey] ?? null) : null,
+                'revision_note' => $canReplace ? ($proposalFlaggedNotesByOfficerKey[$officerKey] ?? 'Revision requested.') : null,
                 'can_replace' => $canReplace,
                 'replace_url' => $canReplace
                     ? route('organizations.submitted-documents.proposals.file.replace', ['proposal' => $proposal, 'key' => $officerKey])
@@ -1574,6 +1631,8 @@ class OrganizationSubmittedDocumentsController extends Controller
         if ($additionalRows !== []) {
             $metaSections[] = ['title' => 'Additional', 'rows' => $additionalRows];
         }
+
+        $this->stripActivityProposalMetaRowAnchorsForOfficerFiles($metaSections);
 
         $nav = $this->detailBackNavigation($request);
 
@@ -1599,7 +1658,1108 @@ class OrganizationSubmittedDocumentsController extends Controller
             'progressDocumentLabel' => 'Activity proposal',
             'progressStages' => SubmissionRoutingProgress::stagesForActivityProposal($proposal),
             'progressSummary' => SubmissionRoutingProgress::summaryForActivityProposal($proposal->status),
+            'isActivityProposalDetail' => true,
+            'activityProposalRevisionSuccess' => $request->session()->get('activity_proposal_revision_success'),
         ]);
+    }
+
+    public function showReviseActivityProposalForm(Request $request, ActivityProposal $proposal): View|RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
+        if (! $this->activityProposalIsOpenForOfficerRevision($proposal)) {
+            return redirect()->to($this->activityProposalSubmittedDetailUrl($request, $proposal));
+        }
+        $proposal->load(['calendar', 'calendarEntry', 'academicTerm', 'organization', 'budgetItems', 'workflowSteps']);
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $items = $this->activeActivityProposalRevisionItems($proposal);
+        if ($items === []) {
+            return redirect()
+                ->to($this->activityProposalSubmittedDetailUrl($request, $proposal))
+                ->with('error', 'No active revision requests were found for this proposal.');
+        }
+
+        $items = array_map(function (array $item) use ($proposal, $requestForm): array {
+            if (($item['kind'] ?? '') === 'file') {
+                $ok = (string) ($item['officer_file_key'] ?? '');
+                $item['file_view_url'] = route('organizations.submitted-documents.proposals.file', ['proposal' => $proposal, 'key' => $ok]);
+                $item['file_download_url'] = route('organizations.submitted-documents.proposals.file.download', ['proposal' => $proposal, 'key' => $ok]);
+                [$att] = $this->resolveActivityProposalFileAttachmentAndPath($proposal, $requestForm, $ok);
+                $dn = $att ? trim((string) ($att->original_name ?? '')) : '';
+                $item['current_file_name'] = $dn !== '' ? $dn : 'Uploaded file';
+
+                return $item;
+            }
+            $item['current_display'] = $this->proposalRevisionFieldCurrentDisplay($proposal, $requestForm, (string) ($item['field_key'] ?? ''));
+
+            return $item;
+        }, $items);
+
+        $detailUrl = $this->activityProposalSubmittedDetailUrl($request, $proposal);
+        $reviseSubmitBase = route('organizations.submitted-documents.activity-proposals.revise.update', $proposal);
+        $reviseSubmitUrl = $this->withSuperAdminOrgQuery(
+            $request,
+            $reviseSubmitBase.(str_contains($reviseSubmitBase, '?') ? '&' : '?').http_build_query([
+                'from' => (string) $request->query('from', 'submitted-documents'),
+            ])
+        );
+
+        return view('organizations.activity-proposal-revise', [
+            'backRoute' => $detailUrl,
+            'backLabel' => 'Back to proposal details',
+            'pageTitle' => 'Revise Activity Proposal',
+            'subtitle' => 'Only fields requested for revision are shown.',
+            'proposal' => $proposal,
+            'requestForm' => $requestForm,
+            'revisionStep1' => array_values(array_filter(
+                $items,
+                fn (array $i): bool => ($i['kind'] ?? '') === 'field' && ($i['section_key'] ?? '') === 'step1_request_form'
+            )),
+            'revisionStep2' => array_values(array_filter(
+                $items,
+                fn (array $i): bool => ($i['kind'] ?? '') === 'field' && ($i['section_key'] ?? '') === 'step2_submission'
+            )),
+            'revisionFiles' => array_values(array_filter(
+                $items,
+                fn (array $i): bool => ($i['kind'] ?? '') === 'file'
+            )),
+            'reviseSubmitUrl' => $reviseSubmitUrl,
+            'natureOptionKeys' => self::ACTIVITY_REQUEST_NATURE_OPTION_KEYS,
+            'typeOptionKeys' => self::ACTIVITY_REQUEST_TYPE_OPTION_KEYS,
+            'natureLabels' => [
+                'co_curricular' => 'Co-Curricular',
+                'non_curricular' => 'Non-Curricular',
+                'community_extension' => 'Community Extension',
+                'others' => 'Others',
+            ],
+            'typeLabels' => [
+                'seminar_workshop' => 'Seminar / Workshop',
+                'general_assembly' => 'General Assembly',
+                'orientation' => 'Orientation',
+                'competition' => 'Competition',
+                'recruitment_audition' => 'Recruitment / Audition',
+                'donation_drive_fundraising' => 'Donation Drive / Fundraising Activity',
+                'outreach_donation' => 'Outreach (Donation)',
+                'fundraising_activity' => 'Fundraising Activity',
+                'off_campus_activity' => 'Off-campus Activity',
+                'others' => 'Others',
+            ],
+            'schoolOptions' => self::SCHOOL_LABELS,
+            'budgetRowsDisplay' => $this->activityProposalRevisionBudgetDisplayRows($proposal),
+            'budgetRowsOriginal' => $this->activityProposalRevisionBudgetRowsFromProposal($proposal),
+            'fromSource' => (string) $request->query('from', 'submitted-documents'),
+        ]);
+    }
+
+    /**
+     * @return list<array{material: string, quantity: string, unit_price: string, price: string}>
+     */
+    private function activityProposalRevisionBudgetRowsFromProposal(ActivityProposal $proposal): array
+    {
+        if ($proposal->budgetItems->isEmpty()) {
+            return [['material' => '', 'quantity' => '', 'unit_price' => '', 'price' => '']];
+        }
+
+        return $proposal->budgetItems->map(fn ($row): array => [
+            'material' => (string) ($row->item_description ?? ''),
+            'quantity' => (string) $row->quantity,
+            'unit_price' => (string) $row->unit_cost,
+            'price' => (string) $row->total_cost,
+        ])->values()->all();
+    }
+
+    /**
+     * Budget rows shown on the revise form: flash old payload after validation errors, else DB rows.
+     *
+     * @return list<array{material: string, quantity: string, unit_price: string, price: string}>
+     */
+    private function activityProposalRevisionBudgetDisplayRows(ActivityProposal $proposal): array
+    {
+        $oldPayload = old('field_step2_budget_items_payload');
+        if (is_string($oldPayload) && $oldPayload !== '') {
+            $decoded = json_decode($oldPayload, true);
+            if (is_array($decoded) && $decoded !== []) {
+                $out = [];
+                foreach ($decoded as $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
+                    $out[] = [
+                        'material' => (string) ($row['material'] ?? ''),
+                        'quantity' => (string) ($row['quantity'] ?? ''),
+                        'unit_price' => (string) ($row['unit_price'] ?? ''),
+                        'price' => (string) ($row['price'] ?? ''),
+                    ];
+                }
+                if ($out !== []) {
+                    return $out;
+                }
+            }
+        }
+
+        return $this->activityProposalRevisionBudgetRowsFromProposal($proposal);
+    }
+
+    public function updateReviseActivityProposal(Request $request, ActivityProposal $proposal): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $proposal->organization_id);
+        if (! $this->activityProposalIsOpenForOfficerRevision($proposal)) {
+            return redirect()->to($this->activityProposalSubmittedDetailUrl($request, $proposal));
+        }
+        $proposal->load(['organization', 'budgetItems', 'workflowSteps', 'calendar', 'calendarEntry', 'academicTerm']);
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        $items = $this->activeActivityProposalRevisionItems($proposal);
+        if ($items === []) {
+            return redirect()
+                ->to($this->activityProposalSubmittedDetailUrl($request, $proposal))
+                ->with('error', 'No active revision requests were found for this proposal.');
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        $rules = [];
+        foreach ($items as $item) {
+            if ($item['kind'] === 'file') {
+                $rules['file_'.$item['officer_file_key']] = ['required', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:'.self::REPLACEMENT_FILE_MAX_KB];
+
+                continue;
+            }
+            $fk = $item['field_key'];
+            $rules = array_merge($rules, $this->proposalRevisionValidationRulesForField($fk, $requestForm, $proposal, $request));
+        }
+
+        // Failed validation redirects back here with errors; `$request->validate()` flashes old input by default (`withInput`).
+        $validated = $request->validate($rules, [
+            'replacement_file.mimes' => 'Only PDF, Word, or image files are allowed.',
+        ]);
+
+        $recorder = app(ReviewableUpdateRecorder::class);
+
+        DB::transaction(function () use ($proposal, $requestForm, $user, $items, $validated, $request, $recorder): void {
+                foreach ($items as $item) {
+                    if ($item['kind'] === 'file') {
+                        $key = (string) $item['officer_file_key'];
+                        $upload = $request->file('file_'.$key);
+                        if (! $upload instanceof UploadedFile) {
+                            throw ValidationException::withMessages(['file_'.$key => 'A replacement file is required.']);
+                        }
+                        $this->applyActivityProposalFileReplacement($proposal, $user, $key, $upload, false);
+
+                        continue;
+                    }
+                    $this->applyProposalTextRevisionForField(
+                        $proposal,
+                        $requestForm,
+                        $user,
+                        $item['field_key'],
+                        $validated,
+                        $recorder
+                    );
+                }
+
+                $revisionStep = $proposal->workflowSteps()
+                    ->where('status', 'revision_required')
+                    ->orderByDesc('step_order')
+                    ->first();
+                if ($revisionStep) {
+                    ProposalFieldReview::query()
+                        ->where('activity_proposal_id', $proposal->id)
+                        ->where('workflow_step_id', $revisionStep->id)
+                        ->delete();
+                }
+
+                $proposal->workflowSteps()->update(['is_current_step' => false]);
+                $proposal->workflowSteps()
+                    ->where('status', 'revision_required')
+                    ->update([
+                        'status' => 'pending',
+                        'is_current_step' => true,
+                        'review_comments' => null,
+                        'acted_at' => null,
+                        'assigned_to' => null,
+                    ]);
+
+                $currentOrder = (int) ($proposal->workflowSteps()->where('is_current_step', true)->value('step_order') ?? 1);
+                $proposal->update([
+                    'status' => 'under_review',
+                    'current_approval_step' => $currentOrder,
+                ]);
+
+                $workflowStepId = (int) ($proposal->workflowSteps()->where('is_current_step', true)->value('id') ?? 0);
+                if ($workflowStepId > 0) {
+                    ApprovalLog::query()->create([
+                        'approvable_type' => ActivityProposal::class,
+                        'approvable_id' => $proposal->id,
+                        'workflow_step_id' => $workflowStepId,
+                        'actor_id' => $user->id,
+                        'action' => 'resubmitted',
+                        'from_status' => 'REVISION',
+                        'to_status' => 'UNDER_REVIEW',
+                        'comments' => null,
+                        'created_at' => now(),
+                    ]);
+                }
+            });
+
+        $detail = $this->activityProposalSubmittedDetailUrl($request, $proposal);
+
+        return redirect()
+            ->to($detail)
+            ->with('activity_proposal_revision_success', true);
+    }
+
+    private function activityProposalSubmittedDetailUrl(Request $request, ActivityProposal $proposal): string
+    {
+        $from = (string) $request->query('from', 'submitted-documents');
+        $url = $from === 'activity-submission'
+            ? route('organizations.activity-submission.proposals.show', $proposal)
+            : route('organizations.submitted-documents.proposals.show', $proposal);
+        $query = [];
+        if ($from === 'submitted-documents') {
+            $query['from'] = 'submitted-documents';
+        } elseif ($from === 'activity-submission') {
+            $query['from'] = 'activity-submission';
+        }
+        if ($request->user()?->isSuperAdmin() && $request->filled('organization_id')) {
+            $query['organization_id'] = $request->integer('organization_id');
+        }
+        if ($query !== []) {
+            $url .= (str_contains($url, '?') ? '&' : '?').http_build_query($query);
+        }
+
+        return $url;
+    }
+
+    private function proposalRevisionFieldCurrentDisplay(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $fieldKey): string
+    {
+        $natureLabels = [
+            'co_curricular' => 'Co-Curricular',
+            'non_curricular' => 'Non-Curricular',
+            'community_extension' => 'Community Extension',
+            'others' => 'Others',
+        ];
+        $typeLabels = [
+            'seminar_workshop' => 'Seminar / Workshop',
+            'general_assembly' => 'General Assembly',
+            'orientation' => 'Orientation',
+            'competition' => 'Competition',
+            'recruitment_audition' => 'Recruitment / Audition',
+            'donation_drive_fundraising' => 'Donation Drive / Fundraising Activity',
+            'outreach_donation' => 'Outreach (Donation)',
+            'fundraising_activity' => 'Fundraising Activity',
+            'off_campus_activity' => 'Off-campus Activity',
+            'others' => 'Others',
+        ];
+
+        return match ($fieldKey) {
+            'step1_activity_title' => (string) ($requestForm?->activity_title ?? ''),
+            'step1_partner_entities' => (string) ($requestForm?->partner_entities ?? ''),
+            'step1_venue' => (string) ($requestForm?->venue ?? ''),
+            'step1_proposed_budget' => $requestForm?->proposed_budget !== null ? number_format((float) $requestForm->proposed_budget, 2) : '',
+            'step1_budget_source' => (string) ($requestForm?->budget_source ?? ''),
+            'step1_activity_date' => optional($requestForm?->activity_date)->format('Y-m-d') ?? '',
+            'step1_nature_of_activity' => $this->requestFormOptionLabels(
+                is_array($requestForm?->nature_of_activity) ? $requestForm->nature_of_activity : [],
+                $natureLabels,
+                $requestForm?->nature_other
+            ),
+            'step1_type_of_activity' => $this->requestFormOptionLabels(
+                is_array($requestForm?->activity_types) ? $requestForm->activity_types : [],
+                $typeLabels,
+                $requestForm?->activity_type_other
+            ),
+            'step1_target_sdg' => (string) ($requestForm?->target_sdg ?? ''),
+            'step2_department' => $this->proposalSchoolLabel($proposal),
+            'step2_program' => (string) ($proposal->program ?? ''),
+            'step2_activity_title' => (string) ($proposal->activity_title ?? ''),
+            'step2_proposed_dates' => trim(collect([
+                optional($proposal->proposed_start_date)->format('Y-m-d'),
+                optional($proposal->proposed_end_date)->format('Y-m-d'),
+            ])->filter()->implode(' / ')),
+            'step2_proposed_time' => trim((string) ($proposal->proposed_start_time ?? '').' – '.(string) ($proposal->proposed_end_time ?? '')),
+            'step2_venue' => (string) ($proposal->venue ?? ''),
+            'step2_overall_goal' => (string) ($proposal->overall_goal ?? ''),
+            'step2_specific_objectives' => (string) ($proposal->specific_objectives ?? ''),
+            'step2_criteria_mechanics' => (string) ($proposal->criteria_mechanics ?? ''),
+            'step2_program_flow' => (string) ($proposal->program_flow ?? ''),
+            'step2_budget_total' => $proposal->estimated_budget !== null ? (string) $proposal->estimated_budget : '',
+            'step2_source_of_funding' => (string) ($proposal->source_of_funding ?? ''),
+            'step2_budget_table' => $proposal->budgetItems->count() > 0
+                ? ('Rows: '.$proposal->budgetItems->count())
+                : 'No rows',
+            'step2_submitted' => optional($proposal->submission_date)->format('Y-m-d') ?? '',
+            default => $this->proposalRevisionFallbackBaseline($proposal, $requestForm, $fieldKey),
+        };
+    }
+
+    private function proposalDetailRevisionAnchorId(string $sectionKey, string $fieldKey): string
+    {
+        foreach (self::PROPOSAL_FILE_KEY_MAP as $officerKey => $entry) {
+            if ($entry['section_key'] === $sectionKey && $entry['field_key'] === $fieldKey) {
+                return 'proposal-file-'.$officerKey;
+            }
+        }
+        if ($fieldKey === 'step2_resume_resource_persons' && $sectionKey === 'additional') {
+            return 'proposal-file-resume';
+        }
+        if (str_starts_with($fieldKey, 'step1_')) {
+            return 'proposal-step1-'.substr($fieldKey, strlen('step1_'));
+        }
+        if (str_starts_with($fieldKey, 'step2_')) {
+            return 'proposal-step2-'.substr($fieldKey, strlen('step2_'));
+        }
+
+        return 'proposal-field-'.substr(md5($sectionKey.'|'.$fieldKey), 0, 12);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function activityProposalRevisionSummaryFileFieldKeys(): array
+    {
+        return [
+            'step1_request_letter',
+            'step1_speaker_resume',
+            'step1_post_survey_form',
+            'step2_organization_logo',
+            'step2_external_funding_support',
+            'step2_resume_resource_persons',
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $groups
+     * @return list<array<string, mixed>>
+     */
+    private function regroupActivityProposalRevisionSummarySections(array $groups): array
+    {
+        $fileKeys = array_fill_keys($this->activityProposalRevisionSummaryFileFieldKeys(), true);
+        $step1 = [];
+        $step2 = [];
+        $files = [];
+        foreach ($groups as $group) {
+            foreach (($group['items'] ?? []) as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $fk = (string) ($item['field_key'] ?? '');
+                if ($fk === '') {
+                    continue;
+                }
+                if (isset($fileKeys[$fk])) {
+                    $files[] = $item;
+                } elseif (str_starts_with($fk, 'step1_')) {
+                    $step1[] = $item;
+                } elseif (str_starts_with($fk, 'step2_')) {
+                    $step2[] = $item;
+                } else {
+                    $step2[] = $item;
+                }
+            }
+        }
+        $out = [];
+        if ($step1 !== []) {
+            $out[] = [
+                'section_key' => 'step1_request_form',
+                'section_title' => 'Step 1: Activity Request Form',
+                'title' => 'Step 1: Activity Request Form',
+                'items' => $step1,
+            ];
+        }
+        if ($step2 !== []) {
+            $out[] = [
+                'section_key' => 'step2_submission',
+                'section_title' => 'Step 2: Proposal Submission',
+                'title' => 'Step 2: Proposal Submission',
+                'items' => $step2,
+            ];
+        }
+        if ($files !== []) {
+            $out[] = [
+                'section_key' => 'submitted_files',
+                'section_title' => 'Submitted Files',
+                'title' => 'Submitted Files',
+                'items' => $files,
+            ];
+        }
+
+        return $out;
+    }
+
+    private function activityProposalIsOpenForOfficerRevision(ActivityProposal $proposal): bool
+    {
+        $s = strtoupper((string) ($proposal->status ?? ''));
+
+        return in_array($s, ['REVISION', 'REVISION_REQUIRED'], true);
+    }
+
+    /**
+     * Canonical comparison key for Target SDG comma-lists (order- and spacing-insensitive).
+     */
+    private function normalizeTargetSdgSignature(string $raw): string
+    {
+        return collect(explode(',', $raw))
+            ->map(fn ($v) => trim((string) $v))
+            ->filter()
+            ->sort()
+            ->values()
+            ->implode('|');
+    }
+
+    /**
+     * Two-decimal money string for revision save/compare (avoids float drift in inputs/validation).
+     */
+    private function normalizeRevisionMoneyAmount(mixed $raw): string
+    {
+        if ($raw === null || $raw === '') {
+            return '';
+        }
+        $s = is_string($raw) ? str_replace(',', '', trim($raw)) : $raw;
+        if (! is_numeric($s)) {
+            return '';
+        }
+
+        return number_format((float) $s, 2, '.', '');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function proposalRevisionTargetSdgOptions(): array
+    {
+        return array_map(fn ($n) => 'SDG '.$n, range(1, 17));
+    }
+
+    /**
+     * Map admin review field keys (e.g. step1_request_letter) to officer file route keys (request_letter).
+     */
+    private function proposalOfficerFileKeyFromReviewFieldKey(string $fieldKey): ?string
+    {
+        foreach (self::PROPOSAL_FILE_KEY_MAP as $officerKey => $entry) {
+            if ($entry['field_key'] === $fieldKey) {
+                return $officerKey;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $metaSections
+     */
+    private function stripActivityProposalMetaRowAnchorsForOfficerFiles(array &$metaSections): void
+    {
+        foreach ($metaSections as &$section) {
+            $rows = &$section['rows'];
+            if (! is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as &$row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $adminKey = $this->proposalMetaRowAdminFieldKey((string) ($row['key'] ?? ''));
+                if ($this->proposalOfficerFileKeyFromReviewFieldKey($adminKey) !== null) {
+                    unset($row['anchor_id'], $row['revision_note']);
+                }
+            }
+            unset($row);
+        }
+        unset($section);
+    }
+
+    private function proposalMetaRowAdminFieldKey(string $rowKey): string
+    {
+        return match ($rowKey) {
+            'step1_request_letter_unavailable' => 'step1_request_letter',
+            'step2_external_funding_support_unavailable' => 'step2_external_funding_support',
+            default => $rowKey,
+        };
+    }
+
+    /**
+     * @return array{0: ?string, 1: ?string} [section, admin_field_key]
+     */
+    private function proposalAdminCoordsForMetaRowKey(string $adminFieldKey): array
+    {
+        if ($adminFieldKey === 'additional_resume_resource_persons') {
+            return ['additional', 'step2_resume_resource_persons'];
+        }
+        if (str_starts_with($adminFieldKey, 'step1_')) {
+            return ['step1_request_form', $adminFieldKey];
+        }
+        if (str_starts_with($adminFieldKey, 'step2_')) {
+            return ['step2_submission', $adminFieldKey];
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $proposalFieldReviews
+     * @param  array<string, bool>  $pendingItemSet
+     * @return list<array<string, mixed>>
+     */
+    private function attachProposalMetaRevisionNotes(array $rows, array $proposalFieldReviews, array $pendingItemSet): array
+    {
+        return array_map(function (array $row) use ($proposalFieldReviews, $pendingItemSet): array {
+            $rk = (string) ($row['key'] ?? '');
+            $adminKey = $this->proposalMetaRowAdminFieldKey($rk);
+            [$section, $fieldKey] = $this->proposalAdminCoordsForMetaRowKey($adminKey);
+            if ($section !== null && $fieldKey !== null) {
+                $compound = $section.'.'.$fieldKey;
+                $fr = (array) data_get($proposalFieldReviews, $compound, []);
+                $st = strtolower((string) ($fr['status'] ?? ''));
+                if ($st === 'flagged' && ! isset($pendingItemSet[$compound])) {
+                    $note = trim((string) ($fr['note'] ?? ''));
+                    $row['revision_note'] = $note !== '' ? $note : 'Revision requested.';
+                }
+                $row['anchor_id'] = $this->proposalDetailRevisionAnchorId($section, $fieldKey);
+            }
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function activeActivityProposalRevisionItems(ActivityProposal $proposal): array
+    {
+        $excluded = [
+            'step1_proposal_option' => true,
+            'step1_rso_name' => true,
+            'step2_academic_year' => true,
+        ];
+        $recorder = app(ReviewableUpdateRecorder::class);
+        $pendingSet = [];
+        foreach ($recorder->pendingForReviewable($proposal) as $row) {
+            $pendingSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
+
+        $items = [];
+        $schema = ActivityProposalAdminFieldReviewSync::labelSchema();
+
+        $revStep = $proposal->workflowSteps()
+            ->where('status', 'revision_required')
+            ->orderByDesc('step_order')
+            ->first();
+
+        if ($revStep && Schema::hasTable('proposal_field_reviews')) {
+            $reviews = ProposalFieldReview::query()
+                ->where('activity_proposal_id', (int) $proposal->id)
+                ->where('workflow_step_id', (int) $revStep->id)
+                ->where('status', 'revision')
+                ->get();
+
+            foreach ($reviews as $review) {
+                $fieldKey = (string) $review->field_key;
+                if ($fieldKey === '' || isset($excluded[$fieldKey])) {
+                    continue;
+                }
+                $section = ActivityProposalAdminFieldReviewSync::adminSectionForFieldKey($fieldKey);
+                if ($section === null) {
+                    continue;
+                }
+                $compound = $section.'.'.$fieldKey;
+                if (isset($pendingSet[$compound])) {
+                    continue;
+                }
+                $label = trim((string) ($schema[$section][$fieldKey] ?? $review->field_label ?? ''));
+                if ($label === '') {
+                    $label = ucwords(str_replace('_', ' ', $fieldKey));
+                }
+                $note = trim((string) ($review->comment ?? ''));
+                $officerKey = $this->proposalOfficerFileKeyFromReviewFieldKey($fieldKey);
+                if ($officerKey !== null) {
+                    $items[] = [
+                        'kind' => 'file',
+                        'section_key' => $section,
+                        'field_key' => $fieldKey,
+                        'label' => $label,
+                        'note' => $note,
+                        'officer_file_key' => $officerKey,
+                    ];
+                } else {
+                    $items[] = [
+                        'kind' => 'field',
+                        'section_key' => $section,
+                        'field_key' => $fieldKey,
+                        'label' => $label,
+                        'note' => $note,
+                    ];
+                }
+            }
+        }
+
+        if ($items === []) {
+            $admin = is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : [];
+            foreach ($admin as $section => $fields) {
+                if (! is_array($fields)) {
+                    continue;
+                }
+                foreach ($fields as $fieldKey => $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
+                    if (strtolower((string) ($row['status'] ?? '')) !== 'flagged') {
+                        continue;
+                    }
+                    $fieldKeyStr = (string) $fieldKey;
+                    if (isset($excluded[$fieldKeyStr])) {
+                        continue;
+                    }
+                    $compound = (string) $section.'.'.$fieldKeyStr;
+                    if (isset($pendingSet[$compound])) {
+                        continue;
+                    }
+                    $officerKey = null;
+                    foreach (self::PROPOSAL_FILE_KEY_MAP as $ok => $ent) {
+                        if ($ent['section_key'] === (string) $section && $ent['field_key'] === $fieldKeyStr) {
+                            $officerKey = $ok;
+                            break;
+                        }
+                    }
+                    $label = trim((string) ($row['label'] ?? ''));
+                    if ($label === '') {
+                        $label = ucwords(str_replace('_', ' ', $fieldKeyStr));
+                    }
+                    $note = trim((string) ($row['note'] ?? ''));
+                    if ($officerKey !== null) {
+                        $items[] = [
+                            'kind' => 'file',
+                            'section_key' => (string) $section,
+                            'field_key' => $fieldKeyStr,
+                            'label' => $label,
+                            'note' => $note,
+                            'officer_file_key' => $officerKey,
+                        ];
+                    } else {
+                        $items[] = [
+                            'kind' => 'field',
+                            'section_key' => (string) $section,
+                            'field_key' => $fieldKeyStr,
+                            'label' => $label,
+                            'note' => $note,
+                        ];
+                    }
+                }
+            }
+        }
+
+        usort($items, fn (array $a, array $b): int => $this->proposalRevisionItemSortKey($a) <=> $this->proposalRevisionItemSortKey($b));
+        $files = array_values(array_filter($items, fn (array $i): bool => ($i['kind'] ?? '') === 'file'));
+        $nonFiles = array_values(array_filter($items, fn (array $i): bool => ($i['kind'] ?? '') !== 'file'));
+
+        return array_merge($nonFiles, $files);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function proposalRevisionItemSortKey(array $item): int
+    {
+        $schema = ActivityProposalAdminFieldReviewSync::labelSchema();
+        $step = match ($item['section_key'] ?? '') {
+            'step1_request_form' => 1_000_000,
+            'step2_submission' => 2_000_000,
+            'additional' => 3_000_000,
+            default => 9_000_000,
+        };
+        $section = (string) ($item['section_key'] ?? '');
+        $fieldKey = (string) ($item['field_key'] ?? '');
+        $fields = array_keys($schema[$section] ?? []);
+        $idx = array_search($fieldKey, $fields, true);
+
+        return $step + ($idx === false ? 9999 : (int) $idx);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function proposalRevisionValidationRulesForField(string $fieldKey, ?ActivityRequestForm $requestForm, ActivityProposal $proposal, Request $request): array
+    {
+        $n = fn (string $k): string => 'field_'.$k;
+
+        return match ($fieldKey) {
+            'step1_activity_title', 'step1_partner_entities', 'step1_venue' => [
+                $n($fieldKey) => ['required', 'string', 'max:255'],
+            ],
+            'step1_proposed_budget' => [
+                $n($fieldKey) => ['required', 'numeric', 'min:0'],
+            ],
+            'step1_budget_source' => [
+                $n($fieldKey) => ['required', 'string', Rule::in(['RSO Fund', 'RSO Savings', 'External'])],
+            ],
+            'step1_activity_date' => [
+                $n($fieldKey) => ['required', 'date'],
+            ],
+            'step1_nature_of_activity' => [
+                $n($fieldKey) => ['required', 'string', Rule::in(self::ACTIVITY_REQUEST_NATURE_OPTION_KEYS)],
+            ],
+            'step1_type_of_activity' => [
+                $n($fieldKey) => ['required', 'string', Rule::in(self::ACTIVITY_REQUEST_TYPE_OPTION_KEYS)],
+            ],
+            'step1_nature_other' => [
+                $n($fieldKey) => ['nullable', 'string', 'max:255'],
+            ],
+            'step1_type_other' => [
+                $n($fieldKey) => ['nullable', 'string', 'max:255'],
+            ],
+            'step1_target_sdg' => [
+                'field_step1_target_sdg' => ['required', 'array', 'min:1'],
+                'field_step1_target_sdg.*' => ['string', Rule::in($this->proposalRevisionTargetSdgOptions())],
+            ],
+            'step2_department' => [
+                $n($fieldKey) => ['required', 'string', Rule::in(array_keys(self::SCHOOL_LABELS))],
+            ],
+            'step2_program' => [
+                $n($fieldKey) => ['required', 'string', 'max:255'],
+            ],
+            'step2_activity_title' => [
+                $n($fieldKey) => ['required', 'string', 'max:200'],
+            ],
+            'step2_proposed_dates' => [
+                'field_step2_proposed_start' => ['required', 'date'],
+                'field_step2_proposed_end' => ['required', 'date', 'after_or_equal:field_step2_proposed_start'],
+            ],
+            'step2_proposed_time' => [
+                'field_step2_proposed_start_time' => ['required', 'date_format:H:i'],
+                'field_step2_proposed_end_time' => ['required', 'date_format:H:i', 'after:field_step2_proposed_start_time'],
+            ],
+            'step2_venue' => [
+                $n($fieldKey) => ['required', 'string', 'max:255'],
+            ],
+            'step2_overall_goal', 'step2_specific_objectives', 'step2_criteria_mechanics', 'step2_program_flow' => [
+                $n($fieldKey) => ['required', 'string', 'max:5000'],
+            ],
+            'step2_budget_total' => [
+                $n($fieldKey) => ['required', 'numeric', 'min:0'],
+            ],
+            'step2_source_of_funding' => [
+                $n($fieldKey) => ['required', 'string', Rule::in(['RSO Fund', 'RSO Savings', 'External'])],
+            ],
+            'step2_budget_table' => [
+                'field_step2_budget_items_payload' => ['required', 'string'],
+            ],
+            'step2_submitted' => [
+                $n($fieldKey) => ['required', 'date'],
+            ],
+            default => [
+                $n($fieldKey) => ['required', 'string', 'max:10000'],
+            ],
+        };
+    }
+
+    private function applyProposalTextRevisionForField(
+        ActivityProposal $proposal,
+        ?ActivityRequestForm $requestForm,
+        User $user,
+        string $fieldKey,
+        array $validated,
+        ReviewableUpdateRecorder $recorder,
+    ): void {
+        $section = ActivityProposalAdminFieldReviewSync::adminSectionForFieldKey($fieldKey) ?? 'step2_submission';
+        $in = fn (string $k): mixed => $validated['field_'.$k] ?? null;
+
+        $ensureChanged = function (?string $old, ?string $new, string $messageKey) use ($fieldKey): void {
+            $o = trim((string) $old);
+            $n = trim((string) $new);
+            if ($n === '' || $o === $n) {
+                throw ValidationException::withMessages([
+                    $messageKey => 'Enter an updated value that differs from the current submission.',
+                ]);
+            }
+        };
+
+        match ($fieldKey) {
+            'step1_activity_title' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                abort_unless($requestForm, 409, 'No related Activity Request Form found for this proposal.');
+                $old = (string) ($requestForm->activity_title ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $requestForm->update(['activity_title' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step1_partner_entities' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                abort_unless($requestForm, 409);
+                $old = (string) ($requestForm->partner_entities ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $requestForm->update(['partner_entities' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step1_venue' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                abort_unless($requestForm, 409);
+                $old = (string) ($requestForm->venue ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $requestForm->update(['venue' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step1_proposed_budget' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in): void {
+                abort_unless($requestForm, 409);
+                $oldRaw = $requestForm->proposed_budget !== null ? (string) $requestForm->proposed_budget : '';
+                $oldN = $this->normalizeRevisionMoneyAmount($oldRaw);
+                $newN = $this->normalizeRevisionMoneyAmount($in($fieldKey));
+                if ($newN === '' || $oldN === $newN) {
+                    throw ValidationException::withMessages([
+                        'field_'.$fieldKey => 'Enter an updated value that differs from the current submission.',
+                    ]);
+                }
+                $requestForm->update(['proposed_budget' => $newN]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $oldRaw, $newN);
+            })(),
+            'step1_budget_source' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                abort_unless($requestForm, 409);
+                $old = (string) ($requestForm->budget_source ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $requestForm->update(['budget_source' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step1_activity_date' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                abort_unless($requestForm, 409);
+                $old = optional($requestForm->activity_date)->toDateString() ?? '';
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $requestForm->update(['activity_date' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step1_nature_of_activity' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                abort_unless($requestForm, 409);
+                $old = json_encode($requestForm->nature_of_activity ?? []);
+                $newArr = [(string) $in($fieldKey)];
+                $new = json_encode($newArr);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $requestForm->update([
+                    'nature_of_activity' => $newArr,
+                    'nature_other' => null,
+                ]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step1_type_of_activity' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                abort_unless($requestForm, 409);
+                $old = json_encode($requestForm->activity_types ?? []);
+                $newArr = [(string) $in($fieldKey)];
+                $new = json_encode($newArr);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $requestForm->update([
+                    'activity_types' => $newArr,
+                    'activity_type_other' => null,
+                ]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step1_target_sdg' => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $validated): void {
+                abort_unless($requestForm, 409);
+                $old = (string) ($requestForm->target_sdg ?? '');
+                $newSdgs = collect($validated['field_step1_target_sdg'] ?? [])
+                    ->map(fn ($v) => trim((string) $v))
+                    ->filter()
+                    ->values()
+                    ->all();
+                if ($newSdgs === []) {
+                    throw ValidationException::withMessages([
+                        'field_step1_target_sdg' => 'Select at least one SDG.',
+                    ]);
+                }
+                $new = implode(', ', $newSdgs);
+                if ($this->normalizeTargetSdgSignature($old) === $this->normalizeTargetSdgSignature($new)) {
+                    throw ValidationException::withMessages([
+                        'field_step1_target_sdg' => 'Enter an updated value that differs from the current submission.',
+                    ]);
+                }
+                $requestForm->update(['target_sdg' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_department' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = (string) ($proposal->school_code ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $proposal->update(['school_code' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_program' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = (string) ($proposal->program ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $proposal->update(['program' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_activity_title' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = (string) ($proposal->activity_title ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $proposal->update(['activity_title' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_proposed_dates' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $validated, $ensureChanged): void {
+                $old = trim(collect([
+                    optional($proposal->proposed_start_date)->toDateString(),
+                    optional($proposal->proposed_end_date)->toDateString(),
+                ])->filter()->implode('|'));
+                $new = ($validated['field_step2_proposed_start'] ?? '').'|'.($validated['field_step2_proposed_end'] ?? '');
+                $ensureChanged($old, $new, 'field_step2_proposed_start');
+                $proposal->update([
+                    'proposed_start_date' => $validated['field_step2_proposed_start'],
+                    'proposed_end_date' => $validated['field_step2_proposed_end'],
+                ]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_proposed_time' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $validated, $ensureChanged): void {
+                $old = trim((string) ($proposal->proposed_start_time ?? '').'|'.(string) ($proposal->proposed_end_time ?? ''));
+                $new = (string) ($validated['field_step2_proposed_start_time'] ?? '').'|'.(string) ($validated['field_step2_proposed_end_time'] ?? '');
+                $ensureChanged($old, $new, 'field_step2_proposed_start_time');
+                $proposal->update([
+                    'proposed_start_time' => $validated['field_step2_proposed_start_time'],
+                    'proposed_end_time' => $validated['field_step2_proposed_end_time'],
+                ]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_venue' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = (string) ($proposal->venue ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $proposal->update(['venue' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_overall_goal' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in): void {
+                $this->applyProposalStep2LongTextColumn($proposal, $user, $recorder, $section, $fieldKey, 'overall_goal', $in);
+            })(),
+            'step2_specific_objectives' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in): void {
+                $this->applyProposalStep2LongTextColumn($proposal, $user, $recorder, $section, $fieldKey, 'specific_objectives', $in);
+            })(),
+            'step2_criteria_mechanics' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in): void {
+                $this->applyProposalStep2LongTextColumn($proposal, $user, $recorder, $section, $fieldKey, 'criteria_mechanics', $in);
+            })(),
+            'step2_program_flow' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in): void {
+                $this->applyProposalStep2LongTextColumn($proposal, $user, $recorder, $section, $fieldKey, 'program_flow', $in);
+            })(),
+            'step2_budget_total' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = $proposal->estimated_budget !== null ? (string) $proposal->estimated_budget : '';
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $proposal->update(['estimated_budget' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_source_of_funding' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = (string) ($proposal->source_of_funding ?? '');
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $proposal->update(['source_of_funding' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_budget_table' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $validated, $ensureChanged): void {
+                $proposal->refresh();
+                $proposal->load('budgetItems');
+                $payload = json_decode((string) ($validated['field_step2_budget_items_payload'] ?? '[]'), true);
+                if (! is_array($payload) || $payload === []) {
+                    throw ValidationException::withMessages(['field_step2_budget_items_payload' => 'Add at least one budget row.']);
+                }
+                $normalized = [];
+                foreach ($payload as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+                    $material = trim((string) ($item['material'] ?? ''));
+                    $quantity = (float) ($item['quantity'] ?? 0);
+                    $unitPrice = (float) ($item['unit_price'] ?? 0);
+                    $price = round($quantity * $unitPrice, 2);
+                    if ($material === '' || $quantity <= 0 || $unitPrice < 0) {
+                        throw ValidationException::withMessages(['field_step2_budget_items_payload' => 'Each budget row needs material, quantity, and unit price.']);
+                    }
+                    $normalized[] = ['material' => $material, 'quantity' => $quantity, 'unit_price' => round($unitPrice, 2), 'price' => round($price, 2)];
+                }
+                $total = round((float) ($proposal->estimated_budget ?? 0), 2);
+                $sum = round((float) collect($normalized)->sum('price'), 2);
+                if (abs($total - $sum) > 0.01) {
+                    throw ValidationException::withMessages([
+                        'field_step2_budget_items_payload' => 'Detailed rows must sum to the proposed budget total ('.number_format($total, 2).'). Current sum is '.number_format($sum, 2).'.',
+                    ]);
+                }
+                $old = json_encode($proposal->budgetItems->map(fn ($r) => [
+                    'm' => $r->item_description,
+                    'q' => $r->quantity,
+                    'u' => $r->unit_cost,
+                    'p' => $r->total_cost,
+                ])->all());
+                $new = json_encode($normalized);
+                $ensureChanged($old, $new, 'field_step2_budget_items_payload');
+                ProposalBudgetItem::query()->where('activity_proposal_id', $proposal->id)->delete();
+                foreach ($normalized as $row) {
+                    ProposalBudgetItem::query()->create([
+                        'activity_proposal_id' => $proposal->id,
+                        'category' => 'general',
+                        'item_description' => $row['material'],
+                        'quantity' => round((float) $row['quantity'], 2),
+                        'unit_cost' => round((float) $row['unit_price'], 2),
+                        'total_cost' => round((float) $row['price'], 2),
+                    ]);
+                }
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            'step2_submitted' => (function () use ($proposal, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = optional($proposal->submission_date)->toDateString() ?? '';
+                $new = (string) $in($fieldKey);
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                $proposal->update(['submission_date' => $new]);
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+            default => (function () use ($proposal, $requestForm, $user, $recorder, $section, $fieldKey, $in, $ensureChanged): void {
+                $old = $this->proposalRevisionFallbackBaseline($proposal, $requestForm, $fieldKey);
+                $new = trim((string) $in($fieldKey));
+                $ensureChanged($old, $new, 'field_'.$fieldKey);
+                if ($fieldKey === 'step1_rso_name' && $requestForm) {
+                    $requestForm->update(['rso_name' => $new]);
+                }
+                $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $old, $new);
+            })(),
+        };
+    }
+
+    /**
+     * @param  callable(string): mixed  $in
+     */
+    private function applyProposalStep2LongTextColumn(
+        ActivityProposal $proposal,
+        User $user,
+        ReviewableUpdateRecorder $recorder,
+        string $section,
+        string $fieldKey,
+        string $column,
+        callable $in,
+    ): void {
+        $oldRaw = (string) ($proposal->{$column} ?? '');
+        $newRaw = (string) $in($fieldKey);
+        $normalize = static fn (string $s): string => trim(str_replace("\r\n", "\n", $s));
+        $oldNorm = $normalize($oldRaw);
+        $newNorm = $normalize($newRaw);
+        if ($newNorm === '' || $oldNorm === $newNorm) {
+            throw ValidationException::withMessages([
+                'field_'.$fieldKey => 'Enter an updated value that differs from the current submission.',
+            ]);
+        }
+        $proposal->update([$column => $newNorm]);
+        $recorder->recordFieldUpdate($proposal, (int) $user->id, $section, $fieldKey, $oldRaw, $newNorm);
+    }
+
+    private function proposalRevisionFallbackBaseline(ActivityProposal $proposal, ?ActivityRequestForm $requestForm, string $fieldKey): string
+    {
+        return match ($fieldKey) {
+            'step1_linked_activity_calendar' => $proposal->calendar
+                ? trim(($proposal->calendar->academic_year ?? '—').' · '.(string) ($proposal->calendar->semester ?? '—'))
+                : '',
+            'step1_calendar_activity_row' => $proposal->calendarEntry
+                ? trim(($proposal->calendarEntry->activity_name ?? '—').' · '.(optional($proposal->calendarEntry->activity_date)->format('M j, Y') ?? ''))
+                : '',
+            'step1_proposal_option' => $proposal->activity_calendar_entry_id
+                ? 'From submitted Activity Calendar'
+                : 'Activity not in submitted calendar',
+            'step1_rso_name' => (string) ($requestForm?->rso_name ?: ($proposal->organization?->organization_name ?? '')),
+            'step2_organization' => (string) ($proposal->organization?->organization_name ?? ''),
+            'step2_academic_year' => (string) ($proposal->academicTerm?->academic_year ?? $proposal->calendar?->academic_year ?? ''),
+            default => '',
+        };
     }
 
     /**
@@ -1829,6 +2989,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         User $user,
         string $officerKey,
         UploadedFile $upload,
+        bool $bumpStatusOnRevision = true,
     ): void {
         $entry = self::PROPOSAL_FILE_KEY_MAP[$officerKey];
         $organization = $proposal->organization()->first();
@@ -1890,7 +3051,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         ];
 
         $recorder = app(ReviewableUpdateRecorder::class);
-        DB::transaction(function () use ($proposal, $user, $entry, $upload, $storedPath, $oldMeta, $newMeta, $attachableType, $attachableId, $recorder): void {
+        DB::transaction(function () use ($proposal, $user, $entry, $upload, $storedPath, $oldMeta, $newMeta, $attachableType, $attachableId, $recorder, $bumpStatusOnRevision): void {
             Attachment::query()->create([
                 'attachable_type' => $attachableType,
                 'attachable_id' => $attachableId,
@@ -1911,7 +3072,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 newFileMeta: $newMeta,
             );
 
-            if ((string) $proposal->status === 'revision') {
+            if ($bumpStatusOnRevision && (string) $proposal->status === 'revision') {
                 $proposal->update(['status' => 'under_review']);
             }
             $proposal->touch();
@@ -2491,6 +3652,45 @@ class OrganizationSubmittedDocumentsController extends Controller
             'term_3' => 'Term 3',
             default => $semester ? $semester : '—',
         };
+    }
+
+    /**
+     * RSO Submitted Documents list: normalize semester strings to 1st/2nd/3rd Term (registration & activity proposals).
+     */
+    private function formatSubmittedDocumentTermLabel(?string $raw): string
+    {
+        if ($raw === null || trim((string) $raw) === '') {
+            return '—';
+        }
+        $k = strtolower(trim((string) $raw));
+
+        return match ($k) {
+            'first', 'term 1', '1', '1st', '1st term', 'term_1', 'term1' => '1st Term',
+            'second', 'term 2', '2', '2nd', '2nd term', 'term_2', 'term2' => '2nd Term',
+            'third', 'term 3', '3', '3rd', '3rd term', 'term_3', 'term3' => '3rd Term',
+            default => (string) $raw,
+        };
+    }
+
+    /**
+     * @return array{ay: ?string, context: ?string}
+     */
+    private function activityProposalListAcademicContext(ActivityProposal $proposal): array
+    {
+        $termFromCalendar = $proposal->calendar?->academicTerm;
+        $termDirect = $proposal->academicTerm;
+        $ay = $termFromCalendar?->academic_year ?? $termDirect?->academic_year;
+        $semRaw = $termFromCalendar?->semester ?? $termDirect?->semester;
+        $termLabel = $this->formatSubmittedDocumentTermLabel($semRaw);
+        if ($ay === null || trim((string) $ay) === '') {
+            return ['ay' => null, 'context' => null];
+        }
+        $context = 'AY '.trim((string) $ay);
+        if ($termLabel !== '—') {
+            $context .= ' · '.$termLabel;
+        }
+
+        return ['ay' => trim((string) $ay), 'context' => $context];
     }
 
     private function truncatePreview(?string $text, int $max = 140): ?string
@@ -3490,10 +4690,14 @@ class OrganizationSubmittedDocumentsController extends Controller
     private function activityProposalWorkflowLinks(Request $request, ActivityProposal $proposal): array
     {
         $links = [];
-        if (strtoupper((string) ($proposal->status ?? '')) === 'REVISION') {
+        if ($this->activityProposalIsOpenForOfficerRevision($proposal)) {
+            $reviseBase = route('organizations.submitted-documents.activity-proposals.revise', $proposal);
+            $reviseUrl = $reviseBase.(str_contains($reviseBase, '?') ? '&' : '?').http_build_query([
+                'from' => (string) $request->query('from', 'submitted-documents'),
+            ]);
             $links[] = [
-                'label' => 'Address revision (proposal form)',
-                'href' => $this->withSuperAdminOrgQuery($request, route('organizations.activity-proposal-submission')),
+                'label' => 'Address revision',
+                'href' => $this->withSuperAdminOrgQuery($request, $reviseUrl),
                 'variant' => 'primary',
             ];
         }
@@ -3618,7 +4822,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $qDetail = fn (string $url): string => $this->withQueryParam($q($url), 'from', 'submitted-documents');
         $rows = collect();
 
-        foreach (OrganizationSubmission::query()->registrations()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $submission) {
+        foreach (OrganizationSubmission::query()->registrations()->where('organization_id', $organization->id)->with('academicTerm')->orderByDesc('updated_at')->get() as $submission) {
             $revisionSummary = app(OrganizationRegistrationRevisionSummaryService::class)->buildForSubmission($submission);
             $hasOpenRevisionItems = ((array) ($revisionSummary['groups'] ?? [])) !== [];
             $pendingRevisionUpdateCount = OrganizationRevisionFieldUpdate::query()
@@ -3631,6 +4835,11 @@ class OrganizationSubmittedDocumentsController extends Controller
             $sp = $this->submissionStatusPresentation($statusForList);
             $nFiles = $submission->attachments()->where('file_type', 'like', Attachment::TYPE_REGISTRATION_REQUIREMENT.':%')->count();
             $detail = $qDetail(route('organizations.submitted-documents.registrations.show', $submission));
+            $regAy = $submission->academicTerm?->academic_year;
+            $regTerm = $this->formatSubmittedDocumentTermLabel($submission->academicTerm?->semester);
+            $regContext = $regAy
+                ? ('AY '.trim((string) $regAy).($regTerm !== '—' ? ' · '.$regTerm : ''))
+                : null;
             $rows->push([
                 'type_key' => 'registration',
                 'type_label' => 'Registration',
@@ -3642,8 +4851,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_raw' => $statusForList,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
-                'academic_year' => $submission->academicTerm?->academic_year,
-                'academic_context' => $submission->academicTerm?->academic_year ? 'AY '.$submission->academicTerm?->academic_year : null,
+                'academic_year' => $regAy,
+                'academic_context' => $regContext,
                 'remarks_preview' => $this->registrationOfficerRevisionNotesPreview($submission),
                 'detail_href' => $detail,
                 'has_files' => $nFiles > 0,
@@ -3658,7 +4867,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             ]);
         }
 
-        foreach (OrganizationSubmission::query()->renewals()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $submission) {
+        foreach (OrganizationSubmission::query()->renewals()->where('organization_id', $organization->id)->with('academicTerm')->orderByDesc('updated_at')->get() as $submission) {
             $sp = $this->submissionStatusPresentation($submission->legacyStatus());
             $nFiles = $submission->attachments()->where('file_type', 'like', Attachment::TYPE_RENEWAL_REQUIREMENT.':%')->count();
             $detail = $qDetail(route('organizations.submitted-documents.renewals.show', $submission));
@@ -3693,7 +4902,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         foreach (ActivityCalendar::query()->with('academicTerm')->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $cal) {
             $sp = $this->submissionStatusPresentation($cal->status);
             $calAy = $cal->academicTerm?->academic_year ?? '—';
-            $term = $this->activityCalendarTermLabel($cal->academicTerm?->semester);
+            $term = $this->formatSubmittedDocumentTermLabel($cal->academicTerm?->semester);
             $title = trim(($calAy !== '—' ? $calAy : 'AY —').' · '.$term.' Activity Calendar');
             $detail = $qDetail(route('organizations.submitted-documents.calendars.show', $cal));
             $rows->push([
@@ -3723,7 +4932,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             ]);
         }
 
-        foreach (ActivityProposal::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $proposal) {
+        foreach (ActivityProposal::query()->where('organization_id', $organization->id)->with(['academicTerm', 'calendar.academicTerm'])->orderByDesc('updated_at')->get() as $proposal) {
             $sp = $this->submissionStatusPresentation($proposal->status, true);
             $nAttach = $proposal->attachments()
                 ->whereIn('file_type', [
@@ -3740,6 +4949,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             // Keep this record under "Manage Organization -> Submitted Documents"
             // so Back navigation remains in the Submitted Documents flow.
             $detail = $qDetail(route('organizations.submitted-documents.proposals.show', $proposal));
+            $proposalAc = $this->activityProposalListAcademicContext($proposal);
             $rows->push([
                 'type_key' => 'activity_proposal',
                 'type_label' => 'Activity Proposal',
@@ -3751,8 +4961,8 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_raw' => $proposal->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
-                'academic_year' => $proposal->academic_year,
-                'academic_context' => $proposal->academic_year ? 'AY '.$proposal->academic_year : null,
+                'academic_year' => $proposalAc['ay'],
+                'academic_context' => $proposalAc['context'],
                 'remarks_preview' => $this->revisionSectionsPreview($this->moduleRevisionSections(is_array($proposal->admin_field_reviews) ? $proposal->admin_field_reviews : []))
                     ?: $this->truncatePreview($proposal->overall_goal ?? $proposal->activity_description, 120),
                 'detail_href' => $detail,
