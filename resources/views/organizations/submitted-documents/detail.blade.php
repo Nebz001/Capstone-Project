@@ -36,6 +36,17 @@
     </div>
   </header>
 
+  @if (session('activity_calendar_success_redirect'))
+    <div
+      id="activity-calendar-submitted-success-alert-data"
+      data-success-title="Activity Calendar Submitted"
+      data-success-message="Your activity calendar has been submitted successfully. You will be redirected to Submitted Documents."
+      data-success-redirect-url="{{ session('activity_calendar_success_redirect') }}"
+      data-success-redirect-delay="1800"
+      hidden
+    ></div>
+  @endif
+
   @if (! empty($progressStages ?? null))
     <x-submission-progress-card
       variant="embed"

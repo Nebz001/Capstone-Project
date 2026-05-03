@@ -20,10 +20,10 @@
   $activityCalendarFormBlocked = $isBlocked;
   $calLock = $calendarSubmittedLocked && ($latestCalendar ?? null);
   $academicYearVal = $calLock
-      ? (string) ($latestCalendar->academic_year ?? '')
+      ? (string) ($latestCalendar->academicTerm?->academic_year ?? '')
       : \App\Models\SystemSetting::activeAcademicYear();
   $termVal = $calLock
-      ? (string) ($latestCalendar->semester ?? '')
+      ? (string) ($latestCalendar->academicTerm?->semester ?? '')
       : \App\Models\SystemSetting::activeSemester();
   $termLabelMap = [
       'term_1' => 'Term 1',
@@ -32,7 +32,7 @@
   ];
   $termLabel = $termLabelMap[$termVal] ?? $termVal;
   $orgNameVal = $calLock
-      ? (string) ($latestCalendar->submitted_organization_name ?? '')
+      ? (string) (($organization ?? null)?->organization_name ?? '')
       : (string) (($organization ?? null)?->organization_name ?? '');
   $dateSubmittedVal = $calLock && $latestCalendar->submission_date
       ? $latestCalendar->submission_date->format('Y-m-d')
@@ -96,23 +96,45 @@
     <x-feedback.blocked-message variant="error" class="mb-6" :message="session('error')" />
   @endif
 
-  @if ($calendarSubmittedLocked && ! $isBlocked)
+  @if (session('activity_calendar_success_redirect') && ! $isAdminSubmission)
+    <div
+      id="activity-calendar-submitted-success-alert-data"
+      data-success-title="Activity Calendar Submitted"
+      data-success-message="Your activity calendar has been submitted successfully. You will be redirected to the Activity Calendar details page."
+      data-success-redirect-url="{{ session('activity_calendar_success_redirect') }}"
+      data-success-redirect-delay="1800"
+      hidden
+    ></div>
+  @endif
+
+  @php
+    $activityCalendarReadonlyView = ($organization ?? null)
+      && ! $isAdminSubmission
+      && $calLock
+      && ! $officerValidationPending;
+  @endphp
+
+  @if ($officerValidationPending && $blockedReason)
     <x-feedback.blocked-message
+      variant="error"
       class="mb-6"
-      message="This activity calendar has already been submitted and can no longer be edited."
+      :message="$blockedReason"
     />
   @endif
 
-  @if (session('activity_calendar_submitted'))
-    <script id="activity-calendar-submitted-flash" type="application/json">
-      @json([
-        'activitySubmissionUrl' => $isAdminSubmission ? route('admin.dashboard') : route('organizations.activity-submission'),
-        'proposalSubmissionUrl' => $isAdminSubmission ? route('admin.submissions.activity-proposal') : route('organizations.activity-proposal-request'),
-      ])
-    </script>
-  @endif
-
-  @if ($isBlocked && $blockedReason)
+  @if ($activityCalendarReadonlyView)
+    <x-feedback.blocked-message variant="info" class="mb-6">
+      <p>This activity calendar has already been submitted and can no longer be edited.</p>
+      <p>
+        <a
+          href="{{ route('organizations.submitted-documents.calendars.show', $latestCalendar) }}"
+          class="font-semibold text-[#003E9F] underline decoration-[#003E9F]/40 underline-offset-2 hover:text-[#00327F]"
+        >
+          View activity calendar submission details
+        </a>
+      </p>
+    </x-feedback.blocked-message>
+  @elseif ($isBlocked && $blockedReason && ! $activityCalendarReadonlyView)
     <x-feedback.blocked-message
       variant="error"
       class="mb-6"
