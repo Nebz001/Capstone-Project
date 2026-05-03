@@ -22,8 +22,8 @@ use App\Models\Role;
 use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
-use App\Services\OrganizationRegistrationRevisionSummaryService;
 use App\Services\OrganizationNotificationService;
+use App\Services\OrganizationRegistrationRevisionSummaryService;
 use App\Support\OrganizationStoragePath;
 use App\Support\SubmissionRoutingProgress;
 use Carbon\CarbonImmutable;
@@ -37,6 +37,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class OrganizationController extends Controller
 {
@@ -87,7 +88,9 @@ class OrganizationController extends Controller
         'dean_endorsement_faculty_adviser',
         'proposed_projects_budget',
     ];
+
     private const REQUIREMENT_FILE_MAX_KB = 2048;
+
     private const REQUIREMENT_FILE_MAX_MB = 2;
 
     private const REQUIREMENTS_MIN_ONE_MESSAGE = 'Select at least one requirement you are submitting.';
@@ -301,6 +304,15 @@ class OrganizationController extends Controller
     }
 
     /**
+     * Registration application section fields that are system context only (must not drive org-side revisions).
+     */
+    private function isNonReviewableApplicationRegistrationField(string $sectionKey, string $fieldKey): bool
+    {
+        return $sectionKey === 'application'
+            && in_array($fieldKey, ['academic_year', 'submission_date', 'submitted_by'], true);
+    }
+
+    /**
      * @return array{
      *   empty: bool,
      *   title?: string,
@@ -337,6 +349,9 @@ class OrganizationController extends Controller
         $pendingSet = [];
         $pendingMetaByKey = [];
         foreach ($pendingUpdateRows as $row) {
+            if ($this->isNonReviewableApplicationRegistrationField((string) ($row->section_key ?? ''), (string) ($row->field_key ?? ''))) {
+                continue;
+            }
             $compound = (string) $row->section_key.'.'.(string) $row->field_key;
             $pendingSet[$compound] = true;
             $pendingMetaByKey[$compound] = [
@@ -353,6 +368,9 @@ class OrganizationController extends Controller
         foreach ($pendingUpdateRows as $row) {
             $sectionKey = (string) ($row->section_key ?? '');
             $fieldKey = (string) ($row->field_key ?? '');
+            if ($this->isNonReviewableApplicationRegistrationField($sectionKey, $fieldKey)) {
+                continue;
+            }
             $compoundKey = $sectionKey.'.'.$fieldKey;
             $label = trim((string) data_get($fieldReviews, $sectionKey.'.'.$fieldKey.'.label', ucwords(str_replace('_', ' ', $fieldKey))));
             if ($sectionKey === 'requirements') {
@@ -364,6 +382,7 @@ class OrganizationController extends Controller
                     'href' => $fileHref,
                     'file_name' => $newFileName !== '' ? $newFileName : 'Updated file uploaded',
                 ];
+
                 continue;
             }
 
@@ -382,6 +401,12 @@ class OrganizationController extends Controller
             }
             foreach ($fields as $fieldKey => $row) {
                 if (! is_array($row)) {
+                    continue;
+                }
+                if ((string) $sectionKey === 'adviser' && (string) $fieldKey === 'status') {
+                    continue;
+                }
+                if ($this->isNonReviewableApplicationRegistrationField((string) $sectionKey, (string) $fieldKey)) {
                     continue;
                 }
                 $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
@@ -407,6 +432,7 @@ class OrganizationController extends Controller
                             'href' => $fileHref,
                         ];
                     }
+
                     continue;
                 }
 
@@ -1280,6 +1306,15 @@ class OrganizationController extends Controller
         [$activeApplication, $applicationTypeLabel] = $this->resolveProfileActiveApplication($organization);
         $applicationWorkflowStatus = $this->workflowStatusFromApplication($activeApplication);
 
+        $registrationAdviserNomination = null;
+        if ($organization && $activeApplication instanceof OrganizationSubmission && $activeApplication->isRegistration()) {
+            $registrationAdviserNomination = OrganizationAdviser::query()
+                ->where('organization_id', (int) $organization->id)
+                ->where('submission_id', (int) $activeApplication->id)
+                ->latest('id')
+                ->first();
+        }
+
         $revisionRegistration = null;
         $profileRevisionSummary = ['groups' => [], 'field_notes' => [], 'general_remarks' => null];
         $revisionEditableFields = [];
@@ -1461,6 +1496,7 @@ class OrganizationController extends Controller
             'profileRevisionSummary' => $profileRevisionSummary,
             'activeAdviser' => $activeAdviser,
             'adviser' => $adviserPayload,
+            'registrationAdviserNomination' => $registrationAdviserNomination,
         ]);
     }
 
@@ -1525,13 +1561,19 @@ class OrganizationController extends Controller
     {
         $map = [
             'application.organization' => 'organization_name',
-            'application.submitted_by' => 'submitted_by_display',
             'contact.organization_name' => 'organization_name',
+            'contact.contact_person' => 'contact_person',
+            'contact.contact_no' => 'contact_no',
+            'contact.contact_email' => 'contact_email',
+            'contact.email_address' => 'contact_email',
             'overview.submitted_by' => 'submitted_by_display',
             'organizational.organization_type' => 'organization_type',
             'organizational.school' => 'college_department',
             'organizational.date_organized' => 'founded_date',
             'organizational.purpose' => 'purpose',
+            'adviser.full_name' => 'adviser_name',
+            'adviser.email' => 'adviser_email',
+            'adviser.school_id' => 'adviser_school_id',
         ];
         $editable = [];
         foreach ($fieldNotes as $fieldPath => $note) {
@@ -1589,8 +1631,44 @@ class OrganizationController extends Controller
             'purpose' => (string) ($organization->purpose ?? ''),
             'founded_date' => $organization->founded_date?->format('Y-m-d') ?? '',
             'submitted_by_display' => '',
+            'adviser_name' => (string) ($organization->adviser_name ?? ''),
+            'adviser_email' => (string) ($organization->currentAdviser?->user?->email ?? ''),
+            'adviser_school_id' => (string) ($organization->currentAdviser?->user?->school_id ?? ''),
             default => '',
         };
+    }
+
+    /**
+     * Current value for profile revision compare/save (submission columns for contact fields).
+     */
+    private function profileRevisionFieldCurrentValue(?OrganizationSubmission $submission, Organization $organization, string $field): mixed
+    {
+        return match ($field) {
+            'contact_person' => (string) ($submission?->contact_person ?? ''),
+            'contact_no' => (string) ($submission?->contact_no ?? ''),
+            'contact_email' => (string) ($submission?->contact_email ?? ''),
+            default => $this->profileCurrentFieldValue($organization, $field),
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function profileSubmissionColumnFieldKeys(): array
+    {
+        return ['contact_person', 'contact_no', 'contact_email'];
+    }
+
+    private function profileNewValueAfterSave(Organization $organization, array $validated, string $field): string
+    {
+        if ($field === 'submitted_by_display') {
+            return (string) ($validated[$field] ?? '');
+        }
+        if (in_array($field, $this->profileSubmissionColumnFieldKeys(), true)) {
+            return (string) ($validated[$field] ?? '');
+        }
+
+        return (string) $this->profileCurrentFieldValue($organization, $field);
     }
 
     /**
@@ -1605,6 +1683,12 @@ class OrganizationController extends Controller
             'college_department' => ['section_key' => 'organizational', 'field_key' => 'school'],
             'purpose' => ['section_key' => 'organizational', 'field_key' => 'purpose'],
             'founded_date' => ['section_key' => 'organizational', 'field_key' => 'date_organized'],
+            'contact_person' => ['section_key' => 'contact', 'field_key' => 'contact_person'],
+            'contact_no' => ['section_key' => 'contact', 'field_key' => 'contact_no'],
+            'contact_email' => ['section_key' => 'contact', 'field_key' => 'contact_email'],
+            'adviser_name' => ['section_key' => 'adviser', 'field_key' => 'full_name'],
+            'adviser_email' => ['section_key' => 'adviser', 'field_key' => 'email'],
+            'adviser_school_id' => ['section_key' => 'adviser', 'field_key' => 'school_id'],
         ];
     }
 
@@ -1612,13 +1696,13 @@ class OrganizationController extends Controller
      * @param  array<string, mixed>  $validated
      * @param  array<int, string>  $fields
      */
-    private function hasMeaningfulProfileChanges(Organization $organization, array $validated, array $fields): bool
+    private function hasMeaningfulProfileChanges(Organization $organization, array $validated, array $fields, ?OrganizationSubmission $submission = null): bool
     {
         foreach ($fields as $field) {
             if (! array_key_exists($field, $validated)) {
                 continue;
             }
-            $before = $this->normalizeRevisionComparableValue($this->profileCurrentFieldValue($organization, $field));
+            $before = $this->normalizeRevisionComparableValue($this->profileRevisionFieldCurrentValue($submission, $organization, $field));
             $after = $this->normalizeRevisionComparableValue($validated[$field]);
             if ($before !== $after) {
                 return true;
@@ -1649,6 +1733,8 @@ class OrganizationController extends Controller
                 ->with('error', $organization->profileEditBlockedMessage());
         }
 
+        $organization->load(['currentAdviser.user']);
+
         $defaultRules = [
             'organization_name' => ['required', 'string', 'max:150'],
             'organization_type' => ['required', 'string', 'max:50'],
@@ -1674,6 +1760,37 @@ class OrganizationController extends Controller
                 foreach ($editableFields as $field) {
                     if ($field === 'submitted_by_display') {
                         $revisionRules[$field] = ['required', 'string', 'max:150'];
+
+                        continue;
+                    }
+                    if ($field === 'adviser_name') {
+                        $revisionRules[$field] = ['nullable', 'string', 'max:100'];
+
+                        continue;
+                    }
+                    if ($field === 'adviser_email') {
+                        $revisionRules[$field] = ['nullable', 'string', 'email', 'max:255'];
+
+                        continue;
+                    }
+                    if ($field === 'adviser_school_id') {
+                        $revisionRules[$field] = ['nullable', 'string', 'max:50'];
+
+                        continue;
+                    }
+                    if ($field === 'contact_person') {
+                        $revisionRules[$field] = ['nullable', 'string', 'max:255'];
+
+                        continue;
+                    }
+                    if ($field === 'contact_no') {
+                        $revisionRules[$field] = ['nullable', 'string', 'max:50'];
+
+                        continue;
+                    }
+                    if ($field === 'contact_email') {
+                        $revisionRules[$field] = ['nullable', 'string', 'email', 'max:255'];
+
                         continue;
                     }
                     if (isset($defaultRules[$field])) {
@@ -1683,7 +1800,7 @@ class OrganizationController extends Controller
                 $validated = $revisionRules !== [] ? $request->validate($revisionRules) : [];
                 $editableComparedFields = array_keys($revisionRules);
                 $orgComparedFields = array_values(array_filter($editableComparedFields, fn (string $field): bool => $field !== 'submitted_by_display'));
-                $hasMeaningfulChanges = $this->hasMeaningfulProfileChanges($organization, $validated, $orgComparedFields);
+                $hasMeaningfulChanges = $this->hasMeaningfulProfileChanges($organization, $validated, $orgComparedFields, $latestRevisionSubmission);
                 if (in_array('submitted_by_display', $editableComparedFields, true)) {
                     $submittedByBefore = $this->normalizeRevisionComparableValue($request->input('submitted_by_display_original', ''));
                     $submittedByAfter = $this->normalizeRevisionComparableValue($validated['submitted_by_display'] ?? '');
@@ -1707,15 +1824,21 @@ class OrganizationController extends Controller
         foreach (array_keys($validated) as $field) {
             if ($field === 'submitted_by_display') {
                 $beforeValues[$field] = (string) $request->input('submitted_by_display_original', '');
+
                 continue;
             }
-            $beforeValues[$field] = $this->profileCurrentFieldValue($organization, $field);
+            $beforeValues[$field] = $this->profileRevisionFieldCurrentValue($latestRevisionSubmission, $organization, $field);
         }
 
-        $organizationUpdatableFields = array_keys($defaultRules);
-        $organizationPayload = array_intersect_key($validated, array_flip($organizationUpdatableFields));
+        $organizationPayloadKeys = ['organization_name', 'organization_type', 'college_department', 'purpose', 'founded_date', 'adviser_name'];
+        $organizationPayload = array_intersect_key($validated, array_flip($organizationPayloadKeys));
         if ($organizationPayload !== []) {
             $organization->update($organizationPayload);
+        }
+
+        $submissionColumnPayload = array_intersect_key($validated, array_flip($this->profileSubmissionColumnFieldKeys()));
+        if ($latestRevisionSubmission && $submissionColumnPayload !== []) {
+            $latestRevisionSubmission->update($submissionColumnPayload);
         }
 
         if ($latestRevisionSubmission && $editableComparedFields !== []) {
@@ -1726,9 +1849,7 @@ class OrganizationController extends Controller
                     continue;
                 }
                 $oldValue = (string) ($beforeValues[$field] ?? '');
-                $newValue = $field === 'submitted_by_display'
-                    ? (string) ($validated[$field] ?? '')
-                    : (string) $this->profileCurrentFieldValue($organization, $field);
+                $newValue = $this->profileNewValueAfterSave($organization, $validated, $field);
                 if ($this->normalizeRevisionComparableValue($oldValue) === $this->normalizeRevisionComparableValue($newValue)) {
                     continue;
                 }
@@ -3884,6 +4005,7 @@ class OrganizationController extends Controller
         foreach ($requiredKeys as $key) {
             if (! in_array($key, $selected, true)) {
                 $errors["requirements.$key"] = 'This requirement must be selected and must have an attached file.';
+
                 continue;
             }
 
@@ -3894,7 +4016,7 @@ class OrganizationController extends Controller
         }
 
         if ($errors !== []) {
-            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+            throw ValidationException::withMessages($errors);
         }
     }
 

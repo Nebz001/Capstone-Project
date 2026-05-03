@@ -32,6 +32,9 @@ class OrganizationRegistrationRevisionSummaryService
         foreach ($pendingUpdateRows as $row) {
             $sectionKey = (string) ($row->section_key ?? '');
             $fieldKey = (string) ($row->field_key ?? '');
+            if ($this->isNonReviewableApplicationRegistrationField($sectionKey, $fieldKey)) {
+                continue;
+            }
             if ($sectionKey !== '' && $fieldKey !== '') {
                 $pendingRevisionItemSet[$sectionKey.'.'.$fieldKey] = true;
             }
@@ -65,6 +68,12 @@ class OrganizationRegistrationRevisionSummaryService
                 if (! is_array($row)) {
                     continue;
                 }
+                if ($sectionKey === 'adviser' && (string) $fieldKey === 'status') {
+                    continue;
+                }
+                if ($this->isNonReviewableApplicationRegistrationField((string) $sectionKey, (string) $fieldKey)) {
+                    continue;
+                }
                 $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
                 if (! in_array($status, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
                     continue;
@@ -95,7 +104,7 @@ class OrganizationRegistrationRevisionSummaryService
                     'field_label' => $fieldLabel,
                     'field' => $fieldLabel,
                     'note' => $note,
-                    'anchor_id' => $sectionKeyValue === 'requirements' ? $anchorId : '',
+                    'anchor_id' => $anchorId,
                     'href' => ($sectionKeyValue === 'requirements' && ! $submission->isRenewal())
                         ? route('organizations.submitted-documents.registrations.show', $submission).'?revision_target='.$anchorId
                         : null,
@@ -134,6 +143,12 @@ class OrganizationRegistrationRevisionSummaryService
         ];
     }
 
+    private function isNonReviewableApplicationRegistrationField(string $sectionKey, string $fieldKey): bool
+    {
+        return $sectionKey === 'application'
+            && in_array($fieldKey, ['academic_year', 'submission_date', 'submitted_by'], true);
+    }
+
     private function sanitizeAnchorSegment(string $value): string
     {
         $value = strtolower(trim($value));
@@ -142,4 +157,3 @@ class OrganizationRegistrationRevisionSummaryService
         return trim($value, '-') ?: 'field';
     }
 }
-

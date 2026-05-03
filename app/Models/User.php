@@ -45,7 +45,11 @@ class User extends Authenticatable
 
     public function getFullNameAttribute(): string
     {
-        return trim($this->first_name.' '.$this->last_name);
+        $first = trim((string) ($this->first_name ?? ''));
+        $last = trim((string) ($this->last_name ?? ''));
+        $combined = trim($first.' '.$last);
+
+        return trim(preg_replace('/\s+/u', ' ', $combined) ?? '');
     }
 
     public function roleDisplayLabel(): string

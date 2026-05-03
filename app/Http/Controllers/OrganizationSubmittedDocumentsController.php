@@ -7,13 +7,13 @@ use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
 use App\Models\ActivityRequestForm;
 use App\Models\Attachment;
+use App\Models\ModuleRevisionFieldUpdate;
 use App\Models\Organization;
 use App\Models\OrganizationAdviser;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationRegistration;
 use App\Models\OrganizationRenewal;
 use App\Models\OrganizationRevisionFieldUpdate;
-use App\Models\ModuleRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
 use App\Models\SubmissionRequirement;
 use App\Models\User;
@@ -26,8 +26,12 @@ use App\Support\OrganizationStoragePath;
 use App\Support\SubmissionRoutingProgress;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -39,6 +43,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class OrganizationSubmittedDocumentsController extends Controller
 {
     private const REPLACEMENT_FILE_MAX_KB = 2048;
+
     private const REPLACEMENT_FILE_MAX_MB = 2;
 
     private const REGISTRATION_FILE_KEYS = [
@@ -349,6 +354,7 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         $backNav = $this->registrationDetailBackNavigation($request);
         $adviserNomination = $this->submissionAdviserNomination($submission);
+
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $backNav['route'],
             'backLabel' => $backNav['label'],
@@ -438,7 +444,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'replacement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
         ]);
         $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
-        $changedKeys = array_values(array_filter($revisionKeys, fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile));
+        $changedKeys = array_values(array_filter($revisionKeys, fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof UploadedFile));
         if ($changedKeys === []) {
             return back()->with('error', 'Replace at least one revised file before submitting.');
         }
@@ -446,7 +452,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         /** @var User $user */
         $user = $request->user();
         foreach ($changedKeys as $key) {
-            /** @var \Illuminate\Http\UploadedFile $upload */
+            /** @var UploadedFile $upload */
             $upload = $incoming[$key];
             $this->applyRegistrationRequirementReplacement($submission, $user, $key, $upload);
         }
@@ -628,7 +634,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
         $changedKeys = array_values(array_filter(
             $revisionKeys,
-            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile
+            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof UploadedFile
         ));
         if ($changedKeys === []) {
             return back()->with('error', 'Replace at least one revised file before submitting.');
@@ -637,7 +643,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         /** @var User $user */
         $user = $request->user();
         foreach ($changedKeys as $key) {
-            /** @var \Illuminate\Http\UploadedFile $upload */
+            /** @var UploadedFile $upload */
             $upload = $incoming[$key];
             $this->applyRenewalRequirementReplacement($submission, $user, $key, $upload);
         }
@@ -831,7 +837,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'replacement_files.calendar_file.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
         ]);
         $upload = $validated['replacement_files']['calendar_file'] ?? null;
-        if (! $upload instanceof \Illuminate\Http\UploadedFile) {
+        if (! $upload instanceof UploadedFile) {
             return back()->with('error', 'Replace the revised file before submitting.');
         }
 
@@ -854,7 +860,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     private function applyActivityCalendarFileReplacement(
         ActivityCalendar $calendar,
         User $user,
-        \Illuminate\Http\UploadedFile $upload,
+        UploadedFile $upload,
     ): void {
         $organizationId = (int) $calendar->organization_id;
         $folder = 'activity-calendars/'.$organizationId.'/'.(int) $calendar->id;
@@ -1214,6 +1220,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                         return $officerKey;
                     }
                 }
+
                 return null;
             })
             ->filter()
@@ -1391,6 +1398,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $revisionKeys = collect(array_keys(self::PROPOSAL_FILE_KEY_MAP))
             ->filter(function (string $officerKey) use ($fieldReviews): bool {
                 $entry = self::PROPOSAL_FILE_KEY_MAP[$officerKey];
+
                 return (string) data_get($fieldReviews, $entry['section_key'].'.'.$entry['field_key'].'.status', 'pending') === 'flagged';
             })
             ->values()
@@ -1409,7 +1417,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
         $changedKeys = array_values(array_filter(
             $revisionKeys,
-            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile
+            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof UploadedFile
         ));
         if ($changedKeys === []) {
             return back()->with('error', 'Replace at least one revised file before submitting.');
@@ -1438,7 +1446,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         ActivityProposal $proposal,
         User $user,
         string $officerKey,
-        \Illuminate\Http\UploadedFile $upload,
+        UploadedFile $upload,
     ): void {
         $entry = self::PROPOSAL_FILE_KEY_MAP[$officerKey];
         $organization = $proposal->organization()->first();
@@ -1618,6 +1626,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                         return $officerKey;
                     }
                 }
+
                 return null;
             })
             ->filter()
@@ -1643,6 +1652,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             $isPendingReviewAfterResubmit = $officerKey !== null
                 && isset($pendingItemSet[self::REPORT_FILE_KEY_MAP[$officerKey]['section_key'].'.'.self::REPORT_FILE_KEY_MAP[$officerKey]['field_key']]);
             $canReplace = $isFlagged && ! $isPendingReviewAfterResubmit;
+
             return [
                 'label' => $label,
                 'url' => $url,
@@ -1803,6 +1813,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $revisionKeys = collect(array_keys(self::REPORT_FILE_KEY_MAP))
             ->filter(function (string $officerKey) use ($fieldReviews): bool {
                 $entry = self::REPORT_FILE_KEY_MAP[$officerKey];
+
                 return (string) data_get($fieldReviews, $entry['section_key'].'.'.$entry['field_key'].'.status', 'pending') === 'flagged';
             })
             ->values()
@@ -1821,7 +1832,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
         $changedKeys = array_values(array_filter(
             $revisionKeys,
-            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof \Illuminate\Http\UploadedFile
+            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof UploadedFile
         ));
         if ($changedKeys === []) {
             return back()->with('error', 'Replace at least one revised file before submitting.');
@@ -1854,7 +1865,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         ActivityReport $report,
         User $user,
         string $officerKey,
-        \Illuminate\Http\UploadedFile $upload,
+        UploadedFile $upload,
     ): void {
         $entry = self::REPORT_FILE_KEY_MAP[$officerKey];
         $organizationId = (int) $report->organization_id;
@@ -2053,6 +2064,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 if (! is_array($row) || ($row['status'] ?? null) !== 'flagged') {
                     continue;
                 }
+                if ((string) $sectionKey === 'adviser' && (string) $fieldKey === 'status') {
+                    continue;
+                }
                 $note = trim((string) ($row['note'] ?? ''));
                 if ($note === '') {
                     continue;
@@ -2156,12 +2170,18 @@ class OrganizationSubmittedDocumentsController extends Controller
     {
         $fieldReviews = is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [];
         $notes = [];
-        foreach ($fieldReviews as $fields) {
+        foreach ($fieldReviews as $sectionKey => $fields) {
             if (! is_array($fields)) {
                 continue;
             }
-            foreach ($fields as $field) {
+            foreach ($fields as $fieldKey => $field) {
                 if (! is_array($field) || ($field['status'] ?? null) !== 'flagged') {
+                    continue;
+                }
+                if ((string) $sectionKey === 'adviser' && (string) $fieldKey === 'status') {
+                    continue;
+                }
+                if ((string) $sectionKey === 'application' && in_array((string) $fieldKey, ['academic_year', 'submission_date', 'submitted_by'], true)) {
                     continue;
                 }
                 $label = trim((string) ($field['label'] ?? ''));
@@ -2373,9 +2393,9 @@ class OrganizationSubmittedDocumentsController extends Controller
         array $savedUpdatedKeys = [],
         array $recentlyReplacedKeys = [],
         array $pendingRequirementUpdateKeys = []
-    ): array
-    {
+    ): array {
         $revisionByKey = $this->revisionNoteMapByRequirementKey($revisionSections);
+
         return $this->submissionRequirementFileLinks(
             $submission,
             self::REGISTRATION_FILE_KEYS,
@@ -2398,9 +2418,9 @@ class OrganizationSubmittedDocumentsController extends Controller
         array $savedUpdatedKeys = [],
         array $recentlyReplacedKeys = [],
         array $pendingRequirementUpdateKeys = []
-    ): array
-    {
+    ): array {
         $revisionByKey = $this->revisionNoteMapByRequirementKey($revisionSections);
+
         return $this->submissionRequirementFileLinks(
             $submission,
             self::RENEWAL_FILE_KEYS,
@@ -3110,7 +3130,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Relations\MorphMany<Attachment, \Illuminate\Database\Model>  $relation
+     * @param  MorphMany<Attachment, Model>  $relation
      */
     private function latestAttachmentForMorphRelationByFlexibleTypes($relation, array $suffixes): ?Attachment
     {
@@ -3133,7 +3153,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder<ActivityRequestForm>  $query
+     * @param  Builder<ActivityRequestForm>  $query
      */
     private function scopeRequestFormsWithFlexibleAttachmentTypes($query, array $suffixes): void
     {
@@ -3463,6 +3483,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->get()
             ->map(function (Attachment $attachment): ?string {
                 $suffix = str_replace(Attachment::TYPE_REPORT_SUPPORTING_PHOTO.':', '', (string) $attachment->file_type);
+
                 return ctype_digit($suffix) ? 'supporting_'.$suffix : null;
             })
             ->filter()
@@ -3504,6 +3525,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             }
 
             $legacyPhotos = is_array($report->supporting_photo_paths) ? $report->supporting_photo_paths : [];
+
             return $legacyPhotos[(int) $m[1]] ?? null;
         }
 
@@ -3700,7 +3722,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         OrganizationSubmission $submission,
         User $user,
         string $key,
-        \Illuminate\Http\UploadedFile $upload
+        UploadedFile $upload
     ): void {
         $fileType = Attachment::TYPE_REGISTRATION_REQUIREMENT.':'.$key;
         $oldAttachment = $submission->attachments()
@@ -3795,7 +3817,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         OrganizationSubmission $submission,
         User $user,
         string $key,
-        \Illuminate\Http\UploadedFile $upload
+        UploadedFile $upload
     ): void {
         $fileType = Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key;
         $oldAttachment = $submission->attachments()

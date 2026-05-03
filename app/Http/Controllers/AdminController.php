@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
 use App\Models\ActivityProposal;
-use App\Models\ActivityRequestForm;
 use App\Models\ActivityReport;
+use App\Models\ActivityRequestForm;
 use App\Models\ApprovalLog;
 use App\Models\ApprovalWorkflowStep;
 use App\Models\Attachment;
@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -47,6 +48,7 @@ class AdminController extends Controller
         'proposed_projects_budget',
         'others',
     ];
+
     private const RENEWAL_REQUIREMENT_FILE_KEYS = [
         'letter_of_intent',
         'application_form',
@@ -62,6 +64,9 @@ class AdminController extends Controller
 
     /** Admin per-section review keys (registration show page). */
     private const REGISTRATION_REVIEW_SECTION_KEYS = ['application', 'contact', 'adviser', 'organizational', 'requirements'];
+
+    /** Registration adviser nomination row `organization_advisers.status` is synced from these field reviews only. */
+    private const REGISTRATION_ADVISER_INFORMATION_REVIEW_KEYS = ['full_name', 'school_id', 'email'];
 
     /** @return array<string, string> section_key => revision_comment column */
     private function registrationReviewSectionRevisionColumns(): array
@@ -199,7 +204,7 @@ class AdminController extends Controller
                     : ($isUpdated ? 'UPDATED' : $legacyStatus);
                 $statusLabel = $status === 'UPDATED' ? 'UPDATED' : str_replace('_', ' ', $status);
                 $lastResubmittedAt = $update && $update->last_resubmitted_at
-                    ? \Illuminate\Support\Carbon::parse((string) $update->last_resubmitted_at)
+                    ? Carbon::parse((string) $update->last_resubmitted_at)
                     : null;
                 $latestAdminReviewedAt = $this->latestRegistrationReviewTimestamp(
                     is_array($record->registration_section_reviews) ? $record->registration_section_reviews : []
@@ -207,6 +212,7 @@ class AdminController extends Controller
                 $lastUpdatedAt = $lastResubmittedAt
                     ?: $latestAdminReviewedAt
                     ?: $record->updated_at;
+
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
@@ -230,7 +236,7 @@ class AdminController extends Controller
     /**
      * @param  array<string, mixed>  $sectionReviews
      */
-    private function latestRegistrationReviewTimestamp(array $sectionReviews): ?\Illuminate\Support\Carbon
+    private function latestRegistrationReviewTimestamp(array $sectionReviews): ?Carbon
     {
         $latest = null;
         foreach ($sectionReviews as $section) {
@@ -242,7 +248,7 @@ class AdminController extends Controller
                 continue;
             }
             try {
-                $ts = \Illuminate\Support\Carbon::parse($reviewedAt);
+                $ts = Carbon::parse($reviewedAt);
             } catch (\Throwable) {
                 continue;
             }
@@ -284,7 +290,7 @@ class AdminController extends Controller
                 $status = $isUpdated ? 'UPDATED' : $legacyStatus;
                 $statusLabel = $isUpdated ? 'UPDATED' : str_replace('_', ' ', $legacyStatus);
                 $lastResubmittedAt = $update && $update->last_resubmitted_at
-                    ? \Illuminate\Support\Carbon::parse((string) $update->last_resubmitted_at)
+                    ? Carbon::parse((string) $update->last_resubmitted_at)
                     : null;
                 $latestAdminReviewedAt = $this->latestRegistrationReviewTimestamp(
                     is_array($record->renewal_section_reviews) ? $record->renewal_section_reviews : []
@@ -292,6 +298,7 @@ class AdminController extends Controller
                 $lastUpdatedAt = $lastResubmittedAt
                     ?: $latestAdminReviewedAt
                     ?: $record->updated_at;
+
                 return [
                     'organization' => $record->organization?->organization_name ?? 'N/A',
                     'submitted_by' => $record->submittedBy?->full_name ?? 'N/A',
@@ -514,7 +521,13 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
 
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
-        $submission->load(['organization', 'submittedBy', 'academicTerm', 'requirements', 'attachments']);
+        $submission->load([
+            'organization',
+            'submittedBy:id,first_name,last_name,email,school_id',
+            'academicTerm',
+            'requirements',
+            'attachments',
+        ]);
         $latestUpdates = OrganizationRevisionFieldUpdate::query()
             ->where('organization_submission_id', $submission->id)
             ->with(['resubmittedBy:id,first_name,last_name', 'acknowledgedBy:id,first_name,last_name'])
@@ -549,7 +562,10 @@ class AdminController extends Controller
                 'is_updated' => $row->acknowledged_at === null,
             ];
         }
-        $effectiveFieldReviews = $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField);
+        $effectiveFieldReviews = $this->stripNonReviewableApplicationRegistrationFieldReviews(
+            $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField)
+        );
+
         return view('admin.registrations.show', [
             'registration' => $submission,
             'submission' => $submission,
@@ -609,7 +625,7 @@ class AdminController extends Controller
      * @param  array<string, mixed>  $meta
      * @return array{name:string,view_url:?string,download_url:?string}
      */
-    public function showRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): \Symfony\Component\HttpFoundation\Response
+    public function showRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
@@ -659,7 +675,7 @@ class AdminController extends Controller
      * than redirecting to the public Supabase URL where the browser would
      * preview the file inline.
      */
-    public function downloadRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): \Symfony\Component\HttpFoundation\Response
+    public function downloadRegistrationFieldUpdateFile(Request $request, OrganizationSubmission $submission, OrganizationRevisionFieldUpdate $fieldUpdate, string $version): Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
@@ -720,7 +736,7 @@ class AdminController extends Controller
      * redirect the browser to the public Supabase URL so it can render or
      * download the file directly.
      */
-    public function showRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
+    public function showRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
@@ -740,7 +756,7 @@ class AdminController extends Controller
      * file with `Content-Disposition: attachment` so the browser saves it
      * directly using the original filename from `attachments.original_name`.
      */
-    public function downloadRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
+    public function downloadRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
@@ -769,6 +785,9 @@ class AdminController extends Controller
         /** @var User $admin */
         $admin = $request->user();
         $fieldReviewInput = is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [];
+        if (isset($fieldReviewInput['adviser']['status'])) {
+            unset($fieldReviewInput['adviser']['status']);
+        }
         $sectionSubmittedInput = is_array($validated['section_submitted'] ?? null) ? $validated['section_submitted'] : [];
         $sectionSchema = $this->registrationReviewFieldSchema();
 
@@ -816,6 +835,10 @@ class AdminController extends Controller
                 'reviewed_by' => $isSubmitted ? $admin->id : null,
                 'reviewed_at' => $isSubmitted ? now()->toDateTimeString() : null,
             ];
+        }
+
+        if (isset($normalizedFieldReviews['adviser']['status'])) {
+            unset($normalizedFieldReviews['adviser']['status']);
         }
 
         $allSectionsSubmitted = collect($normalizedSectionReviews)->every(fn (array $row): bool => (bool) ($row['submitted'] ?? false));
@@ -875,6 +898,8 @@ class AdminController extends Controller
             }
             $submission->update($submissionPayload);
 
+            $this->syncAdviserNominationStatusFromRegistrationFieldReviews($submission, $normalizedFieldReviews, (int) $admin->id);
+
             if ($nextStatus === OrganizationSubmission::STATUS_APPROVED) {
                 $organizationPayload = ['status' => 'active'];
                 if (Schema::hasColumn('organizations', 'active_at')) {
@@ -933,73 +958,11 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
 
-        $validated = $request->validate([
-            'field_review' => ['nullable', 'array'],
-        ]);
-
-        /** @var User $admin */
-        $admin = $request->user();
-        $fieldReviewInput = is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [];
-        $sectionSchema = $this->registrationReviewFieldSchema();
-        $fieldReviewInput = $this->mergeFieldReviewInputWithStored(
-            $fieldReviewInput,
-            is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [],
-            $sectionSchema
-        );
-
-        $normalizedFieldReviews = [];
-        $normalizedSectionReviews = [];
-        foreach ($sectionSchema as $sectionKey => $fields) {
-            $sectionInput = is_array($fieldReviewInput[$sectionKey] ?? null) ? $fieldReviewInput[$sectionKey] : [];
-            $fieldStates = [];
-            foreach ($fields as $fieldKey => $fieldLabel) {
-                $row = is_array($sectionInput[$fieldKey] ?? null) ? $sectionInput[$fieldKey] : [];
-                $status = (string) ($row['status'] ?? 'pending');
-                if (in_array($status, ['revision', 'needs_revision'], true)) {
-                    $status = 'flagged';
-                }
-                if (! in_array($status, ['pending', 'passed', 'flagged'], true)) {
-                    $status = 'pending';
-                }
-                $note = trim((string) ($row['note'] ?? ''));
-                if ($status !== 'flagged') {
-                    $note = '';
-                }
-                $fieldStates[$fieldKey] = [
-                    'label' => $fieldLabel,
-                    'status' => $status,
-                    'note' => $note !== '' ? $note : null,
-                    'reviewed_by' => $status === 'pending' ? null : $admin->id,
-                    'reviewed_at' => $status === 'pending' ? null : now()->toDateTimeString(),
-                ];
-            }
-
-            $hasPending = collect($fieldStates)->contains(fn (array $row): bool => ($row['status'] ?? 'pending') === 'pending');
-            $hasFlagged = collect($fieldStates)->contains(fn (array $row): bool => ($row['status'] ?? 'pending') === 'flagged');
-            $missingFlaggedNotes = collect($fieldStates)->contains(
-                fn (array $row): bool => ($row['status'] ?? '') === 'flagged' && trim((string) ($row['note'] ?? '')) === ''
-            );
-            $isSubmitted = ! $hasPending && ! $missingFlaggedNotes;
-
-            $normalizedFieldReviews[$sectionKey] = $fieldStates;
-            $normalizedSectionReviews[$sectionKey] = [
-                'status' => ! $isSubmitted ? 'pending' : ($hasFlagged ? 'needs_revision' : 'verified'),
-                'submitted' => $isSubmitted,
-                'reviewed_by' => $isSubmitted ? $admin->id : null,
-                'reviewed_at' => $isSubmitted ? now()->toDateTimeString() : null,
-            ];
-        }
-
-        $submission->update([
-            'registration_field_reviews' => $normalizedFieldReviews,
-            'registration_section_reviews' => $normalizedSectionReviews,
-        ]);
-        $this->autoAcknowledgeReviewedRegistrationFieldUpdates($submission, $normalizedFieldReviews, (int) $admin->id);
-
+        // Registration review changes must not touch the database until the admin finalizes via POST
+        // (updateRegistrationStatus / save review). This endpoint remains for compatibility but is a no-op.
         return response()->json([
             'ok' => true,
-            'field_reviews' => $normalizedFieldReviews,
-            'section_reviews' => $normalizedSectionReviews,
+            'persisted' => false,
         ]);
     }
 
@@ -1023,10 +986,9 @@ class AdminController extends Controller
         }
 
         return [
+            // Application Information: only Organization is reviewable; academic year, submission date,
+            // and submitter are system context (see stripNonReviewableApplicationRegistrationFieldReviews).
             'application' => [
-                'academic_year' => 'Academic Year',
-                'submission_date' => 'Submission Date',
-                'submitted_by' => 'Submitted By',
                 'organization' => 'Organization',
             ],
             'contact' => [
@@ -1038,7 +1000,6 @@ class AdminController extends Controller
                 'full_name' => 'Full Name',
                 'school_id' => 'School ID',
                 'email' => 'Email',
-                'status' => 'Status',
             ],
             'organizational' => [
                 'date_organized' => 'Date Organized',
@@ -1048,6 +1009,39 @@ class AdminController extends Controller
             ],
             'requirements' => $requirementFields,
         ];
+    }
+
+    /**
+     * Registration "application" section keys that are system context only (not officer-revisable).
+     *
+     * @return list<string>
+     */
+    private function nonReviewableApplicationRegistrationFieldKeys(): array
+    {
+        return ['academic_year', 'submission_date', 'submitted_by'];
+    }
+
+    private function isNonReviewableApplicationRegistrationField(string $sectionKey, string $fieldKey): bool
+    {
+        return $sectionKey === 'application'
+            && in_array($fieldKey, $this->nonReviewableApplicationRegistrationFieldKeys(), true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldReviews
+     * @return array<string, mixed>
+     */
+    private function stripNonReviewableApplicationRegistrationFieldReviews(array $fieldReviews): array
+    {
+        $section = $fieldReviews['application'] ?? null;
+        if (! is_array($section)) {
+            return $fieldReviews;
+        }
+        foreach ($this->nonReviewableApplicationRegistrationFieldKeys() as $key) {
+            unset($fieldReviews['application'][$key]);
+        }
+
+        return $fieldReviews;
     }
 
     /**
@@ -1066,7 +1060,13 @@ class AdminController extends Controller
         $blocks = [];
         foreach ($fieldReviews as $sectionKey => $fields) {
             $items = [];
-            foreach ($fields as $field) {
+            foreach ($fields as $fieldKey => $field) {
+                if ((string) $sectionKey === 'adviser' && (string) $fieldKey === 'status') {
+                    continue;
+                }
+                if ($this->isNonReviewableApplicationRegistrationField((string) $sectionKey, (string) $fieldKey)) {
+                    continue;
+                }
                 if (($field['status'] ?? '') !== 'flagged') {
                     continue;
                 }
@@ -1083,6 +1083,68 @@ class AdminController extends Controller
         }
 
         return $blocks === [] ? null : implode("\n\n—\n\n", $blocks);
+    }
+
+    /**
+     * @param  array<string, array<string, array<string, mixed>>>  $normalizedFieldReviews
+     */
+    private function syncAdviserNominationStatusFromRegistrationFieldReviews(OrganizationSubmission $submission, array $normalizedFieldReviews, int $adminUserId): void
+    {
+        $nomination = OrganizationAdviser::query()
+            ->where('organization_id', $submission->organization_id)
+            ->where('submission_id', (int) $submission->id)
+            ->latest('id')
+            ->first();
+
+        if (! $nomination) {
+            return;
+        }
+
+        if (strtolower((string) $nomination->status) === 'rejected') {
+            return;
+        }
+
+        $adviser = is_array($normalizedFieldReviews['adviser'] ?? null) ? $normalizedFieldReviews['adviser'] : [];
+        $statuses = [];
+        foreach (self::REGISTRATION_ADVISER_INFORMATION_REVIEW_KEYS as $key) {
+            $row = is_array($adviser[$key] ?? null) ? $adviser[$key] : [];
+            $s = strtolower(trim((string) ($row['status'] ?? 'pending')));
+            if (! in_array($s, ['pending', 'passed', 'flagged'], true)) {
+                $s = 'pending';
+            }
+            $statuses[] = $s;
+        }
+
+        $allPassed = $statuses === ['passed', 'passed', 'passed'];
+        $hasFlagged = in_array('flagged', $statuses, true);
+
+        if ($allPassed) {
+            $nomination->update([
+                'status' => 'approved',
+                'reviewed_by' => $adminUserId,
+                'reviewed_at' => now(),
+                'rejection_notes' => null,
+                'relieved_at' => null,
+            ]);
+
+            return;
+        }
+
+        if ($hasFlagged) {
+            $nomination->update([
+                'status' => 'pending',
+                'reviewed_by' => null,
+                'reviewed_at' => null,
+            ]);
+
+            return;
+        }
+
+        $nomination->update([
+            'status' => 'pending',
+            'reviewed_by' => null,
+            'reviewed_at' => null,
+        ]);
     }
 
     /**
@@ -1444,6 +1506,7 @@ class AdminController extends Controller
                 'value' => $budgetRows->count() > 0 ? ('Rows: '.$budgetRows->count().' · Total: '.number_format((float) $budgetRowsTotal, 2)) : 'No rows submitted.',
                 'table' => $budgetRows->map(function ($row): array {
                     $material = trim((string) ($row->item_description ?? $row->particulars ?? ''));
+
                     return [
                         'material' => $material !== '' ? $material : '—',
                         'quantity' => $row->quantity !== null ? (string) $row->quantity : '—',
@@ -1701,7 +1764,7 @@ class AdminController extends Controller
         ]);
     }
 
-    public function showRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
+    public function showRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
@@ -1719,7 +1782,7 @@ class AdminController extends Controller
      * emits the file with `Content-Disposition: attachment` so the browser
      * saves it directly using `attachments.original_name`.
      */
-    public function downloadRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): \Symfony\Component\HttpFoundation\Response
+    public function downloadRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
@@ -1739,7 +1802,7 @@ class AdminController extends Controller
      * `renewal_requirement:by_laws`) so older rows resolve correctly without
      * any data migration.
      */
-    private function redirectToSupabaseRequirementFile(OrganizationSubmission $submission, string $requirementKey): \Symfony\Component\HttpFoundation\Response
+    private function redirectToSupabaseRequirementFile(OrganizationSubmission $submission, string $requirementKey): Response
     {
         $attachment = Attachment::query()
             ->where('attachable_type', OrganizationSubmission::class)
@@ -1801,7 +1864,7 @@ class AdminController extends Controller
      * Uses the same prefixed/exact `file_type` lookup as the view path so
      * legacy bare-key rows still resolve.
      */
-    private function forceDownloadSupabaseRequirementFile(OrganizationSubmission $submission, string $requirementKey): \Symfony\Component\HttpFoundation\Response
+    private function forceDownloadSupabaseRequirementFile(OrganizationSubmission $submission, string $requirementKey): Response
     {
         $attachment = Attachment::query()
             ->where('attachable_type', OrganizationSubmission::class)
@@ -1864,7 +1927,7 @@ class AdminController extends Controller
      *
      * @param  array<string, mixed>  $logContext  Non-secret IDs to attach to log lines (attachment id / submission id / etc.).
      */
-    private function forceDownloadSupabaseObject(string $storedPath, string $originalName, ?string $mimeType, array $logContext = []): \Symfony\Component\HttpFoundation\Response
+    private function forceDownloadSupabaseObject(string $storedPath, string $originalName, ?string $mimeType, array $logContext = []): Response
     {
         $disk = Storage::disk('supabase');
 
@@ -1923,6 +1986,7 @@ class AdminController extends Controller
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+
         return $this->saveModuleDraft($request, $submission, $this->renewalReviewSchema(), 'renewal_field_reviews', 'renewal_section_reviews');
     }
 
@@ -1996,12 +2060,14 @@ class AdminController extends Controller
     public function saveCalendarReviewDraft(Request $request, ActivityCalendar $calendar): JsonResponse
     {
         $this->authorizeAdmin($request);
+
         return $this->saveModuleDraft($request, $calendar, $this->calendarReviewSchema($calendar), 'admin_field_reviews', 'admin_section_reviews');
     }
 
     public function updateCalendarStatus(Request $request, ActivityCalendar $calendar): RedirectResponse
     {
         $this->authorizeAdmin($request);
+
         return $this->finalizeModuleReview(
             $request,
             $calendar,
@@ -2018,12 +2084,14 @@ class AdminController extends Controller
     public function saveProposalReviewDraft(Request $request, ActivityProposal $proposal): JsonResponse
     {
         $this->authorizeAdmin($request);
+
         return $this->saveModuleDraft($request, $proposal, $this->proposalReviewSchema(), 'admin_field_reviews', 'admin_section_reviews');
     }
 
     public function updateProposalStatus(Request $request, ActivityProposal $proposal): RedirectResponse
     {
         $this->authorizeAdmin($request);
+
         return $this->finalizeModuleReview(
             $request,
             $proposal,
@@ -2040,12 +2108,14 @@ class AdminController extends Controller
     public function saveReportReviewDraft(Request $request, ActivityReport $report): JsonResponse
     {
         $this->authorizeAdmin($request);
+
         return $this->saveModuleDraft($request, $report, $this->reportReviewSchema(), 'admin_field_reviews', 'admin_section_reviews');
     }
 
     public function updateReportStatus(Request $request, ActivityReport $report): RedirectResponse
     {
         $this->authorizeAdmin($request);
+
         return $this->finalizeModuleReview(
             $request,
             $report,
@@ -2214,9 +2284,9 @@ class AdminController extends Controller
                 'reviewed_at' => now()->toDateTimeString(),
             ];
         }
+
         return [$normalizedFieldReviews, $normalizedSectionReviews, $hasPending, $hasMissingNotes];
     }
-
 
     /**
      * Merge draft payload with persisted field reviews so partial draft saves
@@ -2293,7 +2363,17 @@ class AdminController extends Controller
             ->whereNull('acknowledged_at')
             ->get();
         foreach ($pendingUpdates as $update) {
-            $status = (string) data_get($fieldReviews, $update->section_key.'.'.$update->field_key.'.status', 'pending');
+            $sectionKey = (string) ($update->section_key ?? '');
+            $fieldKey = (string) ($update->field_key ?? '');
+            if ($this->isNonReviewableApplicationRegistrationField($sectionKey, $fieldKey)) {
+                $update->update([
+                    'acknowledged_at' => now(),
+                    'acknowledged_by' => $adminId,
+                ]);
+
+                continue;
+            }
+            $status = (string) data_get($fieldReviews, $sectionKey.'.'.$fieldKey.'.status', 'pending');
             if ($status === 'pending') {
                 continue;
             }
@@ -2322,6 +2402,7 @@ class AdminController extends Controller
                 $blocks[] = ucwords(str_replace('_', ' ', (string) $sectionKey))."\n".implode("\n", $items);
             }
         }
+
         return $blocks === [] ? null : implode("\n\n—\n\n", $blocks);
     }
 
@@ -2414,6 +2495,7 @@ class AdminController extends Controller
                 'wide' => true,
             ];
         }
+
         return $sections;
     }
 

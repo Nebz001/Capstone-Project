@@ -4,8 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Schema;
 
 class Organization extends Model
@@ -18,6 +18,7 @@ class Organization extends Model
         'purpose',
         'logo_path',
         'founded_date',
+        'adviser_name',
         'status',
         'is_profile_locked',
     ];
