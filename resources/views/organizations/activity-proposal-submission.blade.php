@@ -20,12 +20,14 @@
   if ($prefillBudgetItems === null || $prefillBudgetItems === '') {
     $prefillBudgetItems = json_encode($prefill['budget_items'] ?? []);
   }
-  $hasExistingLogo = (bool) ($linkedProposal?->organization_logo_path);
+  $proposalStep2FileLinks = is_array($proposalStep2FileLinks ?? null) ? $proposalStep2FileLinks : [];
+  $hasExistingLogo = ! empty($proposalStep2FileLinks['organization_logo']);
   $sourceOfFundingValue = old('source_of_funding', $prefill['source_of_funding'] ?? '');
   if ($sourceOfFundingValue === '' || $sourceOfFundingValue === null || ! in_array((string) $sourceOfFundingValue, ['RSO Fund', 'RSO Savings', 'External'], true)) {
     $sourceOfFundingValue = 'RSO Fund';
   }
-  $hasExternalFundingFile = (bool) ($linkedProposal?->external_funding_support_path ?? false);
+  $hasExternalFundingFile = $sourceOfFundingValue === 'External' && ! empty($proposalStep2FileLinks['external_funding_support']);
+  $hasResumeResourceFile = ! empty($proposalStep2FileLinks['resume_resource_persons']);
   // inline-block + w-auto: keeps the native file control only as wide as the visible picker so
   // browser validation popovers anchor near "Choose File" instead of a full-width hit box.
   $fileClass = 'inline-block w-auto max-w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200/80';
@@ -214,6 +216,21 @@
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-5">
             <div class="md:col-span-2">
               <x-forms.label for="organization_logo" :required="! $hasExistingLogo">Organization Logo</x-forms.label>
+              @if (! empty($proposalStep2FileLinks['organization_logo']))
+                @php $logoLink = $proposalStep2FileLinks['organization_logo']; @endphp
+                <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <p class="font-semibold">Current file attached: {{ $logoLink['name'] }}</p>
+                  <p class="mt-0.5 text-emerald-800/90">
+                    @if (! empty($logoLink['mime_type']))
+                      <span class="rounded bg-white/80 px-1.5 py-0.5 font-medium">{{ $logoLink['mime_type'] }}</span>
+                    @endif
+                    @if (! empty($logoLink['file_size_kb']))
+                      <span class="ml-1">{{ (int) $logoLink['file_size_kb'] }} KB</span>
+                    @endif
+                  </p>
+                  <a href="{{ $logoLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View file</a>
+                </div>
+              @endif
               <div class="mt-2 w-fit max-w-full">
                 <input
                   id="organization_logo"
@@ -227,7 +244,7 @@
               <x-forms.helper>
                 JPEG, PNG, or WebP. Max 5&nbsp;MB.
                 @if ($hasExistingLogo)
-                  A logo is already on file; upload a new file only if you want to replace it.
+                  A logo is already saved; upload a new file only if you want to replace it.
                 @endif
               </x-forms.helper>
             </div>
@@ -527,6 +544,21 @@
               class="{{ $sourceOfFundingValue === 'External' ? '' : 'hidden' }}"
             >
               <x-forms.label for="external_funding_support" :required="! $hasExternalFundingFile">External funding support</x-forms.label>
+              @if (! empty($proposalStep2FileLinks['external_funding_support']))
+                @php $extLink = $proposalStep2FileLinks['external_funding_support']; @endphp
+                <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <p class="font-semibold">Current file attached: {{ $extLink['name'] }}</p>
+                  <p class="mt-0.5 text-emerald-800/90">
+                    @if (! empty($extLink['mime_type']))
+                      <span class="rounded bg-white/80 px-1.5 py-0.5 font-medium">{{ $extLink['mime_type'] }}</span>
+                    @endif
+                    @if (! empty($extLink['file_size_kb']))
+                      <span class="ml-1">{{ (int) $extLink['file_size_kb'] }} KB</span>
+                    @endif
+                  </p>
+                  <a href="{{ $extLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View file</a>
+                </div>
+              @endif
               <div class="mt-2 w-fit max-w-full">
                 <input
                   id="external_funding_support"
@@ -559,6 +591,21 @@
         <div class="px-6 py-5">
           <div>
             <x-forms.label for="resume_resource_persons">Resume of Resource Person/s</x-forms.label>
+            @if ($hasResumeResourceFile)
+              @php $resumeLink = $proposalStep2FileLinks['resume_resource_persons']; @endphp
+              <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                <p class="font-semibold">Current file attached: {{ $resumeLink['name'] }}</p>
+                <p class="mt-0.5 text-emerald-800/90">
+                  @if (! empty($resumeLink['mime_type']))
+                    <span class="rounded bg-white/80 px-1.5 py-0.5 font-medium">{{ $resumeLink['mime_type'] }}</span>
+                  @endif
+                  @if (! empty($resumeLink['file_size_kb']))
+                    <span class="ml-1">{{ (int) $resumeLink['file_size_kb'] }} KB</span>
+                  @endif
+                </p>
+                <a href="{{ $resumeLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View file</a>
+              </div>
+            @endif
             <div class="mt-2 w-fit max-w-full">
               <input
                 id="resume_resource_persons"
@@ -568,7 +615,7 @@
                 class="{{ $fileClass }}"
               />
             </div>
-            <x-forms.helper>Optional. PDF or Word. Max 10&nbsp;MB.</x-forms.helper>
+            <x-forms.helper>Optional. PDF or Word. Max 10&nbsp;MB.@if ($hasResumeResourceFile) A file is already saved; upload only to replace it.@endif</x-forms.helper>
           </div>
         </div>
       </x-ui.card>

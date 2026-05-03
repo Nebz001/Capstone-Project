@@ -447,8 +447,16 @@
             <div class="mt-2">
               @if ($requestLetterLink)
                 <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                  <p class="font-semibold">Uploaded file: {{ $requestLetterLink['name'] }}</p>
-                  <a href="{{ $requestLetterLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View uploaded file</a>
+                  <p class="font-semibold">Current file attached: {{ $requestLetterLink['name'] }}</p>
+                  <p class="mt-0.5 text-emerald-800/90">
+                    @if (! empty($requestLetterLink['mime_type']))
+                      <span class="rounded bg-white/80 px-1.5 py-0.5 font-medium">{{ $requestLetterLink['mime_type'] }}</span>
+                    @endif
+                    @if (! empty($requestLetterLink['file_size_kb']))
+                      <span class="ml-1">{{ (int) $requestLetterLink['file_size_kb'] }} KB</span>
+                    @endif
+                  </p>
+                  <a href="{{ $requestLetterLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View file</a>
                 </div>
               @endif
               <x-forms.label for="request_letter" :required="! $requestLetterLink" class="{{ $errors->has('request_letter') ? '!text-rose-700' : '' }}">
@@ -464,8 +472,16 @@
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             @if ($speakerResumeLink)
               <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                <p class="font-semibold">Uploaded file: {{ $speakerResumeLink['name'] }}</p>
-                <a href="{{ $speakerResumeLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View uploaded file</a>
+                <p class="font-semibold">Current file attached: {{ $speakerResumeLink['name'] }}</p>
+                <p class="mt-0.5 text-emerald-800/90">
+                  @if (! empty($speakerResumeLink['mime_type']))
+                    <span class="rounded bg-white/80 px-1.5 py-0.5 font-medium">{{ $speakerResumeLink['mime_type'] }}</span>
+                  @endif
+                  @if (! empty($speakerResumeLink['file_size_kb']))
+                    <span class="ml-1">{{ (int) $speakerResumeLink['file_size_kb'] }} KB</span>
+                  @endif
+                </p>
+                <a href="{{ $speakerResumeLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View file</a>
               </div>
             @endif
             <x-forms.label for="speaker_resume" class="{{ $errors->has('speaker_resume') ? '!text-rose-700' : '' }}">
@@ -480,8 +496,16 @@
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             @if ($postSurveyLink)
               <div class="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                <p class="font-semibold">Uploaded file: {{ $postSurveyLink['name'] }}</p>
-                <a href="{{ $postSurveyLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View uploaded file</a>
+                <p class="font-semibold">Current file attached: {{ $postSurveyLink['name'] }}</p>
+                <p class="mt-0.5 text-emerald-800/90">
+                  @if (! empty($postSurveyLink['mime_type']))
+                    <span class="rounded bg-white/80 px-1.5 py-0.5 font-medium">{{ $postSurveyLink['mime_type'] }}</span>
+                  @endif
+                  @if (! empty($postSurveyLink['file_size_kb']))
+                    <span class="ml-1">{{ (int) $postSurveyLink['file_size_kb'] }} KB</span>
+                  @endif
+                </p>
+                <a href="{{ $postSurveyLink['url'] }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-[#003E9F] underline">View file</a>
               </div>
             @endif
             <x-forms.label for="post_survey_form" :required="! $postSurveyLink" class="{{ $errors->has('post_survey_form') ? '!text-rose-700' : '' }}">

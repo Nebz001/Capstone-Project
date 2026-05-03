@@ -121,6 +121,11 @@
   @endif
 
   @if (($organization !== null || $isAdminSubmission) && ! $isBlocked)
+  @php
+    $persistCalendarEntriesApi = (($submissionContext ?? '') !== 'admin')
+      && ($organization ?? null)
+      && empty($activityCalendarFormBlocked ?? false);
+  @endphp
   <form
     id="activity-calendar-form"
     method="POST"
@@ -129,8 +134,19 @@
     novalidate
     data-officer-validation-pending="{{ $officerValidationPending ? 'true' : 'false' }}"
     data-activity-calendar-form-blocked="{{ $activityCalendarFormBlocked ? 'true' : 'false' }}"
+    @if ($persistCalendarEntriesApi)
+      data-calendar-entries-persist="1"
+      data-calendar-entries-store-url="{{ route('organizations.activity-calendar-submission.entries.store') }}"
+      data-calendar-entry-update-url-template="{{ route('organizations.activity-calendar-submission.entries.update', ['entry' => '__ENTRY_ID__']) }}"
+      data-calendar-entry-delete-url-template="{{ route('organizations.activity-calendar-submission.entries.destroy', ['entry' => '__ENTRY_ID__']) }}"
+    @endif
   >
     @csrf
+    @if (! empty($activityCalendarInitialActivities ?? []))
+      <script type="application/json" id="activity-calendar-initial-activities">
+        @json($activityCalendarInitialActivities ?? [])
+      </script>
+    @endif
 
     <fieldset class="min-w-0 space-y-4 border-0 p-0 m-0">
 
@@ -307,56 +323,40 @@
             <div id="activities-hidden-inputs"></div>
 
             <div class="overflow-x-auto rounded-xl border border-slate-200">
-              <table class="min-w-232 w-full divide-y divide-slate-200 text-left text-sm">
+              <table class="w-full min-w-[640px] text-left text-sm">
                 <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th scope="col" class="px-4 py-3">Date</th>
-                    <th scope="col" class="px-4 py-3">Activity Name</th>
-                    <th scope="col" class="px-4 py-3">SDGs</th>
-                    <th scope="col" class="px-4 py-3">Venue</th>
-                    <th scope="col" class="px-4 py-3">Participant / Program Assigned</th>
-                    <th scope="col" class="px-4 py-3">Budget</th>
-                    <th scope="col" class="px-4 py-3">Status</th>
-                    <th scope="col" class="px-4 py-3">Date Received</th>
-                    <th scope="col" class="px-4 py-3">Actions</th>
+                    <th scope="col" class="px-5 py-4">Date</th>
+                    <th scope="col" class="px-5 py-4">Activity Name</th>
+                    <th scope="col" class="px-5 py-4">SDGs</th>
+                    <th scope="col" class="px-5 py-4">Venue</th>
+                    <th scope="col" class="px-5 py-4">Participant / Program Assigned</th>
+                    <th scope="col" class="px-5 py-4">Budget</th>
+                    <th scope="col" class="px-5 py-4">Actions</th>
                   </tr>
                 </thead>
-                <tbody id="activities-preview-body" class="divide-y divide-slate-100 bg-white">
+                <tbody id="activities-preview-body" class="divide-y divide-slate-200 bg-white text-slate-900">
                   @if ($calLock && $latestCalendar->entries->isNotEmpty())
                     @foreach ($latestCalendar->entries as $entry)
                       <tr class="align-top">
-                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
-                        <td class="px-4 py-3.5 text-slate-900"><span class="font-semibold">{{ $entry->activity_name }}</span></td>
-                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->target_sdg ?? '—' }}</td>
-                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->venue }}</td>
-                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->target_participants ?? '—' }}</td>
-                        <td class="px-4 py-3.5 font-medium text-slate-900">{{ $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2) : '—' }}</td>
-                        <td class="px-4 py-3.5">
-                          @php
-                            $calSt = strtoupper((string) ($latestCalendar->calendar_status ?? ''));
-                            $rowStatusLabel = match ($calSt) {
-                              'PENDING' => 'Pending review',
-                              'UNDER_REVIEW' => 'Under review',
-                              'APPROVED' => 'Approved',
-                              'REJECTED' => 'Rejected',
-                              default => $latestCalendar->calendar_status ?? 'Submitted',
-                            };
-                          @endphp
-                          <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{{ $rowStatusLabel }}</span>
-                        </td>
-                        <td class="px-4 py-3.5 text-sm font-medium text-slate-600">For admin use</td>
-                        <td class="px-4 py-3.5 text-sm text-slate-400">—</td>
+                        <td class="px-5 py-4 font-medium text-slate-900">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
+                        <td class="px-5 py-4 font-medium text-slate-900">{{ $entry->activity_name }}</td>
+                        <td class="px-5 py-4 text-slate-700">{{ $entry->target_sdg ?? '—' }}</td>
+                        <td class="px-5 py-4 text-slate-700">{{ $entry->venue }}</td>
+                        <td class="px-5 py-4 text-slate-700">{{ $entry->target_participants ?? '—' }}</td>
+                        <td class="px-5 py-4 text-slate-700">{{ $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2) : '—' }}</td>
+                        <td class="px-5 py-4 text-center text-sm text-slate-500">—</td>
                       </tr>
                     @endforeach
                   @elseif ($calLock)
                     <tr>
-                      <td colspan="9" class="px-4 py-8 text-center text-sm text-slate-600">
+                      <td colspan="7" class="px-5 py-8 text-center text-sm text-slate-600">
                         No activities are stored for this submission.
                       </td>
                     </tr>
                   @else
                     <tr id="activities-empty-state">
-                      <td colspan="9" class="px-4 py-8 text-center text-sm text-slate-600">
+                      <td colspan="7" class="px-5 py-8 text-center text-sm text-slate-600">
                         No activities added yet.
                       </td>
                     </tr>
