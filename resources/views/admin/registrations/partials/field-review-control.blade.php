@@ -1,4 +1,5 @@
 @php
+  $cardScrollId = $cardScrollId ?? null;
   $saved = data_get($persistedFieldReviews ?? [], "$sectionKey.$fieldKey", []);
   $status = old("field_review.$sectionKey.$fieldKey.status", $saved['status'] ?? 'pending');
   if (in_array($status, ['revision', 'needs_revision'], true)) {
@@ -17,7 +18,7 @@
   data-section-key="{{ $sectionKey }}"
   data-field-key="{{ $fieldKey }}"
   data-field-label="{{ $fieldLabel }}"
-  data-anchor-id="updated-field-{{ $sectionKey }}-{{ $fieldKey }}"
+  data-anchor-id="{{ $cardScrollId ?? 'updated-field-'.$sectionKey.'-'.$fieldKey }}"
   data-locked="{{ $locked }}"
 >
   <div class="inline-flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="Field review for {{ $fieldLabel }}">

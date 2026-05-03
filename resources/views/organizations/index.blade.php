@@ -92,40 +92,62 @@
                     @if ($showInfoPanel || $showFilePanel)
                         <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
                             @if ($showInfoPanel)
-                            <div class="rounded-xl border bg-white px-3.5 py-3 {{ $hasInfoPending ? 'border-yellow-300 border-l-4 border-l-yellow-400' : 'border-emerald-300 border-l-4 border-l-emerald-400' }}">
+                            @php
+                                $infoCardUpdatedOnly = ! $hasInfoPending && $hasInfoUpdated;
+                                $infoCardHybrid = $hasInfoPending && $hasInfoUpdated;
+                                $infoCardUseEmeraldStyle = $infoCardUpdatedOnly;
+                            @endphp
+                            <div class="rounded-xl border bg-white px-3.5 py-3 {{ $infoCardUseEmeraldStyle ? 'border-emerald-300 border-l-4 border-l-emerald-400' : 'border-yellow-300 border-l-4 border-l-yellow-400' }}">
                                 <div class="flex items-center justify-between gap-2">
-                                    <p class="text-[11px] font-bold uppercase tracking-wide {{ $hasInfoPending ? 'text-yellow-900' : 'text-emerald-800' }}">
-                                        {{ $hasInfoPending ? 'Information to Update' : 'Information Updated' }}
-                                    </p>
-                                    <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $hasInfoPending ? 'bg-yellow-100 text-yellow-800' : 'bg-emerald-100 text-emerald-800' }}">
-                                        @if ($hasInfoPending)
-                                            Pending
+                                    <p class="text-[11px] font-bold uppercase tracking-wide {{ $infoCardUseEmeraldStyle ? 'text-emerald-800' : 'text-yellow-900' }}">
+                                        @if ($infoCardHybrid || $hasInfoPending)
+                                            Information to Update
                                         @else
+                                            Information Updated
+                                        @endif
+                                    </p>
+                                    <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide {{ $infoCardUseEmeraldStyle ? 'bg-emerald-100 text-emerald-800' : 'bg-yellow-100 text-yellow-800' }}">
+                                        @if ($infoCardUseEmeraldStyle)
                                             <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
                                             Updated
+                                        @else
+                                            Pending
                                         @endif
                                     </span>
                                 </div>
-                                <ul class="mt-2 space-y-1.5">
-                                    @foreach (($hasInfoPending ? $infoRevisions : $updatedInfo) as $item)
-                                        <li class="rounded-md px-2 py-1 text-xs {{ $hasInfoPending ? 'text-yellow-950 bg-yellow-50/60' : 'text-emerald-900 bg-emerald-50/60' }}">
-                                            <a href="{{ $item['href'] ?? '#' }}" class="inline-flex w-full items-start gap-1 text-left">
-                                                <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
-                                                @if ($hasInfoPending)
+                                @if ($hasInfoPending)
+                                    <ul class="mt-2 space-y-1.5">
+                                        @foreach ($infoRevisions as $item)
+                                            <li class="rounded-md px-2 py-1 text-xs text-yellow-950 bg-yellow-50/60">
+                                                <a href="{{ $item['href'] ?? '#' }}" class="inline-flex w-full items-start gap-1 text-left">
+                                                    <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
                                                     <span>— {{ $item['note'] ?? '' }}</span>
-                                                @else
+                                                </a>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                                @if ($hasInfoUpdated)
+                                    @if ($infoCardHybrid)
+                                        <p class="mt-3 text-[10px] font-bold uppercase tracking-wide text-emerald-800">Submitted for review</p>
+                                    @endif
+                                    <ul class="{{ $infoCardHybrid ? 'mt-1.5' : 'mt-2' }} space-y-1.5">
+                                        @foreach ($updatedInfo as $item)
+                                            <li class="rounded-md px-2 py-1 text-xs text-emerald-900 bg-emerald-50/60">
+                                                <a href="{{ $item['href'] ?? '#' }}" class="inline-flex w-full items-start gap-1 text-left">
+                                                    <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
                                                     @php
                                                         $oldVal = trim((string) ($item['old_value'] ?? ''));
                                                         $newVal = trim((string) ($item['new_value'] ?? ''));
                                                     @endphp
                                                     <span>— {{ $oldVal !== '' || $newVal !== '' ? ($oldVal !== '' ? $oldVal.' → '.$newVal : $newVal) : 'Updated value submitted' }}</span>
-                                                @endif
-                                            </a>
-                                        </li>
-                                    @endforeach
-                                </ul>
-                                @if (! $hasInfoPending && $hasInfoUpdated)
-                                    <p class="mt-2 text-xs text-emerald-800">Your updated information has been submitted and is now awaiting SDAO review.</p>
+                                                </a>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                                @if ($hasInfoUpdated)
+                                    <p class="mt-2 text-xs {{ $infoCardHybrid ? 'text-slate-600' : 'text-emerald-800' }}">Your updated information has been submitted and is now awaiting SDAO review.</p>
                                 @endif
                             </div>
                             @endif

@@ -84,7 +84,6 @@
       'full_name' => 'Full Name',
       'school_id' => 'School ID',
       'email' => 'Email',
-      'status' => 'Status',
     ],
     'organizational' => [
       'date_organized' => 'Date Organized',
@@ -125,9 +124,9 @@
     };
   };
   $sectionFieldKeys = [
-    'application' => ['academic_year', 'submission_date', 'submitted_by', 'organization'],
+    'application' => ['organization'],
     'contact' => ['contact_person', 'contact_no', 'contact_email'],
-    'adviser' => ['full_name', 'school_id', 'email', 'status'],
+    'adviser' => ['full_name', 'school_id', 'email'],
     'organizational' => ['date_organized', 'organization_type', 'school', 'purpose'],
     'requirements' => $requirementKeys,
   ];
@@ -173,6 +172,9 @@
     'needs_revision' => collect($effectiveSectionStatus)->filter(fn ($s) => $s === 'needs_revision')->count(),
     'pending' => collect($effectiveSectionStatus)->filter(fn ($s) => $s === 'pending')->count(),
   ];
+  $adminReviewScrollId = static function (string $sectionKey, string $fieldKey): string {
+    return 'revision-field-'.\Illuminate\Support\Str::of($sectionKey)->lower()->replaceMatches('/[^a-z0-9]+/', '-')->trim('-').'-'.\Illuminate\Support\Str::of($fieldKey)->lower()->replaceMatches('/[^a-z0-9]+/', '-')->trim('-');
+  };
 @endphp
 
 @if ($registrationMissing)
@@ -194,7 +196,6 @@
   class="space-y-4"
   data-confirmed="0"
   data-submission-id="{{ $registration?->id }}"
-  data-review-draft-url="{{ route('admin.registrations.review-draft', $submission ?? $registration) }}"
   data-updated-fields='@json($updatedFieldKeys)'
 >
   @csrf
@@ -324,9 +325,7 @@
         </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ $registration->academicTerm?->academic_year ?? 'N/A' }}</dd>
-          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'academic_year', 'fieldLabel' => 'Academic Year', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
-        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'academic_year')])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Submission Date
@@ -336,9 +335,7 @@
         </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <dd class="text-sm font-semibold text-slate-900">{{ \App\Support\ManilaDateTime::formatSubmissionDate($registration->submission_date) }}</dd>
-          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submission_date', 'fieldLabel' => 'Submission Date', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
         </div>
-        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'submission_date')])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Submitted By
@@ -347,10 +344,8 @@
           @endif
         </dt>
         <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-          <dd class="text-sm font-semibold text-slate-900">{{ $registration->user?->full_name ?? 'N/A' }}</dd>
-          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'application', 'fieldKey' => 'submitted_by', 'fieldLabel' => 'Submitted By', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+          <dd class="text-sm font-semibold text-slate-900">{{ $registration->submittedBy?->full_name ?? 'N/A' }}</dd>
         </div>
-        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('application', 'submitted_by')])
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Organization
@@ -446,29 +441,41 @@
           <dt class="{{ $readonlyLabelClass }}">Full Name</dt>
           <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->full_name ?? 'N/A' }}</dd>
-            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'full_name', 'fieldLabel' => 'Full Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'full_name', 'fieldLabel' => 'Full Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews, 'cardScrollId' => $adminReviewScrollId('adviser', 'full_name')])
           </div>
         </div>
         <div class="{{ $readonlyItemClass }}">
           <dt class="{{ $readonlyLabelClass }}">School ID</dt>
           <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->school_id ?? 'N/A' }}</dd>
-            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'school_id', 'fieldLabel' => 'School ID', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'school_id', 'fieldLabel' => 'School ID', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews, 'cardScrollId' => $adminReviewScrollId('adviser', 'school_id')])
           </div>
         </div>
         <div class="{{ $readonlyItemClass }}">
           <dt class="{{ $readonlyLabelClass }}">Email</dt>
           <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->email ?? 'N/A' }}</dd>
-            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'email', 'fieldLabel' => 'Email', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
+            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'email', 'fieldLabel' => 'Email', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews, 'cardScrollId' => $adminReviewScrollId('adviser', 'email')])
           </div>
         </div>
+        @php
+          $nominationStatusKey = strtolower(trim((string) ($adviserNomination?->status ?? '')));
+          $nominationStatusChip = match (true) {
+            in_array($nominationStatusKey, ['approved', 'active'], true) => ['border' => 'border-emerald-200', 'bg' => 'bg-emerald-50', 'text' => 'text-emerald-700', 'dot' => 'bg-emerald-500'],
+            $nominationStatusKey === 'rejected' => ['border' => 'border-rose-200', 'bg' => 'bg-rose-50', 'text' => 'text-rose-700', 'dot' => 'bg-rose-500'],
+            $nominationStatusKey === 'pending' => ['border' => 'border-amber-200', 'bg' => 'bg-amber-50', 'text' => 'text-amber-800', 'dot' => 'bg-amber-500'],
+            default => ['border' => 'border-slate-200', 'bg' => 'bg-slate-50', 'text' => 'text-slate-700', 'dot' => 'bg-slate-400'],
+          };
+          $nominationStatusLabel = $adviserNomination ? ucfirst((string) $adviserNomination->status) : 'No nomination';
+        @endphp
         <div class="{{ $readonlyItemClass }}">
-          <dt class="{{ $readonlyLabelClass }}">Status</dt>
-          <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-            <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination ? ucfirst((string) $adviserNomination->status) : 'No nomination' }}</dd>
-            @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'status', 'fieldLabel' => 'Status', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
-          </div>
+          <dt class="{{ $readonlyLabelClass }}">Adviser status</dt>
+          <dd class="mt-2">
+            <span class="inline-flex items-center gap-1.5 rounded-full border {{ $nominationStatusChip['border'] }} {{ $nominationStatusChip['bg'] }} px-3 py-1 text-xs font-semibold {{ $nominationStatusChip['text'] }}">
+              <span class="h-1.5 w-1.5 rounded-full {{ $nominationStatusChip['dot'] }}" aria-hidden="true"></span>
+              {{ $nominationStatusLabel }}
+            </span>
+          </dd>
         </div>
       </dl>
     </div>
@@ -717,7 +724,6 @@
     const saveReviewHelper = document.getElementById('save-review-helper');
     const validationAlerts = document.getElementById('registration-review-validation-alerts');
     const submissionId = form?.dataset.submissionId || 'unknown';
-    const reviewDraftUrl = form?.dataset.reviewDraftUrl || '';
     const reviewDraftStorageKey = `registration-review-draft:${submissionId}`;
     const updatedFieldKeys = (() => {
       try {
@@ -740,79 +746,6 @@
       } catch (e) {
         return null;
       }
-    }
-
-    function csrfToken() {
-      return form.querySelector('input[name="_token"]')?.value || '';
-    }
-
-    function buildFieldReviewPayload() {
-      const payload = {};
-      form.querySelectorAll('[data-field-review]').forEach((control) => {
-        const sectionKey = control.dataset.sectionKey || '';
-        const fieldKey = control.dataset.fieldKey || '';
-        if (!sectionKey || !fieldKey) return;
-        if (!payload[sectionKey]) payload[sectionKey] = {};
-        const status = normalizeFieldStatus(control.querySelector('.field-review-status')?.value || 'pending');
-        const noteInput = control.dataset.noteInputId
-          ? document.getElementById(control.dataset.noteInputId)
-          : control.querySelector('.field-review-note-input');
-        payload[sectionKey][fieldKey] = {
-          status,
-          note: noteInput?.value || '',
-        };
-      });
-      return payload;
-    }
-
-    let saveDraftTimer = null;
-    let savingDraft = false;
-    let draftRequestSeq = 0;
-    let latestAppliedDraftSeq = 0;
-    let activeDraftController = null;
-    async function persistDraftNow() {
-      if (!reviewDraftUrl) return;
-      if (savingDraft && activeDraftController) {
-        activeDraftController.abort();
-      }
-      const requestSeq = ++draftRequestSeq;
-      const controller = new AbortController();
-      activeDraftController = controller;
-      savingDraft = true;
-      try {
-        const response = await fetch(reviewDraftUrl, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': csrfToken(),
-          },
-          body: JSON.stringify({
-            field_review: buildFieldReviewPayload(),
-          }),
-          signal: controller.signal,
-        });
-        if (!response.ok) return;
-        if (requestSeq > latestAppliedDraftSeq) {
-          latestAppliedDraftSeq = requestSeq;
-        }
-      } catch (e) {
-        // No-op. UI still keeps local draft state.
-      } finally {
-        if (activeDraftController === controller) {
-          activeDraftController = null;
-        }
-        savingDraft = false;
-      }
-    }
-
-    function scheduleDraftPersist() {
-      if (saveDraftTimer) {
-        window.clearTimeout(saveDraftTimer);
-      }
-      saveDraftTimer = window.setTimeout(() => {
-        persistDraftNow();
-      }, 350);
     }
 
     function writeDraftState() {
@@ -1012,10 +945,11 @@
       const sectionLabels = {
         application: 'Application Information',
         contact: 'Account and Contact Information',
+        adviser: 'Adviser Information',
         organizational: 'Organization Details',
         requirements: 'Requirements Attached',
       };
-      const sectionOrder = ['application', 'contact', 'organizational', 'requirements'];
+      const sectionOrder = ['application', 'contact', 'adviser', 'organizational', 'requirements'];
       const revisionRows = [];
       const sectionRoots = allSectionRoots();
       const sectionStates = sectionRoots.map((root) => root.querySelector('.section-review-state')?.value || 'pending');
@@ -1205,7 +1139,6 @@
             refreshRevisionSummary();
             updateSaveReviewAvailability();
             writeDraftState();
-            scheduleDraftPersist();
           }
         });
       });
@@ -1220,7 +1153,6 @@
           refreshRevisionSummary();
           updateSaveReviewAvailability();
           writeDraftState();
-          scheduleDraftPersist();
         }
       });
     });
@@ -1307,10 +1239,6 @@
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Saving...';
       saveReviewBtn.disabled = true;
-      if (saveDraftTimer) {
-        window.clearTimeout(saveDraftTimer);
-        saveDraftTimer = null;
-      }
       window.localStorage.removeItem(reviewDraftStorageKey);
       closeDecision();
       form.submit();
