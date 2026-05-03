@@ -2360,6 +2360,7 @@ class OrganizationController extends Controller
                 'blockedMessage' => $officerAccess['blocked_message'],
                 'isBlocked' => true,
                 'blockedReason' => $officerAccess['blocked_message'],
+                'activityCalendarInitialActivities' => [],
             ]);
         }
 
@@ -2371,14 +2372,31 @@ class OrganizationController extends Controller
             ->latest('id')
             ->first();
 
+        $latestStatusLower = strtolower((string) ($latestCalendar->status ?? ''));
         $calendarSubmittedLocked = $latestCalendar !== null
-            && strtoupper((string) $latestCalendar->status) !== 'REVISION';
+            && ! in_array($latestStatusLower, ['revision', 'draft'], true);
         $isBlocked = $officerValidationPending || $calendarSubmittedLocked;
         $blockedReason = $officerValidationPending
             ? 'Your student officer account is pending SDAO validation. You cannot submit activity calendars until validation is complete.'
             : ($calendarSubmittedLocked
                 ? 'This activity calendar has already been submitted and can no longer be edited.'
                 : null);
+
+        $activityCalendarInitialActivities = [];
+        if (! $isBlocked && ! $calendarSubmittedLocked) {
+            $termId = $this->resolveOrCreateAcademicTermId($this->activeAcademicYear());
+            $draftCal = ActivityCalendar::query()
+                ->where('organization_id', $organization->id)
+                ->where('academic_term_id', $termId)
+                ->where('status', 'draft')
+                ->with(['entries' => fn ($query) => $query->orderBy('activity_date')->orderBy('id')])
+                ->first();
+            if ($draftCal && $draftCal->entries->isNotEmpty()) {
+                $activityCalendarInitialActivities = $this->mapCalendarEntriesToInitialActivities($draftCal->entries);
+            } elseif ($latestCalendar && $latestStatusLower === 'revision' && $latestCalendar->entries->isNotEmpty()) {
+                $activityCalendarInitialActivities = $this->mapCalendarEntriesToInitialActivities($latestCalendar->entries);
+            }
+        }
 
         return view('organizations.activity-calendar-submission', [
             'organization' => $organization,
@@ -2388,6 +2406,7 @@ class OrganizationController extends Controller
             'registrationPending' => $registrationPending,
             'isBlocked' => $isBlocked,
             'blockedReason' => $blockedReason,
+            'activityCalendarInitialActivities' => $activityCalendarInitialActivities,
         ]);
     }
 
@@ -2479,14 +2498,31 @@ class OrganizationController extends Controller
                 ->withInput();
         }
 
-        DB::transaction(function () use ($organization, $validated, $user, $trustedAcademicYear, $trustedDateSubmitted): void {
-            $calendar = ActivityCalendar::create([
-                'organization_id' => $organization->id,
-                'submitted_by' => $user->id,
-                'academic_term_id' => $this->resolveOrCreateAcademicTermId($trustedAcademicYear),
-                'submission_date' => $trustedDateSubmitted,
-                'status' => 'pending',
-            ]);
+        $termId = $this->resolveOrCreateAcademicTermId($trustedAcademicYear);
+        $draft = ActivityCalendar::query()
+            ->where('organization_id', $organization->id)
+            ->where('academic_term_id', $termId)
+            ->where('status', 'draft')
+            ->first();
+
+        DB::transaction(function () use ($organization, $validated, $user, $trustedDateSubmitted, $termId, $draft): void {
+            if ($draft) {
+                $draft->update([
+                    'submitted_by' => $user->id,
+                    'submission_date' => $trustedDateSubmitted,
+                    'status' => 'pending',
+                ]);
+                $calendar = $draft;
+                $calendar->entries()->delete();
+            } else {
+                $calendar = ActivityCalendar::create([
+                    'organization_id' => $organization->id,
+                    'submitted_by' => $user->id,
+                    'academic_term_id' => $termId,
+                    'submission_date' => $trustedDateSubmitted,
+                    'status' => 'pending',
+                ]);
+            }
 
             foreach ($validated['activities'] as $row) {
                 $selectedSdgs = array_values(array_unique(array_filter(
@@ -2531,6 +2567,103 @@ class OrganizationController extends Controller
         return redirect()
             ->route('organizations.activity-calendar-submission')
             ->with('activity_calendar_submitted', true);
+    }
+
+    public function storeActivityCalendarDraftEntry(Request $request): \Illuminate\Http\JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        if ($user->isSuperAdmin()) {
+            return response()->json(['message' => 'Use the admin submission flow.'], 403);
+        }
+
+        $payload = $this->validatedSingleActivityCalendarActivityPayload($request);
+        $organization = $this->organizationForWritableActivityCalendarEntries($request);
+        if ($organization === null) {
+            return response()->json(['message' => 'You cannot add activities right now.'], 403);
+        }
+
+        $calendar = $this->getOrCreateWritableActivityCalendar($user, $organization);
+
+        $selectedSdgs = array_values(array_unique(array_filter(
+            array_map(static fn ($value) => trim((string) $value), (array) ($payload['sdg'] ?? [])),
+            static fn ($value) => $value !== ''
+        )));
+
+        $entry = ActivityCalendarEntry::query()->create([
+            'activity_calendar_id' => $calendar->id,
+            'activity_date' => $payload['date'],
+            'activity_name' => $payload['name'],
+            'target_sdg' => implode(', ', $selectedSdgs),
+            'venue' => $payload['venue'],
+            'target_participants' => $payload['participant_program'],
+            'target_program' => null,
+            'estimated_budget' => $payload['budget'],
+        ]);
+
+        return response()->json([
+            'entry' => $this->calendarEntryToInitialPayload($entry),
+        ], 201);
+    }
+
+    public function updateActivityCalendarDraftEntry(Request $request, ActivityCalendarEntry $entry): \Illuminate\Http\JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        if ($user->isSuperAdmin()) {
+            return response()->json(['message' => 'Use the admin submission flow.'], 403);
+        }
+
+        $organization = $this->organizationForWritableActivityCalendarEntries($request);
+        if ($organization === null) {
+            return response()->json(['message' => 'You cannot edit activities right now.'], 403);
+        }
+
+        if (! $this->calendarEntryWritableForOrganization($organization, $entry)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $payload = $this->validatedSingleActivityCalendarActivityPayload($request);
+
+        $selectedSdgs = array_values(array_unique(array_filter(
+            array_map(static fn ($value) => trim((string) $value), (array) ($payload['sdg'] ?? [])),
+            static fn ($value) => $value !== ''
+        )));
+
+        $entry->update([
+            'activity_date' => $payload['date'],
+            'activity_name' => $payload['name'],
+            'target_sdg' => implode(', ', $selectedSdgs),
+            'venue' => $payload['venue'],
+            'target_participants' => $payload['participant_program'],
+            'estimated_budget' => $payload['budget'],
+        ]);
+
+        return response()->json([
+            'entry' => $this->calendarEntryToInitialPayload($entry->fresh()),
+        ]);
+    }
+
+    public function destroyActivityCalendarDraftEntry(Request $request, ActivityCalendarEntry $entry): \Illuminate\Http\JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        if ($user->isSuperAdmin()) {
+            return response()->json(['message' => 'Use the admin submission flow.'], 403);
+        }
+
+        $organization = $this->organizationForWritableActivityCalendarEntries($request);
+        if ($organization === null) {
+            return response()->json(['message' => 'You cannot delete activities right now.'], 403);
+        }
+
+        if (! $this->calendarEntryWritableForOrganization($organization, $entry)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $entry->delete();
+
+        return response()->json(['ok' => true]);
     }
 
     // ── Activity Proposal Submission ──────────────────────────
@@ -3008,6 +3141,7 @@ class OrganizationController extends Controller
             'linkedProposal' => $linkedProposal,
             'proposalCalendar' => $proposalCalendar,
             'prefill' => $prefill,
+            'proposalStep2FileLinks' => $this->proposalStep2AttachmentLinksForForm($linkedProposal),
         ];
     }
 
@@ -4138,6 +4272,123 @@ class OrganizationController extends Controller
             ->first();
     }
 
+    /**
+     * @param  \Illuminate\Support\Collection<int, ActivityCalendarEntry>|array<int, ActivityCalendarEntry>  $entries
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapCalendarEntriesToInitialActivities(Collection $entries): array
+    {
+        return $entries->map(fn (ActivityCalendarEntry $e) => $this->calendarEntryToInitialPayload($e))->values()->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function calendarEntryToInitialPayload(ActivityCalendarEntry $e): array
+    {
+        $sdgs = array_values(array_filter(array_map('trim', explode(',', (string) ($e->target_sdg ?? '')))));
+
+        return [
+            'entryId' => $e->id,
+            'date' => $e->activity_date?->format('Y-m-d'),
+            'name' => $e->activity_name,
+            'sdgs' => $sdgs,
+            'venue' => $e->venue,
+            'participantProgram' => (string) ($e->target_participants ?? ''),
+            'budget' => $e->estimated_budget !== null ? (string) $e->estimated_budget : '',
+        ];
+    }
+
+    private function validatedSingleActivityCalendarActivityPayload(Request $request): array
+    {
+        return $request->validate([
+            'date' => ['required', 'date'],
+            'name' => ['required', 'string'],
+            'sdg' => ['required', 'array', 'min:1'],
+            'sdg.*' => ['required', 'string', Rule::in(array_map(static fn (int $n) => 'SDG '.$n, range(1, 17)))],
+            'venue' => ['required', 'string'],
+            'participant_program' => ['required', 'string'],
+            'budget' => ['required', 'numeric'],
+        ]);
+    }
+
+    private function organizationForWritableActivityCalendarEntries(Request $request): ?Organization
+    {
+        $officerAccess = $this->officerSubmissionAccessContext($request);
+        if (! $officerAccess['authorized'] || $officerAccess['officer_validation_pending']) {
+            return null;
+        }
+        $organization = $officerAccess['organization'];
+        if (! $organization || ! $officerAccess['organization_approved']) {
+            return null;
+        }
+
+        $latestCalendar = ActivityCalendar::query()
+            ->where('organization_id', $organization->id)
+            ->latest('submission_date')
+            ->latest('id')
+            ->first();
+
+        $st = strtolower((string) ($latestCalendar->status ?? ''));
+        $calendarSubmittedLocked = $latestCalendar !== null
+            && ! in_array($st, ['revision', 'draft'], true);
+
+        if ($calendarSubmittedLocked) {
+            return null;
+        }
+
+        return $organization;
+    }
+
+    private function getOrCreateWritableActivityCalendar(User $user, Organization $organization): ActivityCalendar
+    {
+        $termId = $this->resolveOrCreateAcademicTermId($this->activeAcademicYear());
+
+        $draft = ActivityCalendar::query()
+            ->where('organization_id', $organization->id)
+            ->where('academic_term_id', $termId)
+            ->where('status', 'draft')
+            ->first();
+
+        if ($draft) {
+            return $draft;
+        }
+
+        $latest = ActivityCalendar::query()
+            ->where('organization_id', $organization->id)
+            ->latest('submission_date')
+            ->latest('id')
+            ->first();
+
+        if (
+            $latest
+            && strtolower((string) $latest->status) === 'revision'
+            && (int) $latest->academic_term_id === $termId
+        ) {
+            return $latest;
+        }
+
+        return ActivityCalendar::create([
+            'organization_id' => $organization->id,
+            'submitted_by' => $user->id,
+            'academic_term_id' => $termId,
+            'submission_date' => null,
+            'status' => 'draft',
+        ]);
+    }
+
+    private function calendarEntryWritableForOrganization(Organization $organization, ActivityCalendarEntry $entry): bool
+    {
+        $calendar = $entry->activityCalendar;
+        if ((int) $calendar->organization_id !== (int) $organization->id) {
+            return false;
+        }
+
+        $st = strtolower((string) $calendar->status);
+
+        return in_array($st, ['draft', 'revision'], true);
+    }
+
     private function resolveOrCreateAcademicTermId(string $academicYear): int
     {
         $term = AcademicTerm::query()
@@ -4352,6 +4603,10 @@ class OrganizationController extends Controller
                 ->latest('id')
                 ->first();
 
+            if (! $attachment) {
+                continue;
+            }
+
             $storedPath = (string) ($attachment->stored_path ?? '');
             if ($storedPath === '') {
                 continue;
@@ -4360,11 +4615,57 @@ class OrganizationController extends Controller
             $links[$key] = [
                 'path' => $storedPath,
                 'name' => (string) ($attachment->original_name ?: basename($storedPath)),
-                'url' => asset('storage/'.ltrim($storedPath, '/')),
+                'url' => route('organizations.submitted-documents.activity-request-forms.file', [$requestForm, $key]),
+                'mime_type' => $attachment->mime_type ? (string) $attachment->mime_type : null,
+                'file_size_kb' => $attachment->file_size_kb,
             ];
         }
 
         return $links;
+    }
+
+    /**
+     * Step 2 proposal file inputs: existing rows on ActivityProposal.attachments (not legacy *_path columns).
+     *
+     * @return array<string, array{name: string, url: string, mime_type: ?string, file_size_kb: ?int}>
+     */
+    private function proposalStep2AttachmentLinksForForm(?ActivityProposal $proposal): array
+    {
+        if (! $proposal) {
+            return [];
+        }
+
+        $map = [
+            'organization_logo' => ['routeKey' => 'logo', 'file_type' => Attachment::TYPE_PROPOSAL_LOGO],
+            'resume_resource_persons' => ['routeKey' => 'resume', 'file_type' => Attachment::TYPE_PROPOSAL_RESOURCE_RESUME],
+            'external_funding_support' => ['routeKey' => 'external', 'file_type' => Attachment::TYPE_PROPOSAL_EXTERNAL_FUNDING],
+        ];
+
+        $out = [];
+        foreach ($map as $inputName => $meta) {
+            $attachment = $proposal->attachments()
+                ->where('file_type', $meta['file_type'])
+                ->latest('id')
+                ->first();
+
+            if (! $attachment) {
+                continue;
+            }
+
+            $storedPath = (string) ($attachment->stored_path ?? '');
+            if ($storedPath === '') {
+                continue;
+            }
+
+            $out[$inputName] = [
+                'name' => (string) ($attachment->original_name ?: basename($storedPath)),
+                'url' => route('organizations.submitted-documents.proposals.file', [$proposal, $meta['routeKey']]),
+                'mime_type' => $attachment->mime_type ? (string) $attachment->mime_type : null,
+                'file_size_kb' => $attachment->file_size_kb,
+            ];
+        }
+
+        return $out;
     }
 
     /**

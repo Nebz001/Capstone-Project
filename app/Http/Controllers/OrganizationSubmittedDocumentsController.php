@@ -37,6 +37,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -394,6 +395,42 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $this->streamSubmissionRequirementAttachment($submission, $key);
     }
 
+    public function downloadSubmittedRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
+    {
+        abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
+        $this->authorizeSubmissionFileView($request, $submission);
+
+        if (! in_array($key, self::REGISTRATION_FILE_KEYS, true)) {
+            abort(404, 'Unknown registration requirement.');
+        }
+
+        $attachment = $this->findLatestSubmissionRequirementAttachment($submission, $key);
+        if (! $attachment) {
+            abort(404, 'No file has been uploaded for this requirement yet.');
+        }
+
+        $relativePath = (string) $attachment->stored_path;
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404, 'File not found.');
+        }
+
+        $downloadName = trim((string) ($attachment->original_name ?? ''));
+        if ($downloadName === '') {
+            $downloadName = basename($relativePath);
+        }
+
+        return $this->forceDownloadSupabaseObjectOrg(
+            $relativePath,
+            $downloadName,
+            $attachment->mime_type ? (string) $attachment->mime_type : null,
+            [
+                'attachment_id' => $attachment->id,
+                'submission_id' => $submission->id,
+                'requirement_key' => $key,
+            ]
+        );
+    }
+
     public function replaceSubmittedRegistrationRequirementFile(Request $request, OrganizationSubmission $submission, string $key): RedirectResponse
     {
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
@@ -428,8 +465,15 @@ class OrganizationSubmittedDocumentsController extends Controller
         $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
         $fieldReviews = is_array($submission->registration_field_reviews) ? $submission->registration_field_reviews : [];
+        $pendingRequirementKeys = $this->pendingRequirementsRevisionFieldKeys($submission);
         $revisionKeys = collect(self::REGISTRATION_FILE_KEYS)
-            ->filter(fn (string $key): bool => (string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending') === 'flagged')
+            ->filter(function (string $key) use ($fieldReviews, $pendingRequirementKeys): bool {
+                if ((string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending') !== 'flagged') {
+                    return false;
+                }
+
+                return ! in_array($key, $pendingRequirementKeys, true);
+            })
             ->values()
             ->all();
         if ($revisionKeys === []) {
@@ -444,14 +488,17 @@ class OrganizationSubmittedDocumentsController extends Controller
             'replacement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
         ]);
         $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
-        $changedKeys = array_values(array_filter($revisionKeys, fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof UploadedFile));
-        if ($changedKeys === []) {
-            return back()->with('error', 'Replace at least one revised file before submitting.');
+        foreach ($revisionKeys as $key) {
+            if (! isset($incoming[$key]) || ! $incoming[$key] instanceof UploadedFile) {
+                throw ValidationException::withMessages([
+                    'replacement_files' => 'Please replace all files requested for revision before submitting.',
+                ]);
+            }
         }
 
         /** @var User $user */
         $user = $request->user();
-        foreach ($changedKeys as $key) {
+        foreach ($revisionKeys as $key) {
             /** @var UploadedFile $upload */
             $upload = $incoming[$key];
             $this->applyRegistrationRequirementReplacement($submission, $user, $key, $upload);
@@ -460,7 +507,7 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         return back()
             ->with('success', 'Updated file(s) submitted for review.')
-            ->with('replaced_requirement_keys', $changedKeys);
+            ->with('replaced_requirement_keys', $revisionKeys);
     }
 
     public function showSubmittedRenewal(Request $request, OrganizationSubmission $submission): View
@@ -567,6 +614,42 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $this->streamSubmissionRequirementAttachment($submission, $key);
     }
 
+    public function downloadSubmittedRenewalRequirementFile(Request $request, OrganizationSubmission $submission, string $key): Response
+    {
+        abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+        $this->authorizeSubmissionFileView($request, $submission);
+
+        if (! in_array($key, self::RENEWAL_FILE_KEYS, true)) {
+            abort(404, 'Unknown renewal requirement.');
+        }
+
+        $attachment = $this->findLatestSubmissionRequirementAttachment($submission, $key);
+        if (! $attachment) {
+            abort(404, 'No file has been uploaded for this requirement yet.');
+        }
+
+        $relativePath = (string) $attachment->stored_path;
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404, 'File not found.');
+        }
+
+        $downloadName = trim((string) ($attachment->original_name ?? ''));
+        if ($downloadName === '') {
+            $downloadName = basename($relativePath);
+        }
+
+        return $this->forceDownloadSupabaseObjectOrg(
+            $relativePath,
+            $downloadName,
+            $attachment->mime_type ? (string) $attachment->mime_type : null,
+            [
+                'attachment_id' => $attachment->id,
+                'submission_id' => $submission->id,
+                'requirement_key' => $key,
+            ]
+        );
+    }
+
     /**
      * Replace one renewal requirement file the admin flagged for revision.
      *
@@ -616,8 +699,15 @@ class OrganizationSubmittedDocumentsController extends Controller
         $this->ensureOfficerOwnsOrganization($request, (int) $submission->organization_id);
 
         $fieldReviews = is_array($submission->renewal_field_reviews) ? $submission->renewal_field_reviews : [];
+        $pendingRequirementKeys = $this->pendingRequirementsRevisionFieldKeys($submission);
         $revisionKeys = collect(self::RENEWAL_FILE_KEYS)
-            ->filter(fn (string $key): bool => (string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending') === 'flagged')
+            ->filter(function (string $key) use ($fieldReviews, $pendingRequirementKeys): bool {
+                if ((string) data_get($fieldReviews, 'requirements.'.$key.'.status', 'pending') !== 'flagged') {
+                    return false;
+                }
+
+                return ! in_array($key, $pendingRequirementKeys, true);
+            })
             ->values()
             ->all();
         if ($revisionKeys === []) {
@@ -632,17 +722,17 @@ class OrganizationSubmittedDocumentsController extends Controller
             'replacement_files.*.max' => 'The selected file is too large. Maximum allowed file size is '.self::REPLACEMENT_FILE_MAX_MB.' MB.',
         ]);
         $incoming = is_array($validated['replacement_files'] ?? null) ? $validated['replacement_files'] : [];
-        $changedKeys = array_values(array_filter(
-            $revisionKeys,
-            fn (string $key): bool => isset($incoming[$key]) && $incoming[$key] instanceof UploadedFile
-        ));
-        if ($changedKeys === []) {
-            return back()->with('error', 'Replace at least one revised file before submitting.');
+        foreach ($revisionKeys as $key) {
+            if (! isset($incoming[$key]) || ! $incoming[$key] instanceof UploadedFile) {
+                throw ValidationException::withMessages([
+                    'replacement_files' => 'Please replace all files requested for revision before submitting.',
+                ]);
+            }
         }
 
         /** @var User $user */
         $user = $request->user();
-        foreach ($changedKeys as $key) {
+        foreach ($revisionKeys as $key) {
             /** @var UploadedFile $upload */
             $upload = $incoming[$key];
             $this->applyRenewalRequirementReplacement($submission, $user, $key, $upload);
@@ -651,7 +741,7 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         return back()
             ->with('success', 'Updated file(s) submitted for review.')
-            ->with('replaced_requirement_keys', $changedKeys);
+            ->with('replaced_requirement_keys', $revisionKeys);
     }
 
     public function showSubmittedActivityCalendar(Request $request, ActivityCalendar $calendar): View
@@ -726,11 +816,16 @@ class OrganizationSubmittedDocumentsController extends Controller
         if ($calendar->calendar_file) {
             $isFlagged = $calendarFileFlaggedNote !== null || $calendarFileStatus === 'flagged';
             $canReplace = $isFlagged && ! $calendarFileIsPendingResubmit;
+            $calPath = (string) $calendar->calendar_file;
+            $calDisplayName = basename($calPath);
+            $calBadge = $this->officerDisplayFileTypeBadgeLabel($calDisplayName, null);
             $fileLinks[] = [
                 'label' => 'Uploaded calendar file (PDF / document)',
                 'url' => route('organizations.submitted-documents.calendars.file', $calendar),
+                'download_url' => route('organizations.submitted-documents.calendars.file.download', $calendar),
                 'key' => 'calendar_file',
-                'previous_file_name' => 'Previously uploaded file',
+                'previous_file_name' => $calDisplayName !== '' ? $calDisplayName : 'Previously uploaded file',
+                'file_badge_label' => $calBadge,
                 'anchor_id' => $this->revisionTargetAnchorId('submitted_files', 'calendar_file'),
                 'is_revised' => $isFlagged,
                 'revision_note' => $canReplace ? $calendarFileFlaggedNote : null,
@@ -949,6 +1044,35 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $disk->response($relativePath, basename($relativePath), [], 'inline');
+    }
+
+    public function downloadSubmittedActivityCalendarMainFile(Request $request, ActivityCalendar $calendar): StreamedResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $calendar->organization_id);
+
+        $relativePath = $calendar->calendar_file;
+        if (! is_string($relativePath) || $relativePath === '') {
+            abort(404);
+        }
+
+        $organizationId = (int) $calendar->organization_id;
+        $expectedPrefix = 'activity-calendars/'.$organizationId.'/';
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/') || ! str_starts_with($relativePath, $expectedPrefix)) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        $downloadName = basename($relativePath);
+        $downloadName = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $downloadName);
+        if ($downloadName === '') {
+            $downloadName = 'calendar-file';
+        }
+
+        return $disk->download($relativePath, $downloadName);
     }
 
     public function showSubmittedActivityProposal(Request $request, ActivityProposal $proposal): View
@@ -1244,11 +1368,34 @@ class OrganizationSubmittedDocumentsController extends Controller
             $isPendingReviewAfterResubmit = $officerKey !== null
                 && isset($pendingItemSet[self::PROPOSAL_FILE_KEY_MAP[$officerKey]['section_key'].'.'.self::PROPOSAL_FILE_KEY_MAP[$officerKey]['field_key']]);
             $canReplace = $isFlagged && ! $isPendingReviewAfterResubmit;
+
+            $displayName = 'Previously uploaded file';
+            $mimeForBadge = null;
+            if ($officerKey !== null) {
+                [$att,] = $this->resolveActivityProposalFileAttachmentAndPath($proposal, $requestForm, $officerKey);
+                if ($att) {
+                    $dn = trim((string) ($att->original_name ?? ''));
+                    $displayName = $dn !== '' ? $dn : (is_string($att->stored_path) && $att->stored_path !== '' ? basename($att->stored_path) : $displayName);
+                    $mimeForBadge = $att->mime_type ? (string) $att->mime_type : null;
+                } else {
+                    $resolved = $this->proposalResolvedFilePathByKey($proposal, $requestForm, $officerKey);
+                    if (is_string($resolved) && $resolved !== '') {
+                        $displayName = basename($resolved);
+                    }
+                }
+            }
+            $fileBadge = $this->officerDisplayFileTypeBadgeLabel($displayName, $mimeForBadge);
+            $downloadUrl = $officerKey !== null
+                ? route('organizations.submitted-documents.proposals.file.download', ['proposal' => $proposal, 'key' => $officerKey])
+                : $url;
+
             $fileLinks[] = [
                 'label' => (string) ($row['label'] ?? 'File'),
                 'url' => $url,
+                'download_url' => $downloadUrl,
                 'key' => $officerKey,
-                'previous_file_name' => 'Previously uploaded file',
+                'previous_file_name' => $displayName,
+                'file_badge_label' => $fileBadge,
                 'anchor_id' => $officerKey ? $this->revisionTargetAnchorId('requirements', $officerKey) : '',
                 'is_revised' => $isFlagged,
                 'revision_note' => $canReplace ? ($proposalFlaggedNotesByOfficerKey[$officerKey] ?? null) : null,
@@ -1311,6 +1458,10 @@ class OrganizationSubmittedDocumentsController extends Controller
             }
         }
 
+        if ($rowKey === 'additional_resume_resource_persons') {
+            return 'resume';
+        }
+
         return null;
     }
 
@@ -1340,7 +1491,79 @@ class OrganizationSubmittedDocumentsController extends Controller
             abort(404, 'No file has been uploaded for this proposal attachment.');
         }
 
-        return $this->redirectToProposalAttachmentSignedUrl($relativePath, $proposal);
+        return $this->redirectRelativeStoredPathToSignedUrl($relativePath, [
+            'proposal_id' => $proposal->id,
+            'organization_id' => $proposal->organization_id,
+        ]);
+    }
+
+    public function downloadSubmittedActivityProposalFile(Request $request, ActivityProposal $proposal, string $key): Response
+    {
+        $this->authorizeProposalFileView($request, $proposal);
+
+        $requestForm = $this->relatedRequestFormForProposal($proposal);
+        [$attachment, $rawPath] = $this->resolveActivityProposalFileAttachmentAndPath($proposal, $requestForm, $key);
+        $relativePath = $this->normalizeStoredPublicPath($rawPath);
+
+        if (! is_string($relativePath) || $relativePath === '') {
+            abort(404, 'No file has been uploaded for this proposal attachment.');
+        }
+
+        $downloadName = trim((string) ($attachment?->original_name ?? ''));
+        if ($downloadName === '') {
+            $downloadName = basename($relativePath);
+        }
+
+        $mime = $attachment && $attachment->mime_type ? (string) $attachment->mime_type : null;
+
+        return $this->redirectRelativeStoredPathToSignedDownloadUrl(
+            $relativePath,
+            $downloadName,
+            $mime,
+            [
+                'proposal_id' => $proposal->id,
+                'organization_id' => $proposal->organization_id,
+                'download' => true,
+            ]
+        );
+    }
+
+    /**
+     * Officer-facing download/view for Step 1 files stored on ActivityRequestForm
+     * (Supabase paths — not public/storage URLs).
+     */
+    public function streamActivityRequestFormAttachment(Request $request, ActivityRequestForm $requestForm, string $key): Response
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $requestForm->organization_id);
+
+        $fileType = match ($key) {
+            'request_letter' => Attachment::TYPE_REQUEST_LETTER,
+            'speaker_resume' => Attachment::TYPE_REQUEST_SPEAKER_RESUME,
+            'post_survey_form' => Attachment::TYPE_REQUEST_POST_SURVEY,
+            default => null,
+        };
+        abort_unless($fileType !== null, 404, 'Unknown activity request attachment key.');
+
+        $attachment = $requestForm->attachments()
+            ->where('file_type', $fileType)
+            ->latest('id')
+            ->first();
+
+        if (! $attachment) {
+            abort(404, 'No file has been uploaded for this attachment.');
+        }
+
+        $rawPath = (string) ($attachment->stored_path ?? '');
+        $relativePath = $this->normalizeStoredPublicPath($rawPath);
+        if (! is_string($relativePath) || $relativePath === '') {
+            abort(404, 'No file has been uploaded for this attachment.');
+        }
+
+        return $this->redirectRelativeStoredPathToSignedUrl($relativePath, [
+            'activity_request_form_id' => $requestForm->id,
+            'organization_id' => $requestForm->organization_id,
+            'key' => $key,
+        ]);
     }
 
     /**
@@ -1641,7 +1864,7 @@ class OrganizationSubmittedDocumentsController extends Controller
          * evaluation_form remain read-only because the report review schema
          * doesn't include them today.
          */
-        $buildLink = function (?string $officerKey, string $label, string $url) use (
+        $buildLink = function (?string $officerKey, string $label, string $url, ?string $streamKey = null) use (
             $reportFlaggedNotesByOfficerKey,
             $pendingItemSet,
             $recentlyReplacedKeys,
@@ -1653,11 +1876,36 @@ class OrganizationSubmittedDocumentsController extends Controller
                 && isset($pendingItemSet[self::REPORT_FILE_KEY_MAP[$officerKey]['section_key'].'.'.self::REPORT_FILE_KEY_MAP[$officerKey]['field_key']]);
             $canReplace = $isFlagged && ! $isPendingReviewAfterResubmit;
 
+            $attachment = $streamKey !== null && $streamKey !== ''
+                ? $this->reportAttachmentByStreamKey($report, $streamKey)
+                : null;
+            $storedPath = $attachment && is_string($attachment->stored_path) ? trim($attachment->stored_path) : '';
+            $prev = trim((string) ($attachment?->original_name ?? ''));
+            if ($prev === '' && $storedPath !== '') {
+                $prev = basename($storedPath);
+            }
+            if ($prev === '' && $streamKey !== null && $streamKey !== '') {
+                $resolvedPath = $this->reportFilePathByKey($report, $streamKey);
+                if (is_string($resolvedPath) && $resolvedPath !== '') {
+                    $prev = basename($resolvedPath);
+                }
+            }
+            $previousFileName = $prev !== '' ? $prev : 'Previously uploaded file';
+            $fileBadge = $this->officerDisplayFileTypeBadgeLabel(
+                $previousFileName,
+                $attachment && $attachment->mime_type ? (string) $attachment->mime_type : null
+            );
+            $downloadUrl = ($streamKey !== null && $streamKey !== '')
+                ? route('organizations.submitted-documents.reports.file.download', ['report' => $report, 'key' => $streamKey])
+                : null;
+
             return [
                 'label' => $label,
                 'url' => $url,
+                'download_url' => $downloadUrl,
                 'key' => $officerKey,
-                'previous_file_name' => 'Previously uploaded file',
+                'previous_file_name' => $previousFileName,
+                'file_badge_label' => $fileBadge,
                 'anchor_id' => $officerKey ? $this->revisionTargetAnchorId('requirements', $officerKey) : '',
                 'is_revised' => $isFlagged,
                 'revision_note' => $canReplace ? ($reportFlaggedNotesByOfficerKey[$officerKey] ?? null) : null,
@@ -1672,20 +1920,20 @@ class OrganizationSubmittedDocumentsController extends Controller
 
         $fileLinks = [];
         if ($this->reportFilePathByKey($report, 'poster')) {
-            $fileLinks[] = $buildLink('poster', 'Poster image', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'poster']));
+            $fileLinks[] = $buildLink('poster', 'Poster image', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'poster']), 'poster');
         }
         $supportingPhotoKeys = $this->reportSupportingPhotoKeys($report);
         foreach ($supportingPhotoKeys as $i => $key) {
-            $fileLinks[] = $buildLink(null, 'Supporting photo '.($i + 1), route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => $key]));
+            $fileLinks[] = $buildLink(null, 'Supporting photo '.($i + 1), route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => $key]), $key);
         }
         if ($this->reportFilePathByKey($report, 'certificate')) {
-            $fileLinks[] = $buildLink(null, 'Certificate sample', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'certificate']));
+            $fileLinks[] = $buildLink(null, 'Certificate sample', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'certificate']), 'certificate');
         }
         if ($this->reportFilePathByKey($report, 'evaluation_form')) {
-            $fileLinks[] = $buildLink(null, 'Evaluation form sample', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'evaluation_form']));
+            $fileLinks[] = $buildLink(null, 'Evaluation form sample', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'evaluation_form']), 'evaluation_form');
         }
         if ($this->reportFilePathByKey($report, 'attendance')) {
-            $fileLinks[] = $buildLink('attendance', 'Attendance sheet', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'attendance']));
+            $fileLinks[] = $buildLink('attendance', 'Attendance sheet', route('organizations.submitted-documents.reports.file', ['report' => $report, 'key' => 'attendance']), 'attendance');
         }
 
         $school = $report->school_code ? (self::SCHOOL_LABELS[$report->school_code] ?? $report->school_code) : '—';
@@ -1760,6 +2008,54 @@ class OrganizationSubmittedDocumentsController extends Controller
         }
 
         return $disk->response($relativePath, basename($relativePath), [], 'inline');
+    }
+
+    public function downloadSubmittedAfterActivityReportFile(Request $request, ActivityReport $report, string $key): StreamedResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $report->organization_id);
+
+        $organizationId = (int) $report->organization_id;
+        $expectedPrefixes = [
+            'activity-reports/'.$organizationId.'/',
+        ];
+
+        $relativePath = $this->reportFilePathByKey($report, $key);
+
+        if (! is_string($relativePath) || $relativePath === '') {
+            abort(404);
+        }
+
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $ok = false;
+        foreach ($expectedPrefixes as $pfx) {
+            if (str_starts_with($relativePath, $pfx)) {
+                $ok = true;
+                break;
+            }
+        }
+        if (! $ok) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($relativePath)) {
+            abort(404);
+        }
+
+        $attachment = $this->reportAttachmentByStreamKey($report, $key);
+        $downloadName = trim((string) ($attachment?->original_name ?? ''));
+        if ($downloadName === '') {
+            $downloadName = basename($relativePath);
+        }
+        $downloadName = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $downloadName);
+        if ($downloadName === '') {
+            $downloadName = 'download';
+        }
+
+        return $disk->download($relativePath, $downloadName);
     }
 
     /**
@@ -2468,11 +2764,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->all();
 
         $links = [];
+        $downloadRouteName = $routeName.'.download';
         foreach ($requirementKeys as $key) {
-            $attachment = $submission->attachments()
-                ->where('file_type', $fileTypePrefix.':'.$key)
-                ->latest('id')
-                ->first();
+            $attachment = $this->findLatestSubmissionRequirementAttachment($submission, $key);
 
             $isSubmitted = in_array($key, $submittedKeys, true);
             $label = $labelMap[$key] ?? $key;
@@ -2481,16 +2775,23 @@ class OrganizationSubmittedDocumentsController extends Controller
             $canReplace = $isRevised && ! $isPendingReviewAfterResubmit;
 
             if ($attachment) {
-                $storedPath = (string) ($attachment->file_path ?? '');
+                $storedPath = (string) ($attachment->stored_path ?? '');
                 $previousFileName = trim((string) ($attachment->original_name ?? ''));
                 if ($previousFileName === '' && $storedPath !== '') {
                     $previousFileName = basename($storedPath);
                 }
+                $displayName = $previousFileName !== '' ? $previousFileName : '';
+                $fileBadge = $this->officerDisplayFileTypeBadgeLabel(
+                    $displayName,
+                    $attachment->mime_type ? (string) $attachment->mime_type : null
+                );
                 $links[] = [
                     'label' => $label,
                     'url' => route($routeName, [$submission, $key]),
+                    'download_url' => route($downloadRouteName, [$submission, $key]),
                     'key' => $key,
                     'previous_file_name' => $previousFileName !== '' ? $previousFileName : 'No previous file',
+                    'file_badge_label' => $fileBadge,
                     'anchor_id' => $this->revisionTargetAnchorId('requirements', $key),
                     'is_revised' => $isRevised,
                     'revision_note' => $canReplace ? ($revisionByKey[$key] ?? null) : null,
@@ -2521,6 +2822,25 @@ class OrganizationSubmittedDocumentsController extends Controller
     }
 
     /**
+     * Requirement keys with a replacement file already submitted by the officer and awaiting admin acknowledgment.
+     * Those rows do not show the batch "Replace file" control and must not be required again on resubmit.
+     *
+     * @return list<string>
+     */
+    private function pendingRequirementsRevisionFieldKeys(OrganizationSubmission $submission): array
+    {
+        return OrganizationRevisionFieldUpdate::query()
+            ->where('organization_submission_id', $submission->id)
+            ->whereNull('acknowledged_at')
+            ->get(['section_key', 'field_key', 'new_file_meta'])
+            ->filter(fn ($row): bool => (string) $row->section_key === 'requirements' && is_array($row->new_file_meta))
+            ->pluck('field_key')
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
      * Pick the right "Replace file" route for a submission requirement.
      *
      * Registration and Renewal each get their own resubmit/replace endpoint
@@ -2546,6 +2866,21 @@ class OrganizationSubmittedDocumentsController extends Controller
         return null;
     }
 
+    private function findLatestSubmissionRequirementAttachment(
+        OrganizationSubmission $submission,
+        string $requirementKey
+    ): ?Attachment {
+        return Attachment::query()
+            ->where('attachable_type', OrganizationSubmission::class)
+            ->where('attachable_id', $submission->id)
+            ->where(function ($query) use ($requirementKey): void {
+                $query->where('file_type', $requirementKey)
+                    ->orWhere('file_type', 'like', '%:'.$requirementKey);
+            })
+            ->latest('id')
+            ->first();
+    }
+
     /**
      * Shared streaming helper for registration / renewal requirement files.
      *
@@ -2569,19 +2904,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             ->where('requirement_key', $requirementKey)
             ->first();
 
-        // Attachments may be stored either with the bare requirement key
-        // (e.g. "by_laws") or with the namespaced form
-        // ("registration_requirement:by_laws" / "renewal_requirement:by_laws").
-        // Match both shapes so legacy and current rows resolve correctly.
-        $attachment = Attachment::query()
-            ->where('attachable_type', OrganizationSubmission::class)
-            ->where('attachable_id', $submission->id)
-            ->where(function ($query) use ($requirementKey): void {
-                $query->where('file_type', $requirementKey)
-                    ->orWhere('file_type', 'like', '%:'.$requirementKey);
-            })
-            ->latest('id')
-            ->first();
+        $attachment = $this->findLatestSubmissionRequirementAttachment($submission, $requirementKey);
 
         if (! $attachment) {
             $message = $requirement && ! $requirement->is_submitted
@@ -3386,6 +3709,17 @@ class OrganizationSubmittedDocumentsController extends Controller
 
     private function redirectToProposalAttachmentSignedUrl(string $relativePath, ActivityProposal $proposal): Response
     {
+        return $this->redirectRelativeStoredPathToSignedUrl($relativePath, [
+            'proposal_id' => $proposal->id,
+            'organization_id' => $proposal->organization_id,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $logContext
+     */
+    private function redirectRelativeStoredPathToSignedUrl(string $relativePath, array $logContext = []): Response
+    {
         if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
             abort(404);
         }
@@ -3396,48 +3730,180 @@ class OrganizationSubmittedDocumentsController extends Controller
         try {
             $existsInSupabase = $disk->exists($relativePath);
         } catch (\Throwable $e) {
-            Log::warning('Activity proposal attachment exists() check failed on Supabase.', [
-                'proposal_id' => $proposal->id,
+            Log::warning('Organization attachment exists() check failed on Supabase.', array_merge($logContext, [
                 'stored_path' => $relativePath,
                 'error' => $e->getMessage(),
-            ]);
+            ]));
         }
 
         if ($existsInSupabase) {
             try {
                 $temporaryUrl = $disk->temporaryUrl($relativePath, now()->addMinutes(15));
 
-                Log::info('Activity proposal attachment served via Supabase signed URL.', [
-                    'proposal_id' => $proposal->id,
+                Log::info('Organization attachment served via Supabase signed URL.', array_merge($logContext, [
                     'stored_path' => $relativePath,
-                ]);
+                ]));
 
                 return redirect()->away($temporaryUrl);
             } catch (\Throwable $e) {
-                Log::warning('Failed to generate Supabase temporaryUrl for proposal attachment.', [
-                    'proposal_id' => $proposal->id,
+                Log::warning('Failed to generate Supabase temporaryUrl for organization attachment.', array_merge($logContext, [
                     'stored_path' => $relativePath,
                     'error' => $e->getMessage(),
-                ]);
+                ]));
             }
         }
 
         $publicDisk = Storage::disk('public');
         if ($publicDisk->exists($relativePath)) {
-            Log::warning('Activity proposal attachment found on local public disk only (legacy).', [
-                'proposal_id' => $proposal->id,
+            Log::warning('Organization attachment found on local public disk only (legacy).', array_merge($logContext, [
                 'stored_path' => $relativePath,
-            ]);
+            ]));
 
             return $publicDisk->response($relativePath, basename($relativePath), [], 'inline');
         }
 
-        Log::warning('Activity proposal attachment missing from both Supabase and local storage.', [
-            'proposal_id' => $proposal->id,
+        Log::warning('Organization attachment missing from both Supabase and local storage.', array_merge($logContext, [
             'stored_path' => $relativePath,
-        ]);
+        ]));
 
         abort(404, 'The file could not be found in Supabase Storage.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $logContext
+     */
+    private function redirectRelativeStoredPathToSignedDownloadUrl(
+        string $relativePath,
+        string $downloadFilename,
+        ?string $mimeType,
+        array $logContext = []
+    ): Response {
+        if ($relativePath === '' || str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('supabase');
+        $existsInSupabase = false;
+
+        try {
+            $existsInSupabase = $disk->exists($relativePath);
+        } catch (\Throwable $e) {
+            Log::warning('Organization attachment exists() check failed on Supabase.', array_merge($logContext, [
+                'stored_path' => $relativePath,
+                'error' => $e->getMessage(),
+            ]));
+        }
+
+        $safeFilename = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $downloadFilename);
+        if ($safeFilename === '') {
+            $safeFilename = basename($relativePath);
+        }
+        $resolvedMime = ($mimeType !== null && trim($mimeType) !== '') ? trim($mimeType) : 'application/octet-stream';
+
+        if ($existsInSupabase) {
+            try {
+                $temporaryUrl = $disk->temporaryUrl($relativePath, now()->addMinutes(15), [
+                    'ResponseContentDisposition' => 'attachment; filename="'.$safeFilename.'"',
+                    'ResponseContentType' => $resolvedMime,
+                ]);
+
+                Log::info('Organization attachment download via Supabase signed URL.', array_merge($logContext, [
+                    'stored_path' => $relativePath,
+                ]));
+
+                return redirect()->away($temporaryUrl);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to generate Supabase temporaryUrl for organization attachment download.', array_merge($logContext, [
+                    'stored_path' => $relativePath,
+                    'error' => $e->getMessage(),
+                ]));
+            }
+        }
+
+        $publicDisk = Storage::disk('public');
+        if ($publicDisk->exists($relativePath)) {
+            return $publicDisk->download($relativePath, $safeFilename);
+        }
+
+        abort(404, 'The file could not be found in Supabase Storage.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $logContext
+     */
+    private function forceDownloadSupabaseObjectOrg(string $storedPath, string $originalName, ?string $mimeType, array $logContext = []): Response
+    {
+        $disk = Storage::disk('supabase');
+
+        if (! $disk->exists($storedPath)) {
+            Log::warning('File missing from Supabase Storage during officer download request', array_merge([
+                'stored_path' => $storedPath,
+            ], $logContext));
+
+            abort(404, 'The file could not be found in Supabase Storage.');
+        }
+
+        $safeFilename = (string) preg_replace('/[\x00-\x1F"\\\\]/u', '', $originalName);
+        if ($safeFilename === '') {
+            $safeFilename = basename($storedPath);
+        }
+        $resolvedMime = ($mimeType !== null && trim($mimeType) !== '') ? $mimeType : 'application/octet-stream';
+
+        try {
+            $temporaryUrl = $disk->temporaryUrl(
+                $storedPath,
+                now()->addMinutes(15),
+                [
+                    'ResponseContentDisposition' => 'attachment; filename="'.$safeFilename.'"',
+                    'ResponseContentType' => $resolvedMime,
+                ]
+            );
+
+            return redirect()->away($temporaryUrl);
+        } catch (\Throwable $e) {
+            Log::warning('Falling back to streamed Supabase download (temporaryUrl failed).', array_merge([
+                'stored_path' => $storedPath,
+                'error' => $e->getMessage(),
+                'exception' => class_basename($e),
+            ], $logContext));
+        }
+
+        try {
+            return response()->streamDownload(function () use ($disk, $storedPath): void {
+                echo $disk->get($storedPath);
+            }, $safeFilename, [
+                'Content-Type' => $resolvedMime,
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to stream download Supabase file', array_merge([
+                'stored_path' => $storedPath,
+                'error' => $e->getMessage(),
+                'exception' => class_basename($e),
+            ], $logContext));
+
+            abort(500, 'Unable to download file.');
+        }
+    }
+
+    private function officerDisplayFileTypeBadgeLabel(string $fileNameForExtension, ?string $mimeType = null): string
+    {
+        $ext = strtoupper((string) pathinfo($fileNameForExtension, PATHINFO_EXTENSION));
+        if ($ext !== '' && $ext !== strtoupper($fileNameForExtension)) {
+            return $ext;
+        }
+
+        $mime = strtolower((string) ($mimeType ?? ''));
+
+        return match ($mime) {
+            'application/pdf' => 'PDF',
+            'image/png' => 'PNG',
+            'image/jpeg', 'image/jpg' => 'JPG',
+            'image/webp' => 'WEBP',
+            'application/msword' => 'DOC',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'DOCX',
+            default => 'FILE',
+        };
     }
 
     private function isPathAllowedForProposalOrganization(string $relativePath, int $organizationId): bool
@@ -3508,7 +3974,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         return $keys;
     }
 
-    private function reportFilePathByKey(ActivityReport $report, string $key): ?string
+    private function reportAttachmentByStreamKey(ActivityReport $report, string $key): ?Attachment
     {
         $fileType = match ($key) {
             'poster' => Attachment::TYPE_REPORT_POSTER,
@@ -3524,12 +3990,10 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ->latest('id')
                 ->first();
             if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
-                return $attachment->stored_path;
+                return $attachment;
             }
 
-            $legacyPhotos = is_array($report->supporting_photo_paths) ? $report->supporting_photo_paths : [];
-
-            return $legacyPhotos[(int) $m[1]] ?? null;
+            return null;
         }
 
         if ($fileType !== null) {
@@ -3538,8 +4002,24 @@ class OrganizationSubmittedDocumentsController extends Controller
                 ->latest('id')
                 ->first();
             if ($attachment && is_string($attachment->stored_path) && $attachment->stored_path !== '') {
-                return $attachment->stored_path;
+                return $attachment;
             }
+        }
+
+        return null;
+    }
+
+    private function reportFilePathByKey(ActivityReport $report, string $key): ?string
+    {
+        $fromAttachment = $this->reportAttachmentByStreamKey($report, $key);
+        if ($fromAttachment && is_string($fromAttachment->stored_path) && $fromAttachment->stored_path !== '') {
+            return $fromAttachment->stored_path;
+        }
+
+        if (preg_match('/^supporting_(\d+)$/', $key, $m) === 1) {
+            $legacyPhotos = is_array($report->supporting_photo_paths) ? $report->supporting_photo_paths : [];
+
+            return $legacyPhotos[(int) $m[1]] ?? null;
         }
 
         return match ($key) {

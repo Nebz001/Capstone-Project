@@ -58,15 +58,31 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth'])->gr
         Route::get('/submitted-documents/registrations/{submission}/files/{key}', 'streamSubmittedRegistrationRequirementFile')
             ->name('submitted-documents.registrations.file')
             ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/registrations/{submission}/files/{key}/download', 'downloadSubmittedRegistrationRequirementFile')
+            ->name('submitted-documents.registrations.file.download')
+            ->where('key', '[a-z0-9_]+');
         Route::get('/submitted-documents/renewals/{submission}/files/{key}', 'streamSubmittedRenewalRequirementFile')
             ->name('submitted-documents.renewals.file')
             ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/renewals/{submission}/files/{key}/download', 'downloadSubmittedRenewalRequirementFile')
+            ->name('submitted-documents.renewals.file.download')
+            ->where('key', '[a-z0-9_]+');
         Route::get('/submitted-documents/activity-calendars/{calendar}/file', 'streamSubmittedActivityCalendarMainFile')->name('submitted-documents.calendars.file');
+        Route::get('/submitted-documents/activity-calendars/{calendar}/file/download', 'downloadSubmittedActivityCalendarMainFile')->name('submitted-documents.calendars.file.download');
         Route::get('/submitted-documents/activity-proposals/{proposal}/files/{key}', 'streamSubmittedActivityProposalFile')
             ->name('submitted-documents.proposals.file')
             ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/activity-proposals/{proposal}/files/{key}/download', 'downloadSubmittedActivityProposalFile')
+            ->name('submitted-documents.proposals.file.download')
+            ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/activity-request-forms/{requestForm}/files/{key}', 'streamActivityRequestFormAttachment')
+            ->name('submitted-documents.activity-request-forms.file')
+            ->where('key', '[a-z0-9_]+');
         Route::get('/submitted-documents/after-activity-reports/{report}/files/{key}', 'streamSubmittedAfterActivityReportFile')
             ->name('submitted-documents.reports.file')
+            ->where('key', '[a-z0-9_]+');
+        Route::get('/submitted-documents/after-activity-reports/{report}/files/{key}/download', 'downloadSubmittedAfterActivityReportFile')
+            ->name('submitted-documents.reports.file.download')
             ->where('key', '[a-z0-9_]+');
     });
 });
@@ -130,6 +146,12 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'off
             ->name('activity-calendar-submission');
         Route::post('/activity-calendar-submission', 'storeActivityCalendarSubmission')
             ->name('activity-calendar-submission.store');
+        Route::post('/activity-calendar-submission/entries', 'storeActivityCalendarDraftEntry')
+            ->name('activity-calendar-submission.entries.store');
+        Route::match(['put', 'patch'], '/activity-calendar-submission/entries/{entry}', 'updateActivityCalendarDraftEntry')
+            ->name('activity-calendar-submission.entries.update');
+        Route::delete('/activity-calendar-submission/entries/{entry}', 'destroyActivityCalendarDraftEntry')
+            ->name('activity-calendar-submission.entries.destroy');
 
         Route::get('/activity-proposal-submission', 'showActivityProposalSubmission')
             ->name('activity-proposal-submission');
