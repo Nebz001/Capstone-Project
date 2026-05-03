@@ -127,7 +127,7 @@
     'application' => ['organization'],
     'contact' => ['contact_person', 'contact_no', 'contact_email'],
     'adviser' => ['full_name', 'school_id', 'email'],
-    'organizational' => ['date_organized', 'organization_type', 'school', 'purpose'],
+    'organizational' => ['organization_type', 'school', 'purpose'],
     'requirements' => $requirementKeys,
   ];
   $deriveSectionStatusFromFields = static function (string $sectionKey, array $fieldKeys) use ($persistedFieldReviews): string {
@@ -438,25 +438,40 @@
     <div class="bg-white px-6 py-5">
       <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
         <div class="{{ $readonlyItemClass }}">
-          <dt class="{{ $readonlyLabelClass }}">Full Name</dt>
+          <dt class="{{ $readonlyLabelClass }}">Full Name
+            @if (($update = $fieldUpdateFor('adviser', 'full_name')) && ($update['is_updated'] ?? false))
+              <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+            @endif
+          </dt>
           <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->full_name ?? 'N/A' }}</dd>
             @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'full_name', 'fieldLabel' => 'Full Name', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews, 'cardScrollId' => $adminReviewScrollId('adviser', 'full_name')])
           </div>
+          @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('adviser', 'full_name')])
         </div>
         <div class="{{ $readonlyItemClass }}">
-          <dt class="{{ $readonlyLabelClass }}">School ID</dt>
+          <dt class="{{ $readonlyLabelClass }}">School ID
+            @if (($update = $fieldUpdateFor('adviser', 'school_id')) && ($update['is_updated'] ?? false))
+              <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+            @endif
+          </dt>
           <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->school_id ?? 'N/A' }}</dd>
             @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'school_id', 'fieldLabel' => 'School ID', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews, 'cardScrollId' => $adminReviewScrollId('adviser', 'school_id')])
           </div>
+          @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('adviser', 'school_id')])
         </div>
         <div class="{{ $readonlyItemClass }}">
-          <dt class="{{ $readonlyLabelClass }}">Email</dt>
+          <dt class="{{ $readonlyLabelClass }}">Email
+            @if (($update = $fieldUpdateFor('adviser', 'email')) && ($update['is_updated'] ?? false))
+              <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+            @endif
+          </dt>
           <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             <dd class="text-sm font-semibold text-slate-900">{{ $adviserNomination?->user?->email ?? 'N/A' }}</dd>
             @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'adviser', 'fieldKey' => 'email', 'fieldLabel' => 'Email', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews, 'cardScrollId' => $adminReviewScrollId('adviser', 'email')])
           </div>
+          @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('adviser', 'email')])
         </div>
         @php
           $nominationStatusKey = strtolower(trim((string) ($adviserNomination?->status ?? '')));
@@ -499,16 +514,8 @@
     <div class="bg-white px-6 py-5">
     <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
       <div class="{{ $readonlyItemClass }}">
-        <dt class="{{ $readonlyLabelClass }}">Date Organized
-          @if (($update = $fieldUpdateFor('organizational', 'date_organized')) && ($update['is_updated'] ?? false))
-            <span class="ml-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
-          @endif
-        </dt>
-        <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-          <dd class="text-sm font-semibold text-slate-900">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
-          @include('admin.registrations.partials.field-review-control', ['sectionKey' => 'organizational', 'fieldKey' => 'date_organized', 'fieldLabel' => 'Date Organized', 'persistedFieldReviews' => $persistedFieldReviews, 'persistedSectionReviews' => $persistedSectionReviews])
-        </div>
-        @include('admin.registrations.partials.field-update-inline', ['update' => $fieldUpdateFor('organizational', 'date_organized')])
+        <dt class="{{ $readonlyLabelClass }}">Date Organized</dt>
+        <dd class="mt-1.5 text-sm font-semibold text-slate-900">{{ $org?->founded_date?->format('M d, Y') ?? 'N/A' }}</dd>
       </div>
       <div class="{{ $readonlyItemClass }}">
         <dt class="{{ $readonlyLabelClass }}">Type of Organization

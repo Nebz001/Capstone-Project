@@ -57,7 +57,6 @@
     $showRevisionApplicationCard = $shouldShowField('organization_name');
     $showRevisionOrganizationCard = $shouldShowField('organization_type')
         || $shouldShowField('college_department')
-        || $shouldShowField('founded_date')
         || $shouldShowField('purpose');
     $showRevisionContactCard = $shouldShowField('contact_person')
         || $shouldShowField('contact_no')
@@ -70,12 +69,28 @@
     $revisionAnchorId = static fn (string $sectionKey, string $fieldKey): string => 'revision-field-'.\Illuminate\Support\Str::of($sectionKey)->lower()->replaceMatches('/[^a-z0-9]+/', '-')->trim('-').'-'.\Illuminate\Support\Str::of($fieldKey)->lower()->replaceMatches('/[^a-z0-9]+/', '-')->trim('-');
     $revisionNoteFor = static function (array $keys) use ($revisionFieldNotes): ?string {
         foreach ($keys as $key) {
-            $note = trim((string) ($revisionFieldNotes[$key] ?? ''));
-            if ($note !== '') {
-                return $note;
+            $raw = $revisionFieldNotes[$key] ?? null;
+            if (! is_scalar($raw)) {
+                continue;
             }
+            $note = trim((string) $raw);
+            if ($note === '' || preg_match('/^(0+)(\\.0+)?$/', $note) === 1) {
+                continue;
+            }
+
+            return $note;
         }
+
         return null;
+    };
+    $profileRevisionNotesByFormField = is_array($profileRevisionNotesByFormField ?? null) ? $profileRevisionNotesByFormField : [];
+    $formRevisionNote = static function (string $formKey) use ($profileRevisionNotesByFormField): ?string {
+        $note = trim((string) ($profileRevisionNotesByFormField[$formKey] ?? ''));
+        if ($note === '' || preg_match('/^(0+)(\\.0+)?$/', $note) === 1) {
+            return null;
+        }
+
+        return $note;
     };
     $saOrgId = isset($superAdminOrganizationId) && $superAdminOrganizationId ? (int) $superAdminOrganizationId : null;
     $saQ = $saOrgId ? '?organization_id='.$saOrgId : '';
@@ -91,8 +106,8 @@
     $isProfileRevisionRequested = (bool) ($organization?->isProfileRevisionRequested());
     $reviewWorkflowStatus = strtoupper((string) ($applicationWorkflowStatus ?? ''));
     $isApprovedActiveState = $status === 'ACTIVE' && $reviewWorkflowStatus === 'APPROVED';
-    $isRevisionReviewState = $hasActiveProfileRevisionItems
-        && ! $isApprovedActiveState
+    $isRevisionReviewState = ! $isApprovedActiveState
+        && ($hasActiveProfileRevisionItems || $isProfileRevisionRequested)
         && (
             in_array($reviewWorkflowStatus, ['REVISION', 'REVISION_REQUIRED'], true)
             || $isProfileRevisionRequested
@@ -110,6 +125,10 @@
             ? 'Your updated information has been submitted and is now under SDAO review. Editing is temporarily locked while SDAO verifies your updates.'
             : $profileEditBlockedMessage);
     $approvedGeneralRemarks = 'Organization Approved!';
+    $readonlyItemClass = $readonlyItemClass ?? 'rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3';
+    $readonlyLabelClass = $readonlyLabelClass ?? 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
+    $readonlyValueClass = $readonlyValueClass ?? 'mt-1.5 text-sm font-bold text-slate-900';
+    $readonlyValueLongClass = $readonlyValueLongClass ?? 'mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-800';
 @endphp
 
 <div class="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-10">
@@ -268,13 +287,6 @@
 
         @if (!$editing)
 
-            @php
-                $readonlyItemClass = 'rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3';
-                $readonlyLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500';
-                $readonlyValueClass = 'mt-1.5 text-sm font-bold text-slate-900';
-                $readonlyValueLongClass = 'mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-800';
-            @endphp
-
             <div class="space-y-4">
 
                 <section aria-labelledby="profile-section-status-heading">
@@ -357,7 +369,7 @@
                                     <p class="{{ $readonlyValueClass }}">
                                         {{ $activeApplication?->submittedBy?->full_name ?? $activeApplication?->user?->full_name ?? '—' }}
                                     </p>
-                                    @php $submittedByNote = $revisionNoteFor(['application.submitted_by', 'overview.submitted_by']); @endphp
+                                    @php $submittedByNote = $formRevisionNote('submitted_by_display') ?? $revisionNoteFor(['application.submitted_by', 'overview.submitted_by']); @endphp
                                     @if ($submittedByNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $submittedByNote }}</p>
                                     @endif
@@ -378,7 +390,7 @@
                                 <div id="{{ $revisionAnchorId('contact', 'contact_person') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">Contact person</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_person ?? '—' }}</p>
-                                    @php $contactPersonNote = $revisionNoteFor(['contact.contact_person']); @endphp
+                                    @php $contactPersonNote = $formRevisionNote('contact_person'); @endphp
                                     @if ($contactPersonNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $contactPersonNote }}</p>
                                     @endif
@@ -386,7 +398,7 @@
                                 <div id="{{ $revisionAnchorId('contact', 'contact_no') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">Contact number</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_no ?? '—' }}</p>
-                                    @php $contactNoNote = $revisionNoteFor(['contact.contact_no']); @endphp
+                                    @php $contactNoNote = $formRevisionNote('contact_no'); @endphp
                                     @if ($contactNoNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $contactNoNote }}</p>
                                     @endif
@@ -394,7 +406,7 @@
                                 <div id="{{ $revisionAnchorId('contact', 'contact_email') }}" class="{{ $readonlyItemClass }} sm:col-span-2">
                                     <p class="{{ $readonlyLabelClass }}">Contact email</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_email ?? '—' }}</p>
-                                    @php $contactEmailNote = $revisionNoteFor(['contact.contact_email']); @endphp
+                                    @php $contactEmailNote = $formRevisionNote('contact_email'); @endphp
                                     @if ($contactEmailNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $contactEmailNote }}</p>
                                     @endif
@@ -415,7 +427,7 @@
                                 <div id="{{ $revisionAnchorId('application', 'organization') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">Organization Name</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $organization->organization_name }}</p>
-                                    @php $orgNameNote = $revisionNoteFor(['application.organization']); @endphp
+                                    @php $orgNameNote = $formRevisionNote('organization_name') ?? $revisionNoteFor(['application.organization']); @endphp
                                     @if ($orgNameNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $orgNameNote }}</p>
                                     @endif
@@ -423,7 +435,7 @@
                                 <div id="{{ $revisionAnchorId('organizational', 'organization_type') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">Organization Type</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $typeLabels[$organization->organization_type] ?? $organization->organization_type }}</p>
-                                    @php $orgTypeNote = $revisionNoteFor(['organizational.organization_type']); @endphp
+                                    @php $orgTypeNote = $formRevisionNote('organization_type'); @endphp
                                     @if ($orgTypeNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $orgTypeNote }}</p>
                                     @endif
@@ -431,7 +443,7 @@
                                 <div id="{{ $revisionAnchorId('organizational', 'school') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">College / Department</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $organization->college_department }}</p>
-                                    @php $schoolNote = $revisionNoteFor(['organizational.school']); @endphp
+                                    @php $schoolNote = $formRevisionNote('college_department'); @endphp
                                     @if ($schoolNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $schoolNote }}</p>
                                     @endif
@@ -441,15 +453,11 @@
                                     <p class="{{ $readonlyValueClass }}">
                                         {{ $organization->founded_date?->format('F j, Y') ?? '—' }}
                                     </p>
-                                    @php $dateOrganizedNote = $revisionNoteFor(['organizational.date_organized']); @endphp
-                                    @if ($dateOrganizedNote)
-                                        <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $dateOrganizedNote }}</p>
-                                    @endif
                                 </div>
                                 <div id="{{ $revisionAnchorId('organizational', 'purpose') }}" class="{{ $readonlyItemClass }} sm:col-span-2">
                                     <p class="{{ $readonlyLabelClass }}">Purpose</p>
                                     <p class="{{ $readonlyValueLongClass }}">{{ $organization->purpose ?? '—' }}</p>
-                                    @php $purposeNote = $revisionNoteFor(['organizational.purpose']); @endphp
+                                    @php $purposeNote = $formRevisionNote('purpose'); @endphp
                                     @if ($purposeNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $purposeNote }}</p>
                                     @endif
@@ -469,8 +477,8 @@
                             <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
                                 <div id="{{ $revisionAnchorId('adviser', 'full_name') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">Adviser Name</p>
-                                    <p class="{{ $readonlyValueClass }}">{{ $adviser['name'] ?? $activeAdviser?->user?->full_name ?? ($organization->adviser_name ?? 'No adviser assigned.') }}</p>
-                                    @php $adviserNameNote = $revisionNoteFor(['adviser.full_name']); @endphp
+                                    <p class="{{ $readonlyValueClass }}">{{ $adviser['name'] ?? $activeAdviser?->user?->full_name ?? 'No adviser assigned.' }}</p>
+                                    @php $adviserNameNote = $formRevisionNote('adviser_name'); @endphp
                                     @if ($adviserNameNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $adviserNameNote }}</p>
                                     @endif
@@ -478,7 +486,7 @@
                                 <div id="{{ $revisionAnchorId('adviser', 'school_id') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">Adviser School ID</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $adviser['school_id'] ?? $activeAdviser?->user?->school_id ?? 'No adviser assigned.' }}</p>
-                                    @php $adviserSchoolNote = $revisionNoteFor(['adviser.school_id']); @endphp
+                                    @php $adviserSchoolNote = $formRevisionNote('adviser_school_id'); @endphp
                                     @if ($adviserSchoolNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $adviserSchoolNote }}</p>
                                     @endif
@@ -486,7 +494,7 @@
                                 <div id="{{ $revisionAnchorId('adviser', 'email') }}" class="{{ $readonlyItemClass }}">
                                     <p class="{{ $readonlyLabelClass }}">Adviser Email</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $adviser['email'] ?? $activeAdviser?->user?->email ?? 'No adviser assigned.' }}</p>
-                                    @php $adviserEmailNote = $revisionNoteFor(['adviser.email']); @endphp
+                                    @php $adviserEmailNote = $formRevisionNote('adviser_email'); @endphp
                                     @if ($adviserEmailNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $adviserEmailNote }}</p>
                                     @endif
@@ -582,18 +590,22 @@
                         </div>
                         <div class="bg-white px-6 py-4.5">
                             <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
-                                <div id="{{ $revisionAnchorId('application', 'submitted_by') }}">
-                                    <x-forms.label for="submitted_by_display" required>Submitted By</x-forms.label>
+                                <div id="{{ $revisionAnchorId('application', 'submitted_by') }}" data-profile-revision-field="submitted_by_display" class="{{ $readonlyItemClass }} transition duration-150">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <x-forms.label for="submitted_by_display" required class="!mb-0">Submitted By</x-forms.label>
+                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    </div>
                                     <x-forms.input
                                         id="submitted_by_display"
                                         name="submitted_by_display"
+                                        class="mt-1.5"
                                         type="text"
                                         :value="$submittedByDefault"
                                         data-revision-original="{{ $submittedByDefault }}"
                                         required
                                     />
                                     <input type="hidden" name="submitted_by_display_original" value="{{ $submittedByDefault }}">
-                                    @php $submittedByRevisionNote = $revisionNoteFor(['application.submitted_by', 'overview.submitted_by']); @endphp
+                                    @php $submittedByRevisionNote = $formRevisionNote('submitted_by_display') ?? $revisionNoteFor(['application.submitted_by', 'overview.submitted_by']); @endphp
                                     @if ($submittedByRevisionNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $submittedByRevisionNote }}</p>
                                     @endif
@@ -614,17 +626,21 @@
                         </div>
                     <div class="bg-white px-6 py-4.5">
                         <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
-                            <div id="{{ $revisionAnchorId('application', 'organization') }}">
-                                <x-forms.label for="organization_name" required>Organization Name</x-forms.label>
+                            <div id="{{ $revisionAnchorId('application', 'organization') }}" data-profile-revision-field="organization_name" class="{{ $readonlyItemClass }} transition duration-150">
+                                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <x-forms.label for="organization_name" required class="!mb-0">Organization Name</x-forms.label>
+                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                </div>
                                 <x-forms.input
                                     id="organization_name"
                                     name="organization_name"
+                                    class="mt-1.5"
                                     type="text"
                                     :value="old('organization_name', $organization->organization_name)"
                                     data-revision-original="{{ old('organization_name', $organization->organization_name) }}"
                                     required
                                 />
-                                @php $editOrgNameNote = $revisionNoteFor(['application.organization']); @endphp
+                                @php $editOrgNameNote = $formRevisionNote('organization_name') ?? $revisionNoteFor(['application.organization']); @endphp
                                 @if ($editOrgNameNote)
                                     <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editOrgNameNote }}</p>
                                 @endif
@@ -646,9 +662,12 @@
                     <div class="bg-white px-6 py-4.5">
                         <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
                             @if ($shouldShowField('organization_type'))
-                            <div id="{{ $revisionAnchorId('organizational', 'organization_type') }}">
-                                <x-forms.label for="organization_type" required>Organization Type</x-forms.label>
-                                <x-forms.select id="organization_type" name="organization_type" required>
+                            <div id="{{ $revisionAnchorId('organizational', 'organization_type') }}" data-profile-revision-field="organization_type" class="{{ $readonlyItemClass }} transition duration-150">
+                                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <x-forms.label for="organization_type" required class="!mb-0">Organization Type</x-forms.label>
+                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                </div>
+                                <x-forms.select id="organization_type" name="organization_type" class="mt-1.5" required>
                                     <option value="" disabled>Select type</option>
                                     <option value="co_curricular" @selected(old('organization_type', $organization->organization_type) === 'co_curricular' || old('organization_type', $organization->organization_type) === 'CO_CURRICULAR')>
                                         Co-Curricular Organization
@@ -658,7 +677,7 @@
                                     </option>
                                 </x-forms.select>
                                 <input type="hidden" data-revision-original-for="organization_type" value="{{ old('organization_type', $organization->organization_type) }}">
-                                @php $editOrgTypeNote = $revisionNoteFor(['organizational.organization_type']); @endphp
+                                @php $editOrgTypeNote = $formRevisionNote('organization_type'); @endphp
                                 @if ($editOrgTypeNote)
                                     <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editOrgTypeNote }}</p>
                                 @endif
@@ -667,17 +686,21 @@
                             @endif
 
                             @if ($shouldShowField('college_department'))
-                            <div id="{{ $revisionAnchorId('organizational', 'school') }}">
-                                <x-forms.label for="college_department" required>College / Department</x-forms.label>
+                            <div id="{{ $revisionAnchorId('organizational', 'school') }}" data-profile-revision-field="college_department" class="{{ $readonlyItemClass }} transition duration-150">
+                                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <x-forms.label for="college_department" required class="!mb-0">College / Department</x-forms.label>
+                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                </div>
                                 <x-forms.input
                                     id="college_department"
                                     name="college_department"
+                                    class="mt-1.5"
                                     type="text"
                                     :value="old('college_department', $organization->college_department)"
                                     data-revision-original="{{ old('college_department', $organization->college_department) }}"
                                     required
                                 />
-                                @php $editSchoolNote = $revisionNoteFor(['organizational.school']); @endphp
+                                @php $editSchoolNote = $formRevisionNote('college_department'); @endphp
                                 @if ($editSchoolNote)
                                     <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editSchoolNote }}</p>
                                 @endif
@@ -685,29 +708,14 @@
                             </div>
                             @endif
 
-                            @if ($shouldShowField('founded_date'))
-                            <div id="{{ $revisionAnchorId('organizational', 'date_organized') }}">
-                                <x-forms.label for="founded_date">Founded Date</x-forms.label>
-                                <x-forms.input
-                                    id="founded_date"
-                                    name="founded_date"
-                                    type="date"
-                                    :value="old('founded_date', $organization->founded_date?->format('Y-m-d'))"
-                                    data-revision-original="{{ old('founded_date', $organization->founded_date?->format('Y-m-d')) }}"
-                                />
-                                @php $editDateNote = $revisionNoteFor(['organizational.date_organized']); @endphp
-                                @if ($editDateNote)
-                                    <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editDateNote }}</p>
-                                @endif
-                                @error('founded_date') <x-forms.error>{{ $message }}</x-forms.error> @enderror
-                            </div>
-                            @endif
-
                             @if ($shouldShowField('purpose'))
-                            <div id="{{ $revisionAnchorId('organizational', 'purpose') }}" class="sm:col-span-2">
-                                <x-forms.label for="purpose" required>Purpose</x-forms.label>
-                                <x-forms.textarea id="purpose" name="purpose" rows="4" required data-revision-original="{{ old('purpose', $organization->purpose) }}">{{ old('purpose', $organization->purpose) }}</x-forms.textarea>
-                                @php $editPurposeNote = $revisionNoteFor(['organizational.purpose']); @endphp
+                            <div id="{{ $revisionAnchorId('organizational', 'purpose') }}" data-profile-revision-field="purpose" class="{{ $readonlyItemClass }} transition duration-150 sm:col-span-2">
+                                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <x-forms.label for="purpose" required class="!mb-0">Purpose</x-forms.label>
+                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                </div>
+                                <x-forms.textarea id="purpose" name="purpose" class="mt-1.5" rows="4" required data-revision-original="{{ old('purpose', $organization->purpose) }}">{{ old('purpose', $organization->purpose) }}</x-forms.textarea>
+                                @php $editPurposeNote = $formRevisionNote('purpose'); @endphp
                                 @if ($editPurposeNote)
                                     <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editPurposeNote }}</p>
                                 @endif
@@ -730,16 +738,20 @@
                         <div class="bg-white px-6 py-4.5">
                             <div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-5">
                                 @if ($shouldShowField('contact_person'))
-                                <div id="{{ $revisionAnchorId('contact', 'contact_person') }}">
-                                    <x-forms.label for="contact_person">Contact Person</x-forms.label>
+                                <div id="{{ $revisionAnchorId('contact', 'contact_person') }}" data-profile-revision-field="contact_person" class="{{ $readonlyItemClass }} transition duration-150">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <x-forms.label for="contact_person" class="!mb-0">Contact Person</x-forms.label>
+                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    </div>
                                     <x-forms.input
                                         id="contact_person"
                                         name="contact_person"
+                                        class="mt-1.5"
                                         type="text"
                                         :value="old('contact_person', $activeApplication?->contact_person ?? '')"
                                         data-revision-original="{{ old('contact_person', $activeApplication?->contact_person ?? '') }}"
                                     />
-                                    @php $editContactPersonNote = $revisionNoteFor(['contact.contact_person']); @endphp
+                                    @php $editContactPersonNote = $formRevisionNote('contact_person'); @endphp
                                     @if ($editContactPersonNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editContactPersonNote }}</p>
                                     @endif
@@ -747,16 +759,20 @@
                                 </div>
                                 @endif
                                 @if ($shouldShowField('contact_no'))
-                                <div id="{{ $revisionAnchorId('contact', 'contact_no') }}">
-                                    <x-forms.label for="contact_no">Contact Number</x-forms.label>
+                                <div id="{{ $revisionAnchorId('contact', 'contact_no') }}" data-profile-revision-field="contact_no" class="{{ $readonlyItemClass }} transition duration-150">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <x-forms.label for="contact_no" class="!mb-0">Contact Number</x-forms.label>
+                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    </div>
                                     <x-forms.input
                                         id="contact_no"
                                         name="contact_no"
+                                        class="mt-1.5"
                                         type="text"
                                         :value="old('contact_no', $activeApplication?->contact_no ?? '')"
                                         data-revision-original="{{ old('contact_no', $activeApplication?->contact_no ?? '') }}"
                                     />
-                                    @php $editContactNoNote = $revisionNoteFor(['contact.contact_no']); @endphp
+                                    @php $editContactNoNote = $formRevisionNote('contact_no'); @endphp
                                     @if ($editContactNoNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editContactNoNote }}</p>
                                     @endif
@@ -764,16 +780,20 @@
                                 </div>
                                 @endif
                                 @if ($shouldShowField('contact_email'))
-                                <div id="{{ $revisionAnchorId('contact', 'contact_email') }}" class="sm:col-span-2">
-                                    <x-forms.label for="contact_email">Contact Email</x-forms.label>
+                                <div id="{{ $revisionAnchorId('contact', 'contact_email') }}" data-profile-revision-field="contact_email" class="{{ $readonlyItemClass }} transition duration-150 sm:col-span-2">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <x-forms.label for="contact_email" class="!mb-0">Contact Email</x-forms.label>
+                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    </div>
                                     <x-forms.input
                                         id="contact_email"
                                         name="contact_email"
+                                        class="mt-1.5"
                                         type="email"
                                         :value="old('contact_email', $activeApplication?->contact_email ?? '')"
                                         data-revision-original="{{ old('contact_email', $activeApplication?->contact_email ?? '') }}"
                                     />
-                                    @php $editContactEmailNote = $revisionNoteFor(['contact.contact_email', 'contact.email_address']); @endphp
+                                    @php $editContactEmailNote = $formRevisionNote('contact_email'); @endphp
                                     @if ($editContactEmailNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editContactEmailNote }}</p>
                                     @endif
@@ -796,17 +816,21 @@
                         <div class="bg-white px-6 py-4.5">
                             <div class="grid grid-cols-1 gap-3.5 md:grid-cols-2 md:gap-x-5">
                                 @if ($shouldShowField('adviser_name'))
-                                <div id="{{ $revisionAnchorId('adviser', 'full_name') }}">
-                                    <x-forms.label for="adviser_name">Adviser Name</x-forms.label>
+                                <div id="{{ $revisionAnchorId('adviser', 'full_name') }}" data-profile-revision-field="adviser_name" class="{{ $readonlyItemClass }} transition duration-150">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <x-forms.label for="adviser_name" class="!mb-0">Adviser Name</x-forms.label>
+                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    </div>
                                     <x-forms.input
                                         id="adviser_name"
                                         name="adviser_name"
+                                        class="mt-1.5"
                                         type="text"
                                         placeholder="e.g., Prof. Juan Dela Cruz"
-                                        :value="old('adviser_name', $organization->adviser_name)"
-                                        data-revision-original="{{ old('adviser_name', $organization->adviser_name) }}"
+                                        :value="old('adviser_name', $adviser['name'] ?? $activeAdviser?->user?->full_name ?? '')"
+                                        data-revision-original="{{ old('adviser_name', $adviser['name'] ?? $activeAdviser?->user?->full_name ?? '') }}"
                                     />
-                                    @php $editAdviserNameNote = $revisionNoteFor(['adviser.full_name']); @endphp
+                                    @php $editAdviserNameNote = $formRevisionNote('adviser_name'); @endphp
                                     @if ($editAdviserNameNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editAdviserNameNote }}</p>
                                     @endif
@@ -814,16 +838,20 @@
                                 </div>
                                 @endif
                                 @if ($shouldShowField('adviser_email'))
-                                <div id="{{ $revisionAnchorId('adviser', 'email') }}">
-                                    <x-forms.label for="adviser_email">Adviser Email</x-forms.label>
+                                <div id="{{ $revisionAnchorId('adviser', 'email') }}" data-profile-revision-field="adviser_email" class="{{ $readonlyItemClass }} transition duration-150">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <x-forms.label for="adviser_email" class="!mb-0">Adviser Email</x-forms.label>
+                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    </div>
                                     <x-forms.input
                                         id="adviser_email"
                                         name="adviser_email"
+                                        class="mt-1.5"
                                         type="email"
                                         :value="old('adviser_email', $adviser['email'] ?? $activeAdviser?->user?->email ?? '')"
                                         data-revision-original="{{ old('adviser_email', $adviser['email'] ?? $activeAdviser?->user?->email ?? '') }}"
                                     />
-                                    @php $editAdviserEmailNote = $revisionNoteFor(['adviser.email']); @endphp
+                                    @php $editAdviserEmailNote = $formRevisionNote('adviser_email'); @endphp
                                     @if ($editAdviserEmailNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editAdviserEmailNote }}</p>
                                     @endif
@@ -831,16 +859,20 @@
                                 </div>
                                 @endif
                                 @if ($shouldShowField('adviser_school_id'))
-                                <div id="{{ $revisionAnchorId('adviser', 'school_id') }}">
-                                    <x-forms.label for="adviser_school_id">Adviser School ID</x-forms.label>
+                                <div id="{{ $revisionAnchorId('adviser', 'school_id') }}" data-profile-revision-field="adviser_school_id" class="{{ $readonlyItemClass }} transition duration-150">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <x-forms.label for="adviser_school_id" class="!mb-0">Adviser School ID</x-forms.label>
+                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    </div>
                                     <x-forms.input
                                         id="adviser_school_id"
                                         name="adviser_school_id"
+                                        class="mt-1.5"
                                         type="text"
                                         :value="old('adviser_school_id', $adviser['school_id'] ?? $activeAdviser?->user?->school_id ?? '')"
                                         data-revision-original="{{ old('adviser_school_id', $adviser['school_id'] ?? $activeAdviser?->user?->school_id ?? '') }}"
                                     />
-                                    @php $editAdviserSchoolNote = $revisionNoteFor(['adviser.school_id']); @endphp
+                                    @php $editAdviserSchoolNote = $formRevisionNote('adviser_school_id'); @endphp
                                     @if ($editAdviserSchoolNote)
                                         <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"><span class="font-semibold">Revision note:</span> {{ $editAdviserSchoolNote }}</p>
                                     @endif
@@ -876,7 +908,7 @@
                                         name="adviser_name"
                                         type="text"
                                         placeholder="e.g., Prof. Juan Dela Cruz"
-                                        :value="old('adviser_name', $organization->adviser_name)"
+                                        :value="old('adviser_name', $adviser['name'] ?? $activeAdviser?->user?->full_name ?? '')"
                                     />
                                     @error('adviser_name') <x-forms.error>{{ $message }}</x-forms.error> @enderror
                                 </div>
@@ -893,10 +925,15 @@
                     >
                         Cancel
                     </a>
-                    <x-ui.button type="submit" id="revision-save-btn" :disabled="$revisionEditMode || ($revisionEditMode && ! $hasRevisionEditableCards)">
+                    <x-ui.button type="submit" id="revision-save-btn" :disabled="$revisionEditMode && ! $hasRevisionEditableCards">
                         Save Changes
                     </x-ui.button>
                 </div>
+                @if ($revisionEditMode && $hasRevisionEditableCards)
+                    <p id="revision-save-all-fields-hint" class="hidden text-right text-xs text-slate-600 sm:w-full">
+                        Update all requested fields before saving changes.
+                    </p>
+                @endif
             </form>
 
         @endif
@@ -1047,12 +1084,28 @@
         watched.push({ el: select, original: source.getAttribute('value') || '' });
     });
 
-    const hasMeaningfulChanges = () => watched.some(({ el, original }) => {
-        const current = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)
-            ? el.value
-            : '';
-        return normalizeValue(current) !== normalizeValue(original);
-    });
+    const requiredRevisionFormFields = @json($revisionEditableFields);
+    const watchedForRevisionGate = Array.isArray(requiredRevisionFormFields) && requiredRevisionFormFields.length
+        ? watched.filter(({ el }) => {
+            const name = el.getAttribute('name');
+            return Boolean(name && requiredRevisionFormFields.includes(name));
+        })
+        : watched;
+
+    const allRevisedFieldsUpdated = () => {
+        if (!Array.isArray(requiredRevisionFormFields) || requiredRevisionFormFields.length === 0) {
+            return false;
+        }
+        if (watchedForRevisionGate.length === 0) {
+            return false;
+        }
+        return watchedForRevisionGate.every(({ el, original }) => {
+            const current = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)
+                ? el.value
+                : '';
+            return normalizeValue(current) !== normalizeValue(original);
+        });
+    };
     const readableFieldName = (el) => {
         const id = el.getAttribute('id');
         if (id) {
@@ -1074,7 +1127,7 @@
         }
         return normalized !== '' ? normalized : '—';
     };
-    const summarizeMeaningfulChanges = () => watched
+    const summarizeMeaningfulChanges = () => watchedForRevisionGate
         .map(({ el, original }) => {
             const currentRaw = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)
                 ? el.value
@@ -1146,9 +1199,42 @@
         confirmModal.classList.add('flex');
     };
 
+    const revisionFieldCards = Array.from(form.querySelectorAll('[data-profile-revision-field]'));
+    const refreshUpdatedBadges = () => {
+        revisionFieldCards.forEach((wrap) => {
+            const key = wrap.getAttribute('data-profile-revision-field') || '';
+            const input = key ? form.querySelector(`[name="${key}"]`) : null;
+            const badge = wrap.querySelector('[data-revision-updated-badge]');
+            if (!input || !badge || !(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement)) {
+                return;
+            }
+            let original = '';
+            if (input.hasAttribute('data-revision-original')) {
+                original = input.getAttribute('data-revision-original') || '';
+            } else {
+                const hiddenOrig = form.querySelector(`[data-revision-original-for="${key}"]`);
+                original = hiddenOrig ? (hiddenOrig.getAttribute('value') || '') : '';
+            }
+            const updated = normalizeValue(input.value) !== normalizeValue(original);
+            badge.classList.toggle('hidden', !updated);
+            wrap.classList.toggle('ring-1', updated);
+            wrap.classList.toggle('ring-sky-300/70', updated);
+            wrap.classList.toggle('bg-sky-50/40', updated);
+        });
+    };
+
     const syncSaveState = () => {
-        const enabled = !submitting && hasMeaningfulChanges();
+        const saveHelp = document.getElementById('revision-save-all-fields-hint');
+        const enabled = !submitting && allRevisedFieldsUpdated();
         saveBtn.disabled = !enabled;
+        if (saveHelp) {
+            if (!enabled && !submitting) {
+                saveHelp.classList.remove('hidden');
+            } else {
+                saveHelp.classList.add('hidden');
+            }
+        }
+        refreshUpdatedBadges();
     };
 
     watched.forEach(({ el }) => {
@@ -1158,9 +1244,15 @@
         el.addEventListener('change', writeDraftState);
     });
     hydrateDraftState();
+    refreshUpdatedBadges();
     form.addEventListener('submit', (event) => {
         if (submitting) {
             event.preventDefault();
+            return;
+        }
+        if (!allRevisedFieldsUpdated()) {
+            event.preventDefault();
+            syncSaveState();
             return;
         }
         const changes = summarizeMeaningfulChanges();

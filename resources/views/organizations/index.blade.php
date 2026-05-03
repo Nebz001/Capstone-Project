@@ -118,10 +118,17 @@
                                 @if ($hasInfoPending)
                                     <ul class="mt-2 space-y-1.5">
                                         @foreach ($infoRevisions as $item)
+                                            @php
+                                                $__rawNote = $item['note'] ?? null;
+                                                $__noteText = is_scalar($__rawNote) ? trim((string) $__rawNote) : '';
+                                                $__hasNote = $__noteText !== '' && preg_match('/^(0+)(\\.0+)?$/', $__noteText) !== 1;
+                                            @endphp
                                             <li class="rounded-md px-2 py-1 text-xs text-yellow-950 bg-yellow-50/60">
                                                 <a href="{{ $item['href'] ?? '#' }}" class="inline-flex w-full items-start gap-1 text-left">
                                                     <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'Field' }}</span>
-                                                    <span>— {{ $item['note'] ?? '' }}</span>
+                                                    @if ($__hasNote)
+                                                        <span>— {{ $__noteText }}</span>
+                                                    @endif
                                                 </a>
                                             </li>
                                         @endforeach
@@ -169,11 +176,18 @@
                                 </div>
                                 <ul class="mt-2 space-y-1.5">
                                     @foreach (($hasFilePending ? $fileRevisions : $updatedFiles) as $item)
+                                        @php
+                                            $__rawFileNote = $hasFilePending ? ($item['note'] ?? null) : null;
+                                            $__fileNoteText = is_scalar($__rawFileNote) ? trim((string) $__rawFileNote) : '';
+                                            $__hasFileNote = $__fileNoteText !== '' && preg_match('/^(0+)(\\.0+)?$/', $__fileNoteText) !== 1;
+                                        @endphp
                                         <li class="rounded-md px-2 py-1 text-xs {{ $hasFilePending ? 'text-yellow-950 bg-yellow-50/60' : 'text-emerald-900 bg-emerald-50/60' }}">
                                             <a href="{{ $item['href'] ?? '#' }}" class="inline-flex w-full items-start gap-1 text-left">
                                                 <span class="font-semibold underline underline-offset-2">{{ $item['field'] ?? 'File' }}</span>
                                                 @if ($hasFilePending)
-                                                    <span>— {{ $item['note'] ?? '' }}</span>
+                                                    @if ($__hasFileNote)
+                                                        <span>— {{ $__fileNoteText }}</span>
+                                                    @endif
                                                 @else
                                                     <span>— {{ $item['file_name'] ?? 'New file uploaded' }}</span>
                                                 @endif
