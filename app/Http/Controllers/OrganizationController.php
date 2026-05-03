@@ -15,6 +15,7 @@ use App\Models\Organization;
 use App\Models\OrganizationAdviser;
 use App\Models\OrganizationOfficer;
 use App\Models\OrganizationProfileRevision;
+use App\Models\ModuleRevisionFieldUpdate;
 use App\Models\OrganizationRevisionFieldUpdate;
 use App\Models\OrganizationSubmission;
 use App\Models\ProposalBudgetItem;
@@ -279,12 +280,14 @@ class OrganizationController extends Controller
         $calendarEvents = [];
         $proposalDashboard = ['empty' => true];
         $submissionDashboard = ['empty' => true];
+        $moduleWorkflows = [];
         $user = $request->user();
         if ($user) {
             $organization = $user->currentOrganization();
             if ($organization) {
                 $calendarEvents = $this->buildOrganizationDashboardCalendarEvents($organization);
                 $submissionDashboard = $this->buildSubmissionStatusDashboard($organization);
+                $moduleWorkflows = $this->buildAllModuleWorkflows($organization);
                 $selectedProposalId = (int) $request->integer('proposal_id');
                 [$featuredProposal, $usedDefaultOldestActive] = $this->resolveDashboardFeaturedProposal($organization, $selectedProposalId);
                 $proposalDashboard = $this->buildProposalDashboardProgress($featuredProposal);
@@ -300,6 +303,7 @@ class OrganizationController extends Controller
             'calendarEvents' => $calendarEvents,
             'proposalDashboard' => $proposalDashboard,
             'submissionDashboard' => $submissionDashboard,
+            'moduleWorkflows' => $moduleWorkflows,
         ]);
     }
 
@@ -538,6 +542,280 @@ class OrganizationController extends Controller
             'APPROVED' => 'Your organization registration has been approved.',
             default => 'SDAO is reviewing your submission.',
         };
+    }
+
+    /**
+     * Build workflow cards for every submitted module (calendars, proposals, reports).
+     *
+     * Registration/renewal is still handled separately by buildSubmissionStatusDashboard()
+     * and rendered as the first card in the view via $submissionDashboard.
+     *
+     * @return list<array{
+     *     module: string,
+     *     title: string,
+     *     status_label: string,
+     *     status_badge_class: string,
+     *     stages: list<array{label: string, state: string}>,
+     *     status_message: string,
+     *     details_url: string|null,
+     *     info_revisions: list<array{field: string, note: string, href: string}>,
+     *     file_revisions: list<array{field: string, note: string, href: string}>,
+     *     info_updated_under_review: list<array{field: string, href: string, old_value: string, new_value: string}>,
+     *     file_updated_under_review: list<array{field: string, href: string, file_name: string}>,
+     * }>
+     */
+    private function buildAllModuleWorkflows(Organization $organization): array
+    {
+        $workflows = [];
+
+        $calendars = $organization->activityCalendars()
+            ->whereNotIn('status', ['draft'])
+            ->with('academicTerm')
+            ->latest('submission_date')
+            ->latest('id')
+            ->get();
+
+        foreach ($calendars as $calendar) {
+            $workflows[] = $this->buildModuleWorkflowCard(
+                module: 'activity_calendar',
+                title: $this->activityCalendarCardTitle($calendar),
+                record: $calendar,
+                statusKey: strtoupper((string) ($calendar->status ?? 'PENDING')),
+                detailsUrl: route('organizations.submitted-documents.calendars.show', $calendar->id),
+            );
+        }
+
+        $proposals = $organization->activityProposals()
+            ->whereNotIn('status', ['draft'])
+            ->latest('submission_date')
+            ->latest('id')
+            ->get();
+
+        foreach ($proposals as $proposal) {
+            $statusKey = strtoupper((string) ($proposal->status ?? 'PENDING'));
+            $workflows[] = $this->buildModuleWorkflowCard(
+                module: 'activity_proposal',
+                title: 'Activity Proposal — '.($proposal->activity_title ?: 'Untitled'),
+                record: $proposal,
+                statusKey: $statusKey,
+                detailsUrl: route('organizations.submitted-documents.proposals.show', $proposal->id),
+                stagesOverride: SubmissionRoutingProgress::stagesForActivityProposal($proposal),
+                messageOverride: SubmissionRoutingProgress::summaryForActivityProposal($statusKey),
+            );
+        }
+
+        $reports = $organization->activityReports()
+            ->whereNotIn('status', ['draft'])
+            ->latest('report_submission_date')
+            ->latest('id')
+            ->get();
+
+        foreach ($reports as $report) {
+            $statusKey = strtoupper((string) ($report->status ?? 'PENDING'));
+            $workflows[] = $this->buildModuleWorkflowCard(
+                module: 'activity_report',
+                title: 'After Activity Report — '.($report->event_title ?: 'Untitled'),
+                record: $report,
+                statusKey: $statusKey,
+                detailsUrl: route('organizations.submitted-documents.reports.show', $report->id),
+                stagesOverride: SubmissionRoutingProgress::stagesForActivityReport($statusKey),
+                messageOverride: SubmissionRoutingProgress::summaryForActivityReport($statusKey),
+            );
+        }
+
+        return $workflows;
+    }
+
+    /**
+     * @param  list<array{label: string, state: string}>|null  $stagesOverride
+     * @return array{
+     *     module: string,
+     *     title: string,
+     *     status_label: string,
+     *     status_badge_class: string,
+     *     stages: list<array{label: string, state: string}>,
+     *     status_message: string,
+     *     details_url: string|null,
+     *     info_revisions: list<array{field: string, note: string, href: string}>,
+     *     file_revisions: list<array{field: string, note: string, href: string}>,
+     *     info_updated_under_review: list<array{field: string, href: string, old_value: string, new_value: string}>,
+     *     file_updated_under_review: list<array{field: string, href: string, file_name: string}>,
+     * }
+     */
+    private function buildModuleWorkflowCard(
+        string $module,
+        string $title,
+        Model $record,
+        string $statusKey,
+        ?string $detailsUrl = null,
+        ?array $stagesOverride = null,
+        ?string $messageOverride = null,
+    ): array {
+        $revisionData = $this->buildModuleRevisionData($record, $detailsUrl ?? '#');
+
+        $effectiveStatus = $statusKey;
+        if ($revisionData['has_active_info'] || $revisionData['has_active_files']) {
+            $effectiveStatus = 'REVISION';
+        } elseif ($revisionData['has_updated']) {
+            $effectiveStatus = 'RESUBMITTED';
+        }
+
+        $presentation = $this->submissionDashboardStatusPresentation($effectiveStatus);
+        $routingKey = $effectiveStatus === 'RESUBMITTED' ? 'UNDER_REVIEW' : $effectiveStatus;
+
+        return [
+            'module' => $module,
+            'title' => $title,
+            'status_label' => $presentation['label'],
+            'status_badge_class' => $presentation['badge_class'],
+            'stages' => $stagesOverride ?? SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($routingKey),
+            'status_message' => $messageOverride ?? $this->moduleWorkflowStatusMessage($module, $effectiveStatus),
+            'details_url' => $detailsUrl,
+            'info_revisions' => $revisionData['info_revisions'],
+            'file_revisions' => $revisionData['file_revisions'],
+            'info_updated_under_review' => $revisionData['info_updated'],
+            'file_updated_under_review' => $revisionData['file_updated'],
+        ];
+    }
+
+    /**
+     * Build revision/updated item lists for a non-registration reviewable module.
+     *
+     * @return array{
+     *     has_active_info: bool,
+     *     has_active_files: bool,
+     *     has_updated: bool,
+     *     info_revisions: list<array{field: string, note: string, href: string}>,
+     *     file_revisions: list<array{field: string, note: string, href: string}>,
+     *     info_updated: list<array{field: string, href: string, old_value: string, new_value: string}>,
+     *     file_updated: list<array{field: string, href: string, file_name: string}>,
+     * }
+     */
+    private function buildModuleRevisionData(Model $record, string $baseHref): array
+    {
+        $fieldReviews = is_array($record->admin_field_reviews ?? null) ? $record->admin_field_reviews : [];
+        $pendingUpdateRows = ModuleRevisionFieldUpdate::query()
+            ->where('reviewable_type', $record->getMorphClass())
+            ->where('reviewable_id', (int) $record->getKey())
+            ->whereNull('acknowledged_at')
+            ->get(['section_key', 'field_key', 'old_value', 'new_value', 'new_file_meta']);
+
+        $pendingSet = [];
+        foreach ($pendingUpdateRows as $row) {
+            $pendingSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
+
+        $infoRevisions = [];
+        $fileRevisions = [];
+        $infoUpdated = [];
+        $fileUpdated = [];
+
+        foreach ($pendingUpdateRows as $row) {
+            $sectionKey = (string) ($row->section_key ?? '');
+            $fieldKey = (string) ($row->field_key ?? '');
+            $label = ucwords(str_replace('_', ' ', $fieldKey));
+            $href = $baseHref.'?from=dashboard';
+
+            if (in_array($sectionKey, ['requirements', 'files', 'attachments'], true)) {
+                $newFileMeta = is_array($row->new_file_meta) ? $row->new_file_meta : [];
+                $newFileName = trim((string) ($newFileMeta['original_name'] ?? $newFileMeta['file_name'] ?? $newFileMeta['filename'] ?? ''));
+                $fileUpdated[] = [
+                    'field' => $label,
+                    'href' => $href,
+                    'file_name' => $newFileName !== '' ? $newFileName : 'Updated file uploaded',
+                ];
+            } else {
+                $infoUpdated[] = [
+                    'field' => $label,
+                    'href' => $href,
+                    'old_value' => trim((string) ($row->old_value ?? '')),
+                    'new_value' => trim((string) ($row->new_value ?? '')),
+                ];
+            }
+        }
+
+        foreach ($fieldReviews as $sectionKey => $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            foreach ($fields as $fieldKey => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
+                if (! in_array($status, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
+                    continue;
+                }
+                $note = $row['note'] ?? null;
+                $noteText = is_scalar($note) ? trim((string) $note) : '';
+                if ($noteText === '' || (preg_match('/^(0+)(\\.0+)?$/', $noteText) === 1)) {
+                    continue;
+                }
+                $label = trim((string) ($row['label'] ?? ucwords(str_replace('_', ' ', (string) $fieldKey))));
+                $compoundKey = (string) $sectionKey.'.'.(string) $fieldKey;
+                $href = $baseHref.'?from=dashboard';
+
+                if (isset($pendingSet[$compoundKey])) {
+                    continue;
+                }
+
+                if (in_array((string) $sectionKey, ['requirements', 'files', 'attachments'], true)) {
+                    $fileRevisions[] = ['field' => $label, 'note' => $noteText, 'href' => $href];
+                } else {
+                    $infoRevisions[] = ['field' => $label, 'note' => $noteText, 'href' => $href];
+                }
+            }
+        }
+
+        return [
+            'has_active_info' => $infoRevisions !== [],
+            'has_active_files' => $fileRevisions !== [],
+            'has_updated' => $infoUpdated !== [] || $fileUpdated !== [],
+            'info_revisions' => $infoRevisions,
+            'file_revisions' => $fileRevisions,
+            'info_updated' => $infoUpdated,
+            'file_updated' => $fileUpdated,
+        ];
+    }
+
+    private function moduleWorkflowStatusMessage(string $module, string $status): string
+    {
+        $u = strtoupper(trim($status));
+
+        if (in_array($u, ['REVISION', 'REVISION_REQUIRED'], true)) {
+            return 'SDAO requested changes. Update the listed fields or files and resubmit for review.';
+        }
+        if ($u === 'RESUBMITTED') {
+            return 'Your updated submission has been submitted and is now awaiting review.';
+        }
+        if ($u === 'APPROVED') {
+            return 'This submission has been approved.';
+        }
+        if ($u === 'REJECTED') {
+            return 'This submission was not approved. Check remarks for details.';
+        }
+
+        return match ($module) {
+            'activity_calendar' => 'SDAO is currently reviewing your submitted activity calendar.',
+            'activity_proposal' => 'Your activity proposal is currently being reviewed by the assigned approver.',
+            'activity_report' => 'Your after activity report is currently under review.',
+            default => 'SDAO is reviewing your submission.',
+        };
+    }
+
+    private function activityCalendarCardTitle(ActivityCalendar $calendar): string
+    {
+        $label = 'Activity Calendar';
+        if ($calendar->relationLoaded('academicTerm') && $calendar->academicTerm) {
+            $term = $calendar->academicTerm;
+            $ay = $term->academic_year ?? '';
+            $sem = $term->semester ?? '';
+            if ($ay !== '' || $sem !== '') {
+                $label .= ' — '.trim($ay.($sem !== '' ? ' / '.$sem : ''));
+            }
+        }
+
+        return $label;
     }
 
     /**
