@@ -12,6 +12,20 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const INVALID_FILE_TYPE_MSG = "Only PDF, Word, or image files are allowed.";
 const FILE_TOO_LARGE_MSG = `The selected file is too large. Maximum allowed file size is ${MAX_FILE_SIZE_MB} MB.`;
 
+const ORG_APPLICATION_FORM_SELECTOR =
+    'form[action*="/organizations/register"], form[action*="/organizations/renew"], form[action*="/admin/submissions/register"], form[action*="/admin/submissions/renew"]';
+
+const ADVISER_UNAVAILABLE_NOTE = "Already assigned to another RSO";
+const ADVISER_UNAVAILABLE_MSG =
+    "This adviser is already assigned to another organization.";
+
+const escapeHtmlAttr = (value) =>
+    String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
 const setAttachVisualState = (item, hasFile, fileName) => {
     const btn = item.querySelector(".req-attach-btn");
     const badge = item.querySelector(".req-attached-badge");
@@ -155,9 +169,7 @@ const syncRequirementRow = (item) => {
 };
 
 const initRequirementAttachments = () => {
-    const forms = document.querySelectorAll(
-        'form[action*="/organizations/register"], form[action*="/organizations/renew"]',
-    );
+    const forms = document.querySelectorAll(ORG_APPLICATION_FORM_SELECTOR);
 
     forms.forEach((form) => {
         if (form.dataset.orgFormBlocked === "true") {
@@ -341,9 +353,7 @@ const initRequirementAttachments = () => {
 };
 
 const initAdviserSearch = () => {
-    const forms = document.querySelectorAll(
-        'form[action*="/organizations/register"], form[action*="/organizations/renew"]',
-    );
+    const forms = document.querySelectorAll(ORG_APPLICATION_FORM_SELECTOR);
 
     forms.forEach((form) => {
         const searchInput = form.querySelector("#adviser_search");
@@ -351,6 +361,7 @@ const initAdviserSearch = () => {
         const resultsBox = form.querySelector("#adviser_search_results");
         const selectedSummary = form.querySelector("#adviser_selected_summary");
         const selectedText = form.querySelector("#adviser_selected_text");
+        const clientError = form.querySelector("#adviser_search_client_error");
 
         if (
             !(searchInput instanceof HTMLInputElement) ||
@@ -361,6 +372,22 @@ const initAdviserSearch = () => {
         ) {
             return;
         }
+
+        const showAdviserClientError = (message) => {
+            if (!(clientError instanceof HTMLElement)) {
+                window.alert(message);
+                return;
+            }
+            clientError.textContent = message;
+            clientError.classList.remove("hidden");
+        };
+
+        const clearAdviserClientError = () => {
+            if (clientError instanceof HTMLElement) {
+                clientError.textContent = "";
+                clientError.classList.add("hidden");
+            }
+        };
 
         let debounceTimer = null;
         const hideResults = () => {
@@ -375,25 +402,48 @@ const initAdviserSearch = () => {
             }
 
             resultsBox.innerHTML = rows
-                .map(
-                    (row) => `
+                .map((row) => {
+                    const name = row.full_name || "N/A";
+                    const sub = `${row.school_id || "No school ID"} • ${row.email || "No email"}`;
+                    const textAttr = escapeHtmlAttr(
+                        `${row.full_name || ""} | ${row.school_id || ""} | ${row.email || ""}`,
+                    );
+                    const available = row.is_available !== false;
+                    const reason =
+                        typeof row.unavailable_reason === "string" &&
+                        row.unavailable_reason.trim() !== ""
+                            ? row.unavailable_reason
+                            : ADVISER_UNAVAILABLE_NOTE;
+                    if (!available) {
+                        return `
+                    <div
+                        class="flex w-full cursor-not-allowed flex-col items-start rounded-lg px-3 py-2 text-left text-xs text-slate-700 opacity-60"
+                        data-adviser-unavailable="1"
+                    >
+                        <span class="font-semibold text-slate-900">${name}</span>
+                        <span>${sub}</span>
+                        <p class="mt-1 text-xs text-red-600">${reason}</p>
+                    </div>`;
+                    }
+                    return `
                     <button
                         type="button"
                         class="flex w-full flex-col items-start rounded-lg px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-100"
                         data-adviser-select
                         data-adviser-id="${row.id}"
-                        data-adviser-text="${(row.full_name || "").replace(/"/g, "&quot;")} | ${(
-                            row.school_id || ""
-                        ).replace(/"/g, "&quot;")} | ${(row.email || "").replace(/"/g, "&quot;")}"
+                        data-adviser-text="${textAttr}"
                     >
-                        <span class="font-semibold text-slate-900">${row.full_name || "N/A"}</span>
-                        <span>${row.school_id || "No school ID"} • ${row.email || "No email"}</span>
-                    </button>
-                `,
-                )
+                        <span class="font-semibold text-slate-900">${name}</span>
+                        <span>${sub}</span>
+                    </button>`;
+                })
                 .join("");
             resultsBox.classList.remove("hidden");
         };
+
+        const exceptOrgId = (form.getAttribute("data-adviser-except-organization-id") || "").trim();
+        const formAction = form.getAttribute("action") || "";
+        const isRenewForm = formAction.includes("/renew");
 
         const runSearch = async (query) => {
             if (!query || query.trim().length < 2) {
@@ -401,9 +451,20 @@ const initAdviserSearch = () => {
                 return;
             }
             try {
-                const url = `/api/users/search-advisers?q=${encodeURIComponent(
-                    query.trim(),
-                )}`;
+                const params = new URLSearchParams({ q: query.trim() });
+                if (exceptOrgId !== "" && Number.parseInt(exceptOrgId, 10) > 0) {
+                    params.set("except_organization_id", exceptOrgId);
+                } else if (isRenewForm) {
+                    const orgNameInput = form.querySelector("#organization_name");
+                    const orgName =
+                        orgNameInput instanceof HTMLInputElement
+                            ? orgNameInput.value.trim()
+                            : "";
+                    if (orgName !== "") {
+                        params.set("except_organization_name", orgName);
+                    }
+                }
+                const url = `/api/users/search-advisers?${params.toString()}`;
                 const response = await fetch(url, {
                     headers: { Accept: "application/json" },
                     credentials: "same-origin",
@@ -421,6 +482,7 @@ const initAdviserSearch = () => {
 
         searchInput.addEventListener("input", () => {
             searchInput.setCustomValidity("");
+            clearAdviserClientError();
             hiddenIdInput.value = "";
             selectedText.textContent = "";
             selectedSummary.classList.add("hidden");
@@ -435,15 +497,22 @@ const initAdviserSearch = () => {
 
         resultsBox.addEventListener("click", (event) => {
             const target = event.target;
-            const button =
-                target instanceof HTMLElement
-                    ? target.closest("[data-adviser-select]")
-                    : null;
+            if (!(target instanceof HTMLElement)) {
+                return;
+            }
+            const blocked = target.closest("[data-adviser-unavailable]");
+            if (blocked instanceof HTMLElement) {
+                event.preventDefault();
+                showAdviserClientError(ADVISER_UNAVAILABLE_MSG);
+                return;
+            }
+            const button = target.closest("[data-adviser-select]");
             if (!(button instanceof HTMLElement)) {
                 return;
             }
             const adviserId = button.getAttribute("data-adviser-id") || "";
             const adviserText = button.getAttribute("data-adviser-text") || "";
+            clearAdviserClientError();
             hiddenIdInput.value = adviserId;
             searchInput.value = adviserText;
             selectedText.textContent = adviserText;

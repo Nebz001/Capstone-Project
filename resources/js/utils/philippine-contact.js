@@ -33,7 +33,7 @@ export function isValidPhilippineMobile(value) {
  */
 export function initPhilippineContactInputs() {
     const forms = document.querySelectorAll(
-        'form[action*="/organizations/register"], form[action*="/organizations/renew"]',
+        'form[action*="/organizations/register"], form[action*="/organizations/renew"], form[action*="/admin/submissions/register"], form[action*="/admin/submissions/renew"]',
     );
 
     forms.forEach((form) => {
