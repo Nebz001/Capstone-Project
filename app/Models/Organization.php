@@ -18,7 +18,6 @@ class Organization extends Model
         'purpose',
         'logo_path',
         'founded_date',
-        'adviser_name',
         'status',
         'is_profile_locked',
     ];

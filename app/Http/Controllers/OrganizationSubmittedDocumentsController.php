@@ -2184,6 +2184,9 @@ class OrganizationSubmittedDocumentsController extends Controller
                 if ((string) $sectionKey === 'application' && in_array((string) $fieldKey, ['academic_year', 'submission_date', 'submitted_by'], true)) {
                     continue;
                 }
+                if ((string) $sectionKey === 'organizational' && in_array((string) $fieldKey, ['date_organized', 'founded_date', 'founded_at', 'date_created', 'created_at'], true)) {
+                    continue;
+                }
                 $label = trim((string) ($field['label'] ?? ''));
                 $note = trim((string) ($field['note'] ?? ''));
                 if ($note === '') {

@@ -28,6 +28,7 @@ class OrganizationSubmission extends Model
         'academic_term_id',
         'type',
         'contact_person',
+        'adviser_name',
         'contact_no',
         'contact_email',
         'submission_date',

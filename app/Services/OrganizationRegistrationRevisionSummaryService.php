@@ -35,6 +35,9 @@ class OrganizationRegistrationRevisionSummaryService
             if ($this->isNonReviewableApplicationRegistrationField($sectionKey, $fieldKey)) {
                 continue;
             }
+            if ($this->isNonReviewableOrganizationalRegistrationField($sectionKey, $fieldKey)) {
+                continue;
+            }
             if ($sectionKey !== '' && $fieldKey !== '') {
                 $pendingRevisionItemSet[$sectionKey.'.'.$fieldKey] = true;
             }
@@ -74,12 +77,24 @@ class OrganizationRegistrationRevisionSummaryService
                 if ($this->isNonReviewableApplicationRegistrationField((string) $sectionKey, (string) $fieldKey)) {
                     continue;
                 }
+                if ($this->isNonReviewableOrganizationalRegistrationField((string) $sectionKey, (string) $fieldKey)) {
+                    continue;
+                }
                 $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
                 if (! in_array($status, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
                     continue;
                 }
-                $note = trim((string) ($row['note'] ?? ''));
-                if ($note === '') {
+                $rawNote = $row['note'] ?? null;
+                if ($rawNote === null || $rawNote === false) {
+                    continue;
+                }
+                if (is_int($rawNote) || is_float($rawNote)) {
+                    if ($rawNote === 0) {
+                        continue;
+                    }
+                }
+                $note = trim((string) $rawNote);
+                if ($note === '' || preg_match('/^(0+)(\\.0+)?$/', $note) === 1) {
                     continue;
                 }
 
@@ -147,6 +162,12 @@ class OrganizationRegistrationRevisionSummaryService
     {
         return $sectionKey === 'application'
             && in_array($fieldKey, ['academic_year', 'submission_date', 'submitted_by'], true);
+    }
+
+    private function isNonReviewableOrganizationalRegistrationField(string $sectionKey, string $fieldKey): bool
+    {
+        return $sectionKey === 'organizational'
+            && in_array($fieldKey, ['date_organized', 'founded_date', 'founded_at', 'date_created', 'created_at'], true);
     }
 
     private function sanitizeAnchorSegment(string $value): string

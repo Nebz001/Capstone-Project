@@ -562,8 +562,10 @@ class AdminController extends Controller
                 'is_updated' => $row->acknowledged_at === null,
             ];
         }
-        $effectiveFieldReviews = $this->stripNonReviewableApplicationRegistrationFieldReviews(
-            $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField)
+        $effectiveFieldReviews = $this->stripNonReviewableOrganizationalRegistrationFieldReviews(
+            $this->stripNonReviewableApplicationRegistrationFieldReviews(
+                $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField)
+            )
         );
 
         return view('admin.registrations.show', [
@@ -1002,7 +1004,6 @@ class AdminController extends Controller
                 'email' => 'Email',
             ],
             'organizational' => [
-                'date_organized' => 'Date Organized',
                 'organization_type' => 'Type of Organization',
                 'school' => 'School',
                 'purpose' => 'Purpose of Organization',
@@ -1045,6 +1046,39 @@ class AdminController extends Controller
     }
 
     /**
+     * Registration "organizational" keys that are system context only (not officer-revisable).
+     *
+     * @return list<string>
+     */
+    private function nonReviewableOrganizationalRegistrationFieldKeys(): array
+    {
+        return ['date_organized', 'founded_date', 'founded_at', 'date_created', 'created_at'];
+    }
+
+    private function isNonReviewableOrganizationalRegistrationField(string $sectionKey, string $fieldKey): bool
+    {
+        return $sectionKey === 'organizational'
+            && in_array($fieldKey, $this->nonReviewableOrganizationalRegistrationFieldKeys(), true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldReviews
+     * @return array<string, mixed>
+     */
+    private function stripNonReviewableOrganizationalRegistrationFieldReviews(array $fieldReviews): array
+    {
+        $section = $fieldReviews['organizational'] ?? null;
+        if (! is_array($section)) {
+            return $fieldReviews;
+        }
+        foreach ($this->nonReviewableOrganizationalRegistrationFieldKeys() as $key) {
+            unset($fieldReviews['organizational'][$key]);
+        }
+
+        return $fieldReviews;
+    }
+
+    /**
      * @param  array<string, array<string, array<string, mixed>>>  $fieldReviews
      */
     private function composeRegistrationFlaggedFieldNotes(array $fieldReviews): ?string
@@ -1065,6 +1099,9 @@ class AdminController extends Controller
                     continue;
                 }
                 if ($this->isNonReviewableApplicationRegistrationField((string) $sectionKey, (string) $fieldKey)) {
+                    continue;
+                }
+                if ($this->isNonReviewableOrganizationalRegistrationField((string) $sectionKey, (string) $fieldKey)) {
                     continue;
                 }
                 if (($field['status'] ?? '') !== 'flagged') {
@@ -2366,6 +2403,14 @@ class AdminController extends Controller
             $sectionKey = (string) ($update->section_key ?? '');
             $fieldKey = (string) ($update->field_key ?? '');
             if ($this->isNonReviewableApplicationRegistrationField($sectionKey, $fieldKey)) {
+                $update->update([
+                    'acknowledged_at' => now(),
+                    'acknowledged_by' => $adminId,
+                ]);
+
+                continue;
+            }
+            if ($this->isNonReviewableOrganizationalRegistrationField($sectionKey, $fieldKey)) {
                 $update->update([
                     'acknowledged_at' => now(),
                     'acknowledged_by' => $adminId,

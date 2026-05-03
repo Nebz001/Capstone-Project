@@ -312,6 +312,12 @@ class OrganizationController extends Controller
             && in_array($fieldKey, ['academic_year', 'submission_date', 'submitted_by'], true);
     }
 
+    private function isNonReviewableOrganizationalRegistrationField(string $sectionKey, string $fieldKey): bool
+    {
+        return $sectionKey === 'organizational'
+            && in_array($fieldKey, ['date_organized', 'founded_date', 'founded_at', 'date_created', 'created_at'], true);
+    }
+
     /**
      * @return array{
      *   empty: bool,
@@ -352,6 +358,9 @@ class OrganizationController extends Controller
             if ($this->isNonReviewableApplicationRegistrationField((string) ($row->section_key ?? ''), (string) ($row->field_key ?? ''))) {
                 continue;
             }
+            if ($this->isNonReviewableOrganizationalRegistrationField((string) ($row->section_key ?? ''), (string) ($row->field_key ?? ''))) {
+                continue;
+            }
             $compound = (string) $row->section_key.'.'.(string) $row->field_key;
             $pendingSet[$compound] = true;
             $pendingMetaByKey[$compound] = [
@@ -369,6 +378,9 @@ class OrganizationController extends Controller
             $sectionKey = (string) ($row->section_key ?? '');
             $fieldKey = (string) ($row->field_key ?? '');
             if ($this->isNonReviewableApplicationRegistrationField($sectionKey, $fieldKey)) {
+                continue;
+            }
+            if ($this->isNonReviewableOrganizationalRegistrationField($sectionKey, $fieldKey)) {
                 continue;
             }
             $compoundKey = $sectionKey.'.'.$fieldKey;
@@ -403,23 +415,27 @@ class OrganizationController extends Controller
                 if (! is_array($row)) {
                     continue;
                 }
-                if ((string) $sectionKey === 'adviser' && (string) $fieldKey === 'status') {
+                if (str_contains(strtolower((string) $sectionKey), 'adviser')
+                    && in_array(strtolower((string) $fieldKey), ['status', 'adviser_status'], true)) {
                     continue;
                 }
                 if ($this->isNonReviewableApplicationRegistrationField((string) $sectionKey, (string) $fieldKey)) {
+                    continue;
+                }
+                if ($this->isNonReviewableOrganizationalRegistrationField((string) $sectionKey, (string) $fieldKey)) {
                     continue;
                 }
                 $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
                 if (! in_array($status, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
                     continue;
                 }
-                $note = trim((string) ($row['note'] ?? ''));
-                if ($note === '') {
+                $note = $row['note'] ?? null;
+                if (! $this->isNonEmptyProfileRevisionNote($note)) {
                     continue;
                 }
+                $note = trim((string) $note);
                 $label = trim((string) ($row['label'] ?? ucwords(str_replace('_', ' ', (string) $fieldKey))));
-                $anchor = 'revision-field-'.$this->sanitizeAnchorSegment((string) $sectionKey).'-'.$this->sanitizeAnchorSegment((string) $fieldKey);
-                $compoundKey = (string) $sectionKey.'.'.(string) $fieldKey;
+                [$compoundKey, $anchor] = $this->organizationDashboardRevisionIdentity((string) $sectionKey, (string) $fieldKey, $label);
 
                 if ((string) $sectionKey === 'requirements') {
                     $fileHref = route('organizations.submitted-documents.registrations.show', $submission).'?from=dashboard&revision_target=revision-file-'.$this->sanitizeAnchorSegment((string) $fieldKey);
@@ -1318,6 +1334,7 @@ class OrganizationController extends Controller
         $revisionRegistration = null;
         $profileRevisionSummary = ['groups' => [], 'field_notes' => [], 'general_remarks' => null];
         $revisionEditableFields = [];
+        $profileRevisionNotesByFormField = [];
         if ($organization && $organization->isProfileRevisionRequested()) {
             $revisionRegistration = $organization->submissions()
                 ->registrations()
@@ -1331,9 +1348,12 @@ class OrganizationController extends Controller
                 ->latest('id')
                 ->first();
             $profileRevisionSummary = $this->buildProfileRevisionSummary($latestRevisionSubmission);
-            $revisionEditableFields = $this->profileRevisionEditableFieldsFromNotes(
-                is_array($profileRevisionSummary['field_notes'] ?? null) ? $profileRevisionSummary['field_notes'] : []
-            );
+            $rawFieldNotes = is_array($profileRevisionSummary['field_notes'] ?? null) ? $profileRevisionSummary['field_notes'] : [];
+            $profileRevisionNotesByFormField = $this->mergeProfileRevisionNotesForForm($profileRevisionSummary);
+            $revisionEditableFields = array_values(array_unique(array_merge(
+                array_keys($profileRevisionNotesByFormField),
+                $this->profileRevisionEditableFieldsFromNotes($rawFieldNotes)
+            )));
         }
         $editingRequested = (bool) $request->query('edit');
         $editingAllowed = $editingRequested && $canEditProfile && $organization;
@@ -1494,6 +1514,7 @@ class OrganizationController extends Controller
             'applicationWorkflowStatus' => $applicationWorkflowStatus,
             'revisionRegistration' => $revisionRegistration,
             'profileRevisionSummary' => $profileRevisionSummary,
+            'profileRevisionNotesByFormField' => $profileRevisionNotesByFormField,
             'activeAdviser' => $activeAdviser,
             'adviser' => $adviserPayload,
             'registrationAdviserNomination' => $registrationAdviserNomination,
@@ -1557,6 +1578,171 @@ class OrganizationController extends Controller
      * @param  array<string, string>  $fieldNotes
      * @return array<int, string>
      */
+    /**
+     * Treat empty strings, numeric zero, and other non-text placeholders as "no note".
+     */
+    private function isNonEmptyProfileRevisionNote(mixed $note): bool
+    {
+        if ($note === null || $note === false) {
+            return false;
+        }
+        if (is_int($note) || is_float($note)) {
+            return $note !== 0;
+        }
+        $s = trim((string) $note);
+        if ($s === '') {
+            return false;
+        }
+        if (preg_match('/^(0+)(\\.0+)?$/', $s) === 1) {
+            return false;
+        }
+        $lower = strtolower($s);
+
+        return ! in_array($lower, ['null', 'undefined', 'n/a'], true);
+    }
+
+    /**
+     * Map admin review section/field (and optional label) to organization profile form input names.
+     * Section-aware so generic keys like "email" resolve to contact vs adviser correctly.
+     */
+    private function normalizeProfileRevisionFieldToFormKey(?string $sectionKey, ?string $fieldKey, ?string $fieldLabel = null): ?string
+    {
+        $section = strtolower(trim((string) $sectionKey));
+        $field = strtolower(trim((string) $fieldKey));
+        $field = str_replace([' ', '-', '/'], '_', $field);
+        $label = strtolower(trim((string) $fieldLabel));
+        $label = str_replace([' ', '-', '/'], '_', $label);
+
+        $sectionHas = static fn (string $needle): bool => $needle !== '' && str_contains($section, $needle);
+
+        if ($sectionHas('contact')) {
+            if ($field === 'adviser_name'
+                || $field === 'adviser_full_name'
+                || ($label !== '' && str_contains($label, 'adviser') && str_contains($label, 'name'))) {
+                return 'adviser_name';
+            }
+            if ($field === 'adviser_email'
+                || ($label !== '' && str_contains($label, 'adviser') && str_contains($label, 'email'))) {
+                return 'adviser_email';
+            }
+            if ($field === 'adviser_school_id'
+                || ($label !== '' && str_contains($label, 'adviser') && str_contains($label, 'school'))) {
+                return 'adviser_school_id';
+            }
+            if (in_array($field, ['contact_person', 'contact_name', 'person'], true) || str_contains($label, 'contact_person')) {
+                return 'contact_person';
+            }
+            if (in_array($field, ['contact_no', 'contact_number', 'phone', 'number'], true) || str_contains($label, 'contact_number') || str_contains($label, 'contact_no')) {
+                return 'contact_no';
+            }
+            if (in_array($field, ['contact_email', 'email_address', 'email'], true)
+                || str_contains($label, 'contact_email')
+                || (str_contains($label, 'email') && ! str_contains($label, 'adviser'))) {
+                return 'contact_email';
+            }
+            if ($field === 'organization_name' || str_contains($label, 'organization_name')) {
+                return 'organization_name';
+            }
+
+            return null;
+        }
+
+        if ($sectionHas('adviser')) {
+            if (in_array($field, ['full_name', 'adviser_full_name', 'adviser_name', 'name'], true)
+                || str_contains($label, 'full_name')
+                || (str_contains($label, 'adviser') && str_contains($label, 'name'))) {
+                return 'adviser_name';
+            }
+            if (in_array($field, ['school_id', 'adviser_school_id'], true) || str_contains($label, 'school_id')) {
+                return 'adviser_school_id';
+            }
+            if (in_array($field, ['email', 'adviser_email'], true) || str_contains($label, 'email')) {
+                return 'adviser_email';
+            }
+
+            return null;
+        }
+
+        if ($sectionHas('application') || $sectionHas('overview')) {
+            if (in_array($field, ['organization', 'organization_name'], true) || str_contains($label, 'organization')) {
+                return 'organization_name';
+            }
+            if ($field === 'submitted_by' || str_contains($label, 'submitted_by')) {
+                return 'submitted_by_display';
+            }
+
+            return null;
+        }
+
+        if ($sectionHas('organizational') || $section === 'organization') {
+            if (in_array($field, ['organization_type'], true) || str_contains($label, 'organization_type') || str_contains($label, 'type_of_organization')) {
+                return 'organization_type';
+            }
+            if (in_array($field, ['school', 'college_department', 'college'], true) || str_contains($label, 'school') || str_contains($label, 'department')) {
+                return 'college_department';
+            }
+            if ($field === 'purpose' || str_contains($label, 'purpose')) {
+                return 'purpose';
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $profileRevisionSummary
+     * @return array<string, string>
+     */
+    private function mergeProfileRevisionNotesForForm(array $profileRevisionSummary): array
+    {
+        $merged = [];
+        $fieldNotes = is_array($profileRevisionSummary['field_notes'] ?? null) ? $profileRevisionSummary['field_notes'] : [];
+        foreach ($fieldNotes as $path => $note) {
+            if (! $this->isNonEmptyProfileRevisionNote($note) || ! str_contains((string) $path, '.')) {
+                continue;
+            }
+            [$s, $f] = explode('.', (string) $path, 2);
+            $formKey = $this->normalizeProfileRevisionFieldToFormKey($s, $f, null);
+            if ($formKey === null) {
+                continue;
+            }
+            if (! isset($merged[$formKey])) {
+                $merged[$formKey] = trim((string) $note);
+            }
+        }
+
+        $groups = is_array($profileRevisionSummary['groups'] ?? null) ? $profileRevisionSummary['groups'] : [];
+        foreach ($groups as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+            $sectionKey = (string) ($group['section_key'] ?? '');
+            $items = is_array($group['items'] ?? null) ? $group['items'] : [];
+            foreach ($items as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $note = $item['note'] ?? null;
+                if (! $this->isNonEmptyProfileRevisionNote($note)) {
+                    continue;
+                }
+                $fieldKey = (string) ($item['field_key'] ?? '');
+                $label = (string) ($item['field_label'] ?? $item['field'] ?? '');
+                $formKey = $this->normalizeProfileRevisionFieldToFormKey($sectionKey, $fieldKey, $label);
+                if ($formKey === null) {
+                    continue;
+                }
+                if (! isset($merged[$formKey])) {
+                    $merged[$formKey] = trim((string) $note);
+                }
+            }
+        }
+
+        return $merged;
+    }
+
     private function profileRevisionEditableFieldsFromNotes(array $fieldNotes): array
     {
         $map = [
@@ -1566,22 +1752,40 @@ class OrganizationController extends Controller
             'contact.contact_no' => 'contact_no',
             'contact.contact_email' => 'contact_email',
             'contact.email_address' => 'contact_email',
+            'contact.email' => 'contact_email',
+            'contact.adviser_name' => 'adviser_name',
+            'contact.adviser_full_name' => 'adviser_name',
+            'contact.adviser_email' => 'adviser_email',
+            'contact.adviser_school_id' => 'adviser_school_id',
             'overview.submitted_by' => 'submitted_by_display',
             'organizational.organization_type' => 'organization_type',
             'organizational.school' => 'college_department',
-            'organizational.date_organized' => 'founded_date',
             'organizational.purpose' => 'purpose',
             'adviser.full_name' => 'adviser_name',
+            'adviser.adviser_full_name' => 'adviser_name',
+            'adviser.adviser_name' => 'adviser_name',
             'adviser.email' => 'adviser_email',
+            'adviser.adviser_email' => 'adviser_email',
             'adviser.school_id' => 'adviser_school_id',
+            'adviser.adviser_school_id' => 'adviser_school_id',
         ];
         $editable = [];
         foreach ($fieldNotes as $fieldPath => $note) {
-            if (trim((string) $note) === '') {
+            if (! $this->isNonEmptyProfileRevisionNote($note)) {
                 continue;
             }
             if (isset($map[$fieldPath])) {
                 $editable[] = $map[$fieldPath];
+
+                continue;
+            }
+            if (! str_contains((string) $fieldPath, '.')) {
+                continue;
+            }
+            [$s, $f] = explode('.', (string) $fieldPath, 2);
+            $formKey = $this->normalizeProfileRevisionFieldToFormKey($s, $f, null);
+            if ($formKey !== null) {
+                $editable[] = $formKey;
             }
         }
 
@@ -1601,7 +1805,162 @@ class OrganizationController extends Controller
             return ['groups' => [], 'field_notes' => [], 'general_remarks' => null];
         }
 
-        return app(OrganizationRegistrationRevisionSummaryService::class)->buildForSubmission($submission);
+        $built = app(OrganizationRegistrationRevisionSummaryService::class)->buildForSubmission($submission);
+        $built['groups'] = $this->enrichOrganizationProfileRevisionGroups(
+            is_array($built['groups'] ?? null) ? $built['groups'] : []
+        );
+
+        return $built;
+    }
+
+    /**
+     * Organization dashboard uses section.field keys for pending dedupe; align contact/overview adviser
+     * revisions with adviser.* keys and profile scroll anchors (revision-field-adviser-*).
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function organizationDashboardRevisionIdentity(string $sectionKey, string $fieldKey, string $label): array
+    {
+        $formKey = $this->normalizeProfileRevisionFieldToFormKey($sectionKey, $fieldKey, $label);
+        $map = [
+            'adviser_name' => 'full_name',
+            'adviser_email' => 'email',
+            'adviser_school_id' => 'school_id',
+        ];
+        if ($formKey !== null && isset($map[$formKey])) {
+            $canonical = $map[$formKey];
+
+            return [
+                'adviser.'.$canonical,
+                'revision-field-'.$this->sanitizeAnchorSegment('adviser').'-'.$this->sanitizeAnchorSegment($canonical),
+            ];
+        }
+
+        return [
+            $sectionKey.'.'.$fieldKey,
+            'revision-field-'.$this->sanitizeAnchorSegment($sectionKey).'-'.$this->sanitizeAnchorSegment($fieldKey),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    private function withAdviserRevisionDisplayItem(array $item, string $canonicalFieldSlug): array
+    {
+        $anchorId = 'revision-field-'.$this->sanitizeAnchorSegment('adviser').'-'.$this->sanitizeAnchorSegment($canonicalFieldSlug);
+
+        return array_merge($item, [
+            'field_key' => $canonicalFieldSlug,
+            'anchor_id' => $anchorId,
+        ]);
+    }
+
+    /**
+     * Merge adviser / adviser_information / contact (renewal) adviser revisions into one Adviser Information
+     * group with anchors that match Organization Profile (revision-field-adviser-full-name, etc.).
+     *
+     * @param  list<array<string, mixed>>  $groups
+     * @return list<array<string, mixed>>
+     */
+    private function enrichOrganizationProfileRevisionGroups(array $groups): array
+    {
+        $formToSlug = [
+            'adviser_name' => 'full_name',
+            'adviser_email' => 'email',
+            'adviser_school_id' => 'school_id',
+        ];
+        $adviserBySlug = [];
+        $out = [];
+
+        foreach ($groups as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+            $sectionKey = (string) ($group['section_key'] ?? '');
+            $skLower = strtolower($sectionKey);
+            $isAdviserSection = str_contains($skLower, 'adviser');
+
+            if ($isAdviserSection) {
+                $leftover = [];
+                foreach ((array) ($group['items'] ?? []) as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+                    $fk = (string) ($item['field_key'] ?? '');
+                    $fl = (string) ($item['field_label'] ?? $item['field'] ?? '');
+                    if (in_array(strtolower($fk), ['status', 'adviser_status'], true)) {
+                        continue;
+                    }
+                    $formKey = $this->normalizeProfileRevisionFieldToFormKey($sectionKey, $fk, $fl);
+                    if ($formKey !== null && isset($formToSlug[$formKey])) {
+                        $slug = $formToSlug[$formKey];
+                        $adviserBySlug[$slug] = $this->withAdviserRevisionDisplayItem($item, $slug);
+
+                        continue;
+                    }
+                    $leftover[] = $item;
+                }
+                if ($leftover !== []) {
+                    $out[] = array_merge($group, ['items' => array_values($leftover)]);
+                }
+
+                continue;
+            }
+
+            $kept = [];
+            foreach ((array) ($group['items'] ?? []) as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $fk = (string) ($item['field_key'] ?? '');
+                $fl = (string) ($item['field_label'] ?? $item['field'] ?? '');
+                $formKey = $this->normalizeProfileRevisionFieldToFormKey($sectionKey, $fk, $fl);
+                if ($formKey !== null && isset($formToSlug[$formKey])) {
+                    $slug = $formToSlug[$formKey];
+                    $adviserBySlug[$slug] = $this->withAdviserRevisionDisplayItem($item, $slug);
+
+                    continue;
+                }
+                $kept[] = $item;
+            }
+            if ($kept !== []) {
+                $out[] = array_merge($group, ['items' => array_values($kept)]);
+            }
+        }
+
+        if ($adviserBySlug === []) {
+            return $out === [] ? $groups : $out;
+        }
+
+        $order = ['full_name', 'school_id', 'email'];
+        $items = [];
+        foreach ($order as $slug) {
+            if (isset($adviserBySlug[$slug])) {
+                $items[] = $adviserBySlug[$slug];
+            }
+        }
+        foreach ($adviserBySlug as $slug => $item) {
+            if (! in_array($slug, $order, true)) {
+                $items[] = $item;
+            }
+        }
+
+        $insertAt = count($out);
+        foreach ($out as $i => $g) {
+            if (strtolower((string) ($g['section_key'] ?? '')) === 'requirements') {
+                $insertAt = $i;
+                break;
+            }
+        }
+        array_splice($out, $insertAt, 0, [[
+            'section_key' => 'adviser',
+            'section_title' => 'Adviser Information',
+            'title' => 'Adviser Information',
+            'items' => $items,
+        ]]);
+
+        return $out;
     }
 
     private function sanitizeAnchorSegment(string $value): string
@@ -1629,9 +1988,8 @@ class OrganizationController extends Controller
             'organization_type' => (string) ($organization->organization_type ?? ''),
             'college_department' => (string) ($organization->college_department ?? ''),
             'purpose' => (string) ($organization->purpose ?? ''),
-            'founded_date' => $organization->founded_date?->format('Y-m-d') ?? '',
             'submitted_by_display' => '',
-            'adviser_name' => (string) ($organization->adviser_name ?? ''),
+            'adviser_name' => (string) ($organization->currentAdviser?->user?->full_name ?? ''),
             'adviser_email' => (string) ($organization->currentAdviser?->user?->email ?? ''),
             'adviser_school_id' => (string) ($organization->currentAdviser?->user?->school_id ?? ''),
             default => '',
@@ -1667,6 +2025,9 @@ class OrganizationController extends Controller
         if (in_array($field, $this->profileSubmissionColumnFieldKeys(), true)) {
             return (string) ($validated[$field] ?? '');
         }
+        if (in_array($field, ['adviser_name', 'adviser_email', 'adviser_school_id'], true)) {
+            return (string) ($validated[$field] ?? '');
+        }
 
         return (string) $this->profileCurrentFieldValue($organization, $field);
     }
@@ -1682,7 +2043,6 @@ class OrganizationController extends Controller
             'organization_type' => ['section_key' => 'organizational', 'field_key' => 'organization_type'],
             'college_department' => ['section_key' => 'organizational', 'field_key' => 'school'],
             'purpose' => ['section_key' => 'organizational', 'field_key' => 'purpose'],
-            'founded_date' => ['section_key' => 'organizational', 'field_key' => 'date_organized'],
             'contact_person' => ['section_key' => 'contact', 'field_key' => 'contact_person'],
             'contact_no' => ['section_key' => 'contact', 'field_key' => 'contact_no'],
             'contact_email' => ['section_key' => 'contact', 'field_key' => 'contact_email'],
@@ -1693,23 +2053,98 @@ class OrganizationController extends Controller
     }
 
     /**
-     * @param  array<string, mixed>  $validated
+     * @return array{first_name: string, last_name: string}
+     */
+    private function splitAdviserDisplayNameIntoUserNames(string $displayName): array
+    {
+        $displayName = trim(preg_replace('/\s+/u', ' ', $displayName) ?? '');
+        if ($displayName === '') {
+            return ['first_name' => '', 'last_name' => ''];
+        }
+        $parts = preg_split('/\s+/u', $displayName) ?: [];
+        if (count($parts) === 1) {
+            return ['first_name' => $parts[0], 'last_name' => ''];
+        }
+        $last = (string) array_pop($parts);
+        $first = trim(implode(' ', $parts));
+
+        return ['first_name' => $first !== '' ? $first : $last, 'last_name' => $last];
+    }
+
+    /**
+     * Persist adviser revision fields on the linked faculty user (and submission denormalized name when applicable).
+     */
+    private function applyProfileRevisionAdviserUpdates(Organization $organization, ?OrganizationSubmission $latestRevisionSubmission, array $validated): void
+    {
+        $touched = array_key_exists('adviser_name', $validated)
+            || array_key_exists('adviser_email', $validated)
+            || array_key_exists('adviser_school_id', $validated);
+        if (! $touched) {
+            return;
+        }
+
+        $organization->loadMissing(['currentAdviser.user']);
+        $user = $organization->currentAdviser?->user;
+        if (! $user) {
+            return;
+        }
+
+        $payload = [];
+        if (array_key_exists('adviser_email', $validated)) {
+            $payload['email'] = (string) ($validated['adviser_email'] ?? '');
+        }
+        if (array_key_exists('adviser_school_id', $validated)) {
+            $payload['school_id'] = (string) ($validated['adviser_school_id'] ?? '');
+        }
+        if (array_key_exists('adviser_name', $validated)) {
+            $payload = array_merge($payload, $this->splitAdviserDisplayNameIntoUserNames((string) ($validated['adviser_name'] ?? '')));
+        }
+        if ($payload !== []) {
+            $user->update($payload);
+        }
+
+        if ($latestRevisionSubmission && array_key_exists('adviser_name', $validated) && Schema::hasColumn('organization_submissions', 'adviser_name')) {
+            $display = trim((string) ($validated['adviser_name'] ?? ''));
+            $latestRevisionSubmission->update(['adviser_name' => $display !== '' ? $display : null]);
+        }
+    }
+
+    /**
+     * True when every field the officer must fix in this revision has a value different from the pre-edit baseline.
+     *
      * @param  array<int, string>  $fields
      */
-    private function hasMeaningfulProfileChanges(Organization $organization, array $validated, array $fields, ?OrganizationSubmission $submission = null): bool
-    {
+    private function allProfileRevisionFieldsChanged(
+        Organization $organization,
+        array $validated,
+        array $fields,
+        ?OrganizationSubmission $submission,
+        string $submittedByDisplayOriginal
+    ): bool {
         foreach ($fields as $field) {
             if (! array_key_exists($field, $validated)) {
+                return false;
+            }
+            if ($field === 'submitted_by_display') {
+                $before = $this->normalizeRevisionComparableValue($submittedByDisplayOriginal);
+                $after = $this->normalizeRevisionComparableValue($validated[$field] ?? '');
+
+                if ($before === $after) {
+                    return false;
+                }
+
                 continue;
             }
-            $before = $this->normalizeRevisionComparableValue($this->profileRevisionFieldCurrentValue($submission, $organization, $field));
-            $after = $this->normalizeRevisionComparableValue($validated[$field]);
-            if ($before !== $after) {
-                return true;
+            $before = $this->normalizeRevisionComparableValue(
+                $this->profileRevisionFieldCurrentValue($submission, $organization, $field)
+            );
+            $after = $this->normalizeRevisionComparableValue($validated[$field] ?? '');
+            if ($before === $after) {
+                return false;
             }
         }
 
-        return false;
+        return true;
     }
 
     public function updateProfile(Request $request)
@@ -1740,7 +2175,6 @@ class OrganizationController extends Controller
             'organization_type' => ['required', 'string', 'max:50'],
             'college_department' => ['required', 'string', 'max:100'],
             'purpose' => ['required', 'string'],
-            'founded_date' => ['nullable', 'date'],
         ];
         $validated = [];
         $latestRevisionSubmission = null;
@@ -1799,18 +2233,17 @@ class OrganizationController extends Controller
                 }
                 $validated = $revisionRules !== [] ? $request->validate($revisionRules) : [];
                 $editableComparedFields = array_keys($revisionRules);
-                $orgComparedFields = array_values(array_filter($editableComparedFields, fn (string $field): bool => $field !== 'submitted_by_display'));
-                $hasMeaningfulChanges = $this->hasMeaningfulProfileChanges($organization, $validated, $orgComparedFields, $latestRevisionSubmission);
-                if (in_array('submitted_by_display', $editableComparedFields, true)) {
-                    $submittedByBefore = $this->normalizeRevisionComparableValue($request->input('submitted_by_display_original', ''));
-                    $submittedByAfter = $this->normalizeRevisionComparableValue($validated['submitted_by_display'] ?? '');
-                    if ($submittedByBefore !== $submittedByAfter) {
-                        $hasMeaningfulChanges = true;
-                    }
-                }
-                if ($editableComparedFields !== [] && ! $hasMeaningfulChanges) {
+                $submittedByOriginal = (string) $request->input('submitted_by_display_original', '');
+                $allRevisedFieldsChanged = $editableComparedFields === [] || $this->allProfileRevisionFieldsChanged(
+                    $organization,
+                    $validated,
+                    $editableComparedFields,
+                    $latestRevisionSubmission,
+                    $submittedByOriginal
+                );
+                if ($editableComparedFields !== [] && ! $allRevisedFieldsChanged) {
                     return back()
-                        ->withErrors(['revision_changes' => 'No changes were detected. Please update at least one requested field before saving.'])
+                        ->withErrors(['revision_changes' => 'Please update all fields requested for revision before saving changes.'])
                         ->withInput();
                 }
             } else {
@@ -1830,11 +2263,13 @@ class OrganizationController extends Controller
             $beforeValues[$field] = $this->profileRevisionFieldCurrentValue($latestRevisionSubmission, $organization, $field);
         }
 
-        $organizationPayloadKeys = ['organization_name', 'organization_type', 'college_department', 'purpose', 'founded_date', 'adviser_name'];
+        $organizationPayloadKeys = ['organization_name', 'organization_type', 'college_department', 'purpose'];
         $organizationPayload = array_intersect_key($validated, array_flip($organizationPayloadKeys));
         if ($organizationPayload !== []) {
             $organization->update($organizationPayload);
         }
+
+        $this->applyProfileRevisionAdviserUpdates($organization, $latestRevisionSubmission, $validated);
 
         $submissionColumnPayload = array_intersect_key($validated, array_flip($this->profileSubmissionColumnFieldKeys()));
         if ($latestRevisionSubmission && $submissionColumnPayload !== []) {
