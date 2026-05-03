@@ -47,6 +47,13 @@
     ></div>
   @endif
 
+  @if (session('activity_calendar_revision_resubmit_ok'))
+    <x-feedback.blocked-message variant="success" :icon="false" class="mb-5">
+      <p class="font-semibold">Activity calendar resubmitted for review</p>
+      <p class="mt-1 text-sm font-normal">SDAO is reviewing your updated planned activities.</p>
+    </x-feedback.blocked-message>
+  @endif
+
   @if (! empty($progressStages ?? null))
     <x-submission-progress-card
       variant="embed"
@@ -79,8 +86,13 @@
           </svg>
         </div>
         <div class="min-w-0">
-          <p class="font-semibold">Profile / Submission Information — For revision</p>
-          <p class="mt-1 text-sm font-normal">SDAO has requested updates to your registration submission. Update the sections noted below and resubmit for review.</p>
+          @if (! empty($isActivityCalendarDetail ?? false))
+            <p class="font-semibold">Activity calendar — For revision</p>
+            <p class="mt-1 text-sm font-normal">SDAO requested changes. Follow each link to the field, edit the activity row, then use <span class="font-semibold">Submit Activity Calendar</span> when every flagged field has been updated.</p>
+          @else
+            <p class="font-semibold">Profile / Submission Information — For revision</p>
+            <p class="mt-1 text-sm font-normal">SDAO has requested updates to your registration submission. Update the sections noted below and resubmit for review.</p>
+          @endif
         </div>
       </div>
       <div class="mt-4 space-y-3">
@@ -129,6 +141,10 @@
   @if ($errors->has('replacement_file') || $errors->has('replacement_files') || $errors->has('replacement_files.*'))
     <x-feedback.blocked-message variant="warning" class="mb-5" :message="$errors->first('replacement_file') ?: ($errors->first('replacement_files') ?: $errors->first('replacement_files.*'))" />
   @endif
+
+  @error('activity_calendar')
+    <x-feedback.blocked-message variant="warning" class="mb-5">{{ $message }}</x-feedback.blocked-message>
+  @enderror
 
   <x-feedback.blocked-message variant="warning" class="mb-5 hidden" id="replacement-file-warning-message" />
 
@@ -262,14 +278,25 @@
   </x-ui.card>
 
   @if (isset($calendarEntries) && $calendarEntries->isNotEmpty())
+    @php
+      $acFlags = $activityCalendarEntryRevisionFlags ?? [];
+      $acNotes = $activityCalendarEntryRevisionNotes ?? [];
+      $acEntryState = $activityCalendarEntryUpdateState ?? [];
+      $acCanRev = ! empty($canSubmitActivityCalendarEntryRevisions ?? false);
+      $showAcPlanActions = ! empty($isActivityCalendarDetail ?? false);
+    @endphp
+    @if ($acCanRev)
+      <form method="POST" action="{{ $activityCalendarEntryRevisionSubmitUrl }}" class="mb-5">
+        @csrf
+    @endif
     <x-ui.card padding="p-0" class="mb-5">
       <x-ui.card-section-header
         title="Planned activities (saved)"
-        subtitle="Each row is one calendar activity. Open Submit Proposal to add or edit full details for that activity only."
+        subtitle="{{ $acCanRev ? 'Use Edit to open the revision form for each flagged activity, update every field SDAO noted, then submit for review.' : 'Each row is one calendar activity. Open Submit Proposal to add or edit full details for that activity only.' }}"
         content-padding="px-6" />
       <div class="border-t border-slate-100 px-6 py-4.5">
         <div class="overflow-x-auto rounded-xl border border-slate-200">
-          <table class="min-w-184 w-full divide-y divide-slate-200 text-left text-sm">
+          <table class="min-w-200 w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">Date</th>
@@ -277,28 +304,54 @@
                 <th class="px-4 py-3 sm:px-5">Participant / Program Assigned</th>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">SDGs</th>
                 <th class="px-4 py-3 sm:px-5">Venue</th>
+                <th class="whitespace-nowrap px-4 py-3 sm:px-5">Budget</th>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">Proposal</th>
+                @if ($showAcPlanActions)
+                  <th class="whitespace-nowrap px-4 py-3 sm:px-5">Actions</th>
+                @endif
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
               @foreach ($calendarEntries as $entry)
                 @php
                   $prop = $entry->proposal;
+                  $erf = $acFlags[$entry->id] ?? [];
+                  $rName = ! empty($erf['activity_name']);
+                  $rDate = ! empty($erf['activity_date']);
+                  $rVenue = ! empty($erf['venue']);
+                  $rSdg = ! empty($erf['target_sdg']);
+                  $rPart = ! empty($erf['target_participants']);
+                  $rBudget = ! empty($erf['estimated_budget']);
+                  $rProg = ! empty($erf['target_program']);
+                  $rowRev = $rName || $rDate || $rVenue || $rSdg || $rPart || $rBudget || $rProg;
+                  $budgetDisplay = $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2) : '—';
+                  $isRowUpdatedTbl = (bool) ($acEntryState[$entry->id]['is_updated'] ?? false);
                 @endphp
                 <tr class="align-top">
-                  <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
-                  <td class="px-4 py-3.5 text-slate-800 sm:px-5">
-                    <span class="font-semibold">{{ $entry->activity_name }}</span>
+                  <td class="whitespace-nowrap px-4 py-4 text-slate-800 sm:px-5">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
+                  <td class="px-4 py-4 text-slate-800 sm:px-5">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-semibold">{{ $entry->activity_name }}</span>
+                      @if ($isRowUpdatedTbl)
+                        <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Updated</span>
+                      @endif
+                    </div>
                   </td>
-                  <td class="px-4 py-3.5 text-slate-800 sm:px-5">{{ filled($entry->target_participants) ? $entry->target_participants : '—' }}</td>
-                  <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ $entry->target_sdg ?? '—' }}</td>
-                  <td class="px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ $entry->venue }}</td>
-                  <td class="whitespace-nowrap px-4 py-3.5 sm:px-5">
+                  <td class="px-4 py-4 text-slate-800 sm:px-5">
+                    {{ filled($entry->target_participants) ? $entry->target_participants : '—' }}
+                    @if (filled($entry->target_program))
+                      <div class="mt-1 text-xs text-slate-600"><span class="font-semibold text-slate-700">Program:</span> {{ $entry->target_program }}</div>
+                    @endif
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-4 text-slate-800 sm:px-5">{{ $entry->target_sdg ?? '—' }}</td>
+                  <td class="px-4 py-4 text-slate-800 sm:px-5">{{ $entry->venue }}</td>
+                  <td class="whitespace-nowrap px-4 py-4 text-slate-800 sm:px-5">{{ $budgetDisplay }}</td>
+                  <td class="whitespace-nowrap px-4 py-4 sm:px-5">
                     @if (! $prop)
                       <span class="inline-flex rounded-full border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">No proposal yet</span>
                     @else
                       @php
-                        $ps = strtoupper((string) $prop->proposal_status);
+                        $ps = strtoupper((string) ($prop->status ?? $prop->proposal_status ?? ''));
                         $proposalBadge = match ($ps) {
                           'DRAFT' => 'bg-slate-200 text-slate-800 border border-slate-300',
                           'PENDING' => 'bg-amber-100 text-amber-800 border border-amber-200',
@@ -315,22 +368,175 @@
                           'REVISION' => 'For revision',
                           'APPROVED' => 'Approved',
                           'REJECTED' => 'Rejected',
-                          default => $prop->proposal_status ?? '—',
+                          default => ($prop->status ?? $prop->proposal_status) ?: '—',
                         };
                       @endphp
                       <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $proposalBadge }}">{{ $proposalLabel }}</span>
                     @endif
                   </td>
+                  @if ($showAcPlanActions)
+                    <td class="whitespace-nowrap px-4 py-4 align-middle sm:px-5">
+                      @if ($acCanRev && $rowRev)
+                        <button
+                          type="button"
+                          data-open-activity-revision-editor="{{ $entry->id }}"
+                          @disabled($isRowUpdatedTbl)
+                          class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-[#003DA5] shadow-sm transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#003DA5]/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
+                        >
+                          Edit
+                        </button>
+                      @elseif ($isRowUpdatedTbl)
+                        <button
+                          type="button"
+                          disabled
+                          class="inline-flex cursor-not-allowed items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-400 opacity-60"
+                        >
+                          Edit
+                        </button>
+                      @else
+                        —
+                      @endif
+                    </td>
+                  @endif
                 </tr>
               @endforeach
             </tbody>
           </table>
         </div>
+        @if ($acCanRev)
+          @foreach ($calendarEntries as $entry)
+            @php
+              $erfEd = $acFlags[$entry->id] ?? [];
+              $rNameEd = ! empty($erfEd['activity_name']);
+              $rDateEd = ! empty($erfEd['activity_date']);
+              $rVenueEd = ! empty($erfEd['venue']);
+              $rSdgEd = ! empty($erfEd['target_sdg']);
+              $rPartEd = ! empty($erfEd['target_participants']);
+              $rBudgetEd = ! empty($erfEd['estimated_budget']);
+              $rProgEd = ! empty($erfEd['target_program']);
+              $rowRevEd = $rNameEd || $rDateEd || $rVenueEd || $rSdgEd || $rPartEd || $rBudgetEd || $rProgEd;
+              $rowNotesEd = $acNotes[$entry->id] ?? [];
+              $budgetOrigEd = $entry->estimated_budget !== null ? number_format((float) $entry->estimated_budget, 2, '.', '') : '';
+            @endphp
+            @if ($rowRevEd)
+              <div id="activity-revision-editor-{{ $entry->id }}" data-activity-revision-editor="{{ $entry->id }}" class="mt-6 hidden overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200">
+                <div class="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 class="text-xl font-bold tracking-tight text-slate-900">Edit Activity Revision</h3>
+                    <p class="mt-1 text-sm text-slate-500">Only fields requested by SDAO are shown in this revision form.</p>
+                  </div>
+                  <button type="button" data-close-activity-revision-editor="{{ $entry->id }}" class="inline-flex shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400/25">
+                    Close
+                  </button>
+                </div>
+                <div class="grid grid-cols-1 gap-5 px-6 py-6 md:grid-cols-2">
+                  @if ($rDateEd)
+                    <div id="activity-calendar-entry-{{ $entry->id }}-date" data-ac-scroll-entry-id="{{ $entry->id }}" class="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-slate-800">Date</span>
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-updated-badge="{{ $entry->id }}-activity_date">Updated</span>
+                      </div>
+                      <input type="date" name="activities[{{ $entry->id }}][activity_date]" value="{{ old('activities.'.$entry->id.'.activity_date', $entry->activity_date?->format('Y-m-d') ?? '') }}" data-activity-revision-field data-revision-required="1" data-entry-id="{{ $entry->id }}" data-revision-key="activity_date" data-original-value="{{ $entry->activity_date?->format('Y-m-d') ?? '' }}" class="mt-2 w-full min-w-[130px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-inner shadow-slate-900/5" />
+                      @if (filled($rowNotesEd['activity_date'] ?? null))
+                        <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word">Revision note: {{ $rowNotesEd['activity_date'] }}</p>
+                      @endif
+                    </div>
+                  @endif
+                  @if ($rNameEd)
+                    <div id="activity-calendar-entry-{{ $entry->id }}-activity_name" data-ac-scroll-entry-id="{{ $entry->id }}" class="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-slate-800">Activity name</span>
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-updated-badge="{{ $entry->id }}-activity_name">Updated</span>
+                      </div>
+                      <input type="text" name="activities[{{ $entry->id }}][activity_name]" value="{{ old('activities.'.$entry->id.'.activity_name', $entry->activity_name) }}" data-activity-revision-field data-revision-required="1" data-entry-id="{{ $entry->id }}" data-revision-key="activity_name" data-original-value="{{ $entry->activity_name }}" class="mt-2 w-full min-w-[130px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 shadow-inner shadow-slate-900/5" />
+                      @if (filled($rowNotesEd['activity_name'] ?? null))
+                        <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word">Revision note: {{ $rowNotesEd['activity_name'] }}</p>
+                      @endif
+                    </div>
+                  @endif
+                  @if ($rPartEd)
+                    <div id="activity-calendar-entry-{{ $entry->id }}-participants" data-ac-scroll-entry-id="{{ $entry->id }}" class="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-slate-800">Participants</span>
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-updated-badge="{{ $entry->id }}-target_participants">Updated</span>
+                      </div>
+                      <input type="text" name="activities[{{ $entry->id }}][target_participants]" value="{{ old('activities.'.$entry->id.'.target_participants', $entry->target_participants) }}" data-activity-revision-field data-revision-required="1" data-entry-id="{{ $entry->id }}" data-revision-key="target_participants" data-original-value="{{ $entry->target_participants }}" class="mt-2 w-full min-w-[130px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-inner shadow-slate-900/5" />
+                      @if (filled($rowNotesEd['target_participants'] ?? null))
+                        <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word">Revision note: {{ $rowNotesEd['target_participants'] }}</p>
+                      @endif
+                    </div>
+                  @endif
+                  @if ($rProgEd)
+                    <div id="activity-calendar-entry-{{ $entry->id }}-program" data-ac-scroll-entry-id="{{ $entry->id }}" class="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-slate-800">Program assigned</span>
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-updated-badge="{{ $entry->id }}-target_program">Updated</span>
+                      </div>
+                      <input type="text" name="activities[{{ $entry->id }}][target_program]" value="{{ old('activities.'.$entry->id.'.target_program', $entry->target_program) }}" data-activity-revision-field data-revision-required="1" data-entry-id="{{ $entry->id }}" data-revision-key="target_program" data-original-value="{{ $entry->target_program }}" class="mt-2 w-full min-w-[130px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-inner shadow-slate-900/5" />
+                      @if (filled($rowNotesEd['target_program'] ?? null))
+                        <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word">Revision note: {{ $rowNotesEd['target_program'] }}</p>
+                      @endif
+                    </div>
+                  @endif
+                  @if ($rSdgEd)
+                    <div id="activity-calendar-entry-{{ $entry->id }}-sdgs" data-ac-scroll-entry-id="{{ $entry->id }}" class="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-slate-800">Target SDG</span>
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-updated-badge="{{ $entry->id }}-target_sdg">Updated</span>
+                      </div>
+                      <input type="text" name="activities[{{ $entry->id }}][target_sdg]" value="{{ old('activities.'.$entry->id.'.target_sdg', $entry->target_sdg) }}" data-activity-revision-field data-revision-required="1" data-entry-id="{{ $entry->id }}" data-revision-key="target_sdg" data-original-value="{{ $entry->target_sdg }}" class="mt-2 w-full min-w-[130px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-inner shadow-slate-900/5" />
+                      @if (filled($rowNotesEd['target_sdg'] ?? null))
+                        <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word">Revision note: {{ $rowNotesEd['target_sdg'] }}</p>
+                      @endif
+                    </div>
+                  @endif
+                  @if ($rVenueEd)
+                    <div id="activity-calendar-entry-{{ $entry->id }}-venue" data-ac-scroll-entry-id="{{ $entry->id }}" class="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-slate-800">Venue</span>
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-updated-badge="{{ $entry->id }}-venue">Updated</span>
+                      </div>
+                      <input type="text" name="activities[{{ $entry->id }}][venue]" value="{{ old('activities.'.$entry->id.'.venue', $entry->venue) }}" data-activity-revision-field data-revision-required="1" data-entry-id="{{ $entry->id }}" data-revision-key="venue" data-original-value="{{ $entry->venue }}" class="mt-2 w-full min-w-[130px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-inner shadow-slate-900/5" />
+                      @if (filled($rowNotesEd['venue'] ?? null))
+                        <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word">Revision note: {{ $rowNotesEd['venue'] }}</p>
+                      @endif
+                    </div>
+                  @endif
+                  @if ($rBudgetEd)
+                    <div id="activity-calendar-entry-{{ $entry->id }}-budget" data-ac-scroll-entry-id="{{ $entry->id }}" class="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-slate-800">Estimated budget</span>
+                        <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700" data-updated-badge="{{ $entry->id }}-estimated_budget">Updated</span>
+                      </div>
+                      <input type="number" step="0.01" min="0" name="activities[{{ $entry->id }}][estimated_budget]" value="{{ old('activities.'.$entry->id.'.estimated_budget', $budgetOrigEd) }}" data-activity-revision-field data-revision-required="1" data-entry-id="{{ $entry->id }}" data-revision-key="estimated_budget" data-original-value="{{ $budgetOrigEd }}" class="mt-2 w-full min-w-[130px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-inner shadow-slate-900/5" />
+                      @if (filled($rowNotesEd['estimated_budget'] ?? null))
+                        <p class="mt-2 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold leading-relaxed text-yellow-900 wrap-break-word">Revision note: {{ $rowNotesEd['estimated_budget'] }}</p>
+                      @endif
+                    </div>
+                  @endif
+                </div>
+              </div>
+            @endif
+          @endforeach
+          <div class="mt-6 flex justify-end">
+            <button
+              type="submit"
+              data-submit-activity-calendar-revisions
+              disabled
+              class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#003E9F]/25 transition hover:bg-[#00327F] focus:outline-none focus:ring-4 focus:ring-[#003E9F]/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#003E9F]"
+            >
+              Submit Activity Calendar
+            </button>
+          </div>
+        @endif
       </div>
     </x-ui.card>
+    @if ($acCanRev)
+      </form>
+    @endif
   @endif
 
-  @if ($calendarEntries === null)
+  @if (($hasFileAttachments ?? true) && ($calendarEntries === null || ! empty($alwaysShowSubmittedFilesCard ?? false)))
   <x-ui.card padding="p-0" class="mb-5" id="submitted-files">
     <x-ui.card-section-header
       title="Submitted files"
@@ -529,7 +735,7 @@
 
 @endsection
 
-@if (! empty($revisionSections ?? []) || ! empty($canSubmitFileRevision ?? false) || ! empty($canRenominateAdviser ?? false))
+@if (! empty($revisionSections ?? []) || ! empty($canSubmitFileRevision ?? false) || ! empty($canRenominateAdviser ?? false) || ! empty($canSubmitActivityCalendarEntryRevisions ?? false))
   @section('scripts')
     <script>
       (() => {
@@ -555,6 +761,13 @@
           .replace(/-+/g, '-')
           .replace(/^[-_]+|[-_]+$/g, '');
         const resolveRevisionTargetElement = (targetId) => {
+          const raw = String(targetId || '').trim();
+          if (raw) {
+            try {
+              const direct = document.getElementById(raw);
+              if (direct) return direct;
+            } catch (_err) {}
+          }
           const normalized = normalizeTargetId(targetId);
           if (!normalized) return null;
           const requirementKey = normalized
@@ -589,16 +802,37 @@
           if (!targetId) return;
           const target = resolveRevisionTargetElement(targetId);
           if (!target) return;
-          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          target.classList.add('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
-          if (highlightTimer) window.clearTimeout(highlightTimer);
-          highlightTimer = window.setTimeout(() => {
-            target.classList.remove('ring-2', 'ring-amber-300', 'bg-amber-50/80', 'transition');
-          }, 1800);
+          const runHighlight = () => {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('ring-2', 'ring-amber-400', 'ring-offset-2', 'ring-offset-white', 'transition', 'rounded-2xl');
+            if (highlightTimer) window.clearTimeout(highlightTimer);
+            highlightTimer = window.setTimeout(() => {
+              target.classList.remove('ring-2', 'ring-amber-400', 'ring-offset-2', 'ring-offset-white', 'transition', 'rounded-2xl');
+            }, 1800);
+          };
+          if (target.id && target.id.startsWith('activity-calendar-entry-')) {
+            const eid = target.getAttribute('data-ac-scroll-entry-id');
+            if (eid) {
+              document.querySelectorAll('[data-activity-revision-editor]').forEach((el) => {
+                el.classList.add('hidden');
+              });
+              const card = document.getElementById(`activity-revision-editor-${eid}`);
+              if (card) {
+                card.classList.remove('hidden');
+              }
+              window.setTimeout(runHighlight, 260);
+              return;
+            }
+          }
+          runHighlight();
         };
         const initialTarget = new URLSearchParams(window.location.search).get('revision_target');
         if (initialTarget) {
           window.setTimeout(() => scrollToTarget(initialTarget), 120);
+        }
+        if (window.location.hash && window.location.hash.length > 1) {
+          const hashId = decodeURIComponent(window.location.hash.slice(1));
+          window.setTimeout(() => scrollToTarget(hashId), 160);
         }
 
         document.querySelectorAll('[data-revision-target-id]').forEach((button) => {
@@ -921,6 +1155,89 @@
           setConfirmLoadingState(true);
           submitForm.submit();
         });
+
+        @if (! empty($canSubmitActivityCalendarEntryRevisions ?? false))
+        const normalizeAcCal = (value) => String(value ?? '').trim();
+        const normalizeAcCalBudget = (value) => {
+          const n = Number.parseFloat(String(value ?? '').replace(/,/g, ''));
+          if (!Number.isFinite(n)) return '';
+          return n.toFixed(2);
+        };
+        const fieldCurrentNormalized = (field) => {
+          if (field instanceof HTMLInputElement && field.type === 'date') {
+            return normalizeAcCal(field.value);
+          }
+          if (field instanceof HTMLInputElement && field.type === 'number') {
+            return normalizeAcCalBudget(field.value);
+          }
+          return normalizeAcCal(field.value);
+        };
+        const fieldOriginalNormalized = (field) => {
+          const o = field.dataset.originalValue ?? '';
+          if (field instanceof HTMLInputElement && field.type === 'number') {
+            return normalizeAcCalBudget(o);
+          }
+          return normalizeAcCal(o);
+        };
+        const openActivityRevisionEditor = (entryId) => {
+          document.querySelectorAll('[data-activity-revision-editor]').forEach((el) => {
+            el.classList.add('hidden');
+          });
+          const card = document.getElementById(`activity-revision-editor-${entryId}`);
+          if (card) {
+            card.classList.remove('hidden');
+            window.setTimeout(() => {
+              card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 50);
+          }
+        };
+        const refreshActivityRevisionFieldState = (entryId) => {
+          document.querySelectorAll(`[data-activity-revision-field][data-entry-id="${entryId}"]`).forEach((field) => {
+            const key = field.getAttribute('data-revision-key') || '';
+            const badge = document.querySelector(`[data-updated-badge="${entryId}-${key}"]`);
+            const isUpdated = fieldCurrentNormalized(field) !== fieldOriginalNormalized(field);
+            if (badge) {
+              badge.classList.toggle('hidden', !isUpdated);
+            }
+          });
+        };
+        const refreshSubmitActivityCalendarButton = () => {
+          const requiredFields = document.querySelectorAll('[data-activity-revision-field][data-revision-required="1"]');
+          const submitButton = document.querySelector('[data-submit-activity-calendar-revisions]');
+          const allUpdated = Array.from(requiredFields).every((field) => {
+            return fieldCurrentNormalized(field) !== fieldOriginalNormalized(field);
+          });
+          if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = !allUpdated;
+            submitButton.classList.toggle('opacity-50', !allUpdated);
+            submitButton.classList.toggle('cursor-not-allowed', !allUpdated);
+          }
+        };
+        document.querySelectorAll('[data-open-activity-revision-editor]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            if (btn instanceof HTMLButtonElement && btn.disabled) return;
+            const id = btn.getAttribute('data-open-activity-revision-editor') || '';
+            if (!id) return;
+            openActivityRevisionEditor(id);
+          });
+        });
+        document.querySelectorAll('[data-close-activity-revision-editor]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-close-activity-revision-editor') || '';
+            document.getElementById(`activity-revision-editor-${id}`)?.classList.add('hidden');
+          });
+        });
+        document.querySelectorAll('[data-activity-revision-field]').forEach((field) => {
+          const entryId = field.getAttribute('data-entry-id') || '';
+          const onFieldChange = () => {
+            if (entryId) refreshActivityRevisionFieldState(entryId);
+            refreshSubmitActivityCalendarButton();
+          };
+          field.addEventListener('input', onFieldChange);
+          field.addEventListener('change', onFieldChange);
+        });
+        refreshSubmitActivityCalendarButton();
+        @endif
       })();
     </script>
   @endsection

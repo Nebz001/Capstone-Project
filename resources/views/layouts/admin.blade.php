@@ -379,14 +379,29 @@
       </header>
 
       <main class="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-8 sm:px-6 lg:px-10">
+        @if (session('error'))
+          <x-feedback.blocked-message variant="error" class="mb-6 items-start">
+            {{ session('error') }}
+          </x-feedback.blocked-message>
+        @endif
+        @if (session('warning'))
+          <x-feedback.blocked-message variant="warning" class="mb-6 items-start">
+            {{ session('warning') }}
+          </x-feedback.blocked-message>
+        @endif
+        @if (session('info'))
+          <x-feedback.blocked-message variant="info" class="mb-6 items-start">
+            {{ session('info') }}
+          </x-feedback.blocked-message>
+        @endif
         @if (session('success'))
-          <div class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm" role="status">
+          <x-feedback.blocked-message variant="success" class="mb-6 items-start">
             @if (session('success_html'))
               {!! session('success_html') !!}
             @else
               {{ session('success') }}
             @endif
-          </div>
+          </x-feedback.blocked-message>
         @endif
         @yield('content')
       </main>

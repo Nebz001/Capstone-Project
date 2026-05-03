@@ -21,22 +21,66 @@
       default => ['label' => 'Pending', 'class' => 'border border-slate-200 bg-slate-100 text-slate-700'],
     };
   };
+  $moduleReviewBlockType = (string) session('review_block_type', '');
+  $moduleReviewBlockTitle = (string) session('review_block_title', '');
+  $moduleReviewBlockMessage = (string) session('review_block_message', '');
+  $moduleReviewBlockBackUrl = session('review_block_back_url');
+  $moduleReviewBlockBackLabel = (string) session('review_block_back_label', '');
+  $hasModuleReviewOutcomeFlash = $moduleReviewBlockTitle !== '' || $moduleReviewBlockMessage !== '';
+  $moduleReviewBlockVariant = match ($moduleReviewBlockType) {
+    'success' => 'success',
+    'warning', 'pending' => 'warning',
+    'error' => 'error',
+    default => 'info',
+  };
+  $moduleApprovedBanner = match ($moduleLabel ?? '') {
+    'Renewal' => [
+      'title' => 'Organization renewal has been approved',
+      'body' => 'The organization renewal submission has been approved successfully.',
+      'back_label' => 'Back to Renewals',
+    ],
+    'Activity Calendar' => [
+      'title' => 'Activity calendar has been approved',
+      'body' => 'The activity calendar submission has been approved successfully.',
+      'back_label' => 'Back to Activity Calendars',
+    ],
+    'Activity Proposal' => [
+      'title' => 'Activity proposal has been approved',
+      'body' => 'The activity proposal submission has been approved successfully.',
+      'back_label' => 'Back to Activity Proposals',
+    ],
+    'After Activity Report' => [
+      'title' => 'After activity report has been approved',
+      'body' => 'The after activity report submission has been approved successfully.',
+      'back_label' => 'Back to After Activity Reports',
+    ],
+    default => null,
+  };
 @endphp
 
-@if (($moduleLabel ?? '') === 'Renewal' && ((session('renewal_review_saved') || false) || ($status ?? '') === 'APPROVED'))
-  @php
-    $renewalOutcome = session('renewal_review_outcome', ($status ?? '') === 'APPROVED' ? 'approved' : null);
-    $isRenewalApproved = $renewalOutcome === 'approved' || ($renewalOutcome === null && ($status ?? '') === 'APPROVED');
-  @endphp
-  <x-feedback.blocked-message variant="success" class="mb-6 items-start">
-    <p class="font-semibold">{{ $isRenewalApproved ? 'Renewal has been approved' : 'Renewal review submitted' }}</p>
-    <p class="mt-1 text-sm font-normal">{{ $isRenewalApproved ? 'The organization renewal has been approved successfully.' : 'The organization renewal has been returned for revision.' }}</p>
+@if ($hasModuleReviewOutcomeFlash)
+  <x-feedback.blocked-message variant="{{ $moduleReviewBlockVariant }}" class="mb-6 items-start">
+    <p class="font-semibold">{{ $moduleReviewBlockTitle }}</p>
+    <p class="mt-1 text-sm font-normal">{{ $moduleReviewBlockMessage }}</p>
     <p class="mt-2">
       <a
-        href="{{ $backRoute }}"
+        href="{{ is_string($moduleReviewBlockBackUrl) && $moduleReviewBlockBackUrl !== '' ? $moduleReviewBlockBackUrl : ($backRoute ?? '#') }}"
+        class="text-sm font-semibold underline underline-offset-2 transition"
+      >
+        {{ $moduleReviewBlockBackLabel !== '' ? $moduleReviewBlockBackLabel : ($backLabel ?? 'Back') }}
+      </a>
+    </p>
+  </x-feedback.blocked-message>
+@elseif (($status ?? '') === 'APPROVED' && is_array($moduleApprovedBanner))
+  <x-feedback.blocked-message variant="success" class="mb-6 items-start">
+    <p class="font-semibold">{{ $moduleApprovedBanner['title'] }}</p>
+    <p class="mt-1 text-sm font-normal">{{ $moduleApprovedBanner['body'] }}</p>
+    <p class="mt-2">
+      <a
+        href="{{ $backRoute ?? '#' }}"
         class="text-sm font-semibold text-emerald-800 underline decoration-emerald-700/60 underline-offset-2 transition hover:text-emerald-900 hover:decoration-emerald-900"
       >
-        Back to renewals
+        {{ $moduleApprovedBanner['back_label'] }}
       </a>
     </p>
   </x-feedback.blocked-message>
