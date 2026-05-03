@@ -274,6 +274,7 @@
               <tr>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">Date</th>
                 <th class="px-4 py-3 sm:px-5">Activity</th>
+                <th class="px-4 py-3 sm:px-5">Participant / Program Assigned</th>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">SDGs</th>
                 <th class="px-4 py-3 sm:px-5">Venue</th>
                 <th class="whitespace-nowrap px-4 py-3 sm:px-5">Proposal</th>
@@ -288,10 +289,8 @@
                   <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ optional($entry->activity_date)->format('M j, Y') ?? '—' }}</td>
                   <td class="px-4 py-3.5 text-slate-800 sm:px-5">
                     <span class="font-semibold">{{ $entry->activity_name }}</span>
-                    @if ($entry->target_participants)
-                      <p class="mt-1 line-clamp-2 text-xs text-slate-500">{{ $entry->target_participants }}</p>
-                    @endif
                   </td>
+                  <td class="px-4 py-3.5 text-slate-800 sm:px-5">{{ filled($entry->target_participants) ? $entry->target_participants : '—' }}</td>
                   <td class="whitespace-nowrap px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ $entry->target_sdg ?? '—' }}</td>
                   <td class="px-4 py-3.5 font-medium text-slate-800 sm:px-5">{{ $entry->venue }}</td>
                   <td class="whitespace-nowrap px-4 py-3.5 sm:px-5">
@@ -331,6 +330,7 @@
     </x-ui.card>
   @endif
 
+  @if ($calendarEntries === null)
   <x-ui.card padding="p-0" class="mb-5" id="submitted-files">
     <x-ui.card-section-header
       title="Submitted files"
@@ -466,6 +466,7 @@
       @endif
     </div>
   </x-ui.card>
+  @endif
 
   @if (count($workflowLinks) > 0)
     <div class="flex flex-wrap gap-3">
