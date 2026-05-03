@@ -2088,10 +2088,23 @@ class AdminController extends Controller
         $this->autoAcknowledgeReviewedRegistrationFieldUpdates($submission, $fieldReviews, (int) $admin->id);
         $this->notifyModuleReviewResult($submission, $nextStatus);
 
+        $renewalBackUrl = route('admin.renewals.index');
+        $renewalBackLabel = 'Back to Renewals';
+        $reviewFlash = $this->moduleReviewOutcomeReviewBlock(
+            $nextStatus === OrganizationSubmission::STATUS_APPROVED ? 'approved' : 'revision',
+            $renewalBackUrl,
+            $renewalBackLabel,
+            [
+                'approved_title' => 'Organization renewal has been approved',
+                'approved_body' => 'The organization renewal submission has been approved successfully.',
+                'revision_title' => 'Revision request sent',
+                'revision_body' => 'The organization renewal submission has been returned for revision.',
+            ]
+        );
+
         return redirect()
             ->route('admin.renewals.show', $submission)
-            ->with('renewal_review_saved', true)
-            ->with('renewal_review_outcome', $nextStatus === OrganizationSubmission::STATUS_APPROVED ? 'approved' : 'revision');
+            ->with($reviewFlash);
     }
 
     public function saveCalendarReviewDraft(Request $request, ActivityCalendar $calendar): JsonResponse
@@ -2114,7 +2127,13 @@ class AdminController extends Controller
             'admin_review_remarks',
             route('admin.calendars.show', $calendar),
             route('admin.calendars.index'),
-            'Back to Activity Calendars'
+            'Back to Activity Calendars',
+            [
+                'approved_title' => 'Activity calendar has been approved',
+                'approved_body' => 'The activity calendar submission has been approved successfully.',
+                'revision_title' => 'Revision request sent',
+                'revision_body' => 'The activity calendar submission has been returned for revision.',
+            ]
         );
     }
 
@@ -2138,7 +2157,13 @@ class AdminController extends Controller
             'admin_review_remarks',
             route('admin.proposals.show', $proposal),
             route('admin.proposals.index'),
-            'Back to Activity Proposals'
+            'Back to Activity Proposals',
+            [
+                'approved_title' => 'Activity proposal has been approved',
+                'approved_body' => 'The activity proposal submission has been approved successfully.',
+                'revision_title' => 'Revision request sent',
+                'revision_body' => 'The activity proposal submission has been returned for revision.',
+            ]
         );
     }
 
@@ -2162,7 +2187,13 @@ class AdminController extends Controller
             'admin_review_remarks',
             route('admin.reports.show', $report),
             route('admin.reports.index'),
-            'Back to After Activity Reports'
+            'Back to After Activity Reports',
+            [
+                'approved_title' => 'After activity report has been approved',
+                'approved_body' => 'The after activity report submission has been approved successfully.',
+                'revision_title' => 'Revision request sent',
+                'revision_body' => 'The after activity report submission has been returned for revision.',
+            ]
         );
     }
 
@@ -2214,7 +2245,32 @@ class AdminController extends Controller
         return [$effective, $diffs];
     }
 
-    private function finalizeModuleReview(Request $request, Model $record, array $schema, string $fieldColumn, string $sectionColumn, string $remarksColumn, string $showRoute, string $backRoute, string $backLabel): RedirectResponse
+    /**
+     * @param  array{approved_title: string, approved_body: string, revision_title: string, revision_body: string}  $outcomeCopy
+     * @return array<string, string>
+     */
+    private function moduleReviewOutcomeReviewBlock(string $outcome, string $backUrl, string $backLabel, array $outcomeCopy): array
+    {
+        if ($outcome === 'revision') {
+            return [
+                'review_block_type' => 'warning',
+                'review_block_title' => $outcomeCopy['revision_title'],
+                'review_block_message' => $outcomeCopy['revision_body'],
+                'review_block_back_url' => $backUrl,
+                'review_block_back_label' => $backLabel,
+            ];
+        }
+
+        return [
+            'review_block_type' => 'success',
+            'review_block_title' => $outcomeCopy['approved_title'],
+            'review_block_message' => $outcomeCopy['approved_body'],
+            'review_block_back_url' => $backUrl,
+            'review_block_back_label' => $backLabel,
+        ];
+    }
+
+    private function finalizeModuleReview(Request $request, Model $record, array $schema, string $fieldColumn, string $sectionColumn, string $remarksColumn, string $showRoute, string $backRoute, string $backLabel, array $outcomeCopy): RedirectResponse
     {
         $validated = $request->validate([
             'field_review' => ['nullable', 'array'],
@@ -2263,10 +2319,16 @@ class AdminController extends Controller
 
         $this->notifyModuleReviewResult($record, $nextStatus);
 
+        $reviewFlash = $this->moduleReviewOutcomeReviewBlock(
+            $nextStatus === 'approved' ? 'approved' : 'revision',
+            $backRoute,
+            $backLabel,
+            $outcomeCopy
+        );
+
         return redirect()
             ->to($showRoute)
-            ->with('success', 'Review saved successfully.')
-            ->with('success_html', 'Review saved successfully. <a href="'.$backRoute.'" class="ml-1 inline-flex items-center font-semibold underline decoration-emerald-700/50 underline-offset-2 hover:decoration-emerald-900">'.$backLabel.'</a>');
+            ->with($reviewFlash);
     }
 
     private function normalizeModuleFieldReviews(array $fieldReviewInput, array $schema, User $admin): array

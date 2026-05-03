@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityCalendar;
+use App\Models\ActivityCalendarEntry;
 use App\Models\ActivityProposal;
 use App\Models\ActivityReport;
 use App\Models\ActivityRequestForm;
@@ -781,17 +782,35 @@ class OrganizationSubmittedDocumentsController extends Controller
             $pendingItemSet,
         );
         $revisionSections = $revisionSummary['groups'];
+        $entryRevisionDescriptors = $this->activityCalendarActiveEntryRevisionDescriptors($calendar, $pendingItemSet);
+        $activityCalendarEntryRevisionFlags = $this->activityCalendarActiveEntryRevisionFieldMap($entryRevisionDescriptors);
+        $activityCalendarEntryRevisionNotes = $this->activityCalendarEntryRevisionNotes($calendar, $pendingItemSet);
+        $activityCalendarEntryUpdateState = $this->activityCalendarEntryUpdatePresentationState($calendar);
+        foreach ($revisionSections as &$revisionSection) {
+            $sk = (string) ($revisionSection['section_key'] ?? '');
+            if (preg_match('/^entry_\d+$/', $sk)) {
+                foreach ($revisionSection['items'] as &$revItem) {
+                    $fk = (string) ($revItem['field_key'] ?? '');
+                    $scrollId = $this->activityCalendarScrollIdForAdminFieldKey($fk);
+                    if ($scrollId !== null) {
+                        $revItem['anchor_id'] = $scrollId;
+                    }
+                }
+                unset($revItem);
+            }
+        }
+        unset($revisionSection);
         $hasOpenRevisionItems = $revisionSections !== [];
         $isResubmittedPendingReview = ! $hasOpenRevisionItems && $pendingItemSet !== [];
         $statusForView = $hasOpenRevisionItems
             ? 'REVISION'
             : ($isResubmittedPendingReview ? 'UNDER_REVIEW' : strtoupper((string) ($calendar->status ?? 'pending')));
         $sp = $this->submissionStatusPresentation($statusForView);
+        $canSubmitActivityCalendarEntryRevisions = $entryRevisionDescriptors !== []
+            && strtolower((string) ($calendar->status ?? '')) === 'revision';
 
-        // Calendar only has one file-replaceable item today: the calendar
-        // file itself. Entry-level revisions are surfaced as banner notes
-        // and the officer fixes them through the existing edit/resubmit
-        // calendar form (we don't add a new per-entry edit endpoint).
+        // Activity calendar detail has no officer-facing file card; row revisions
+        // use the card editor below the planned-activities table.
         $calendarFileFlaggedNote = null;
         $calendarFileStatus = (string) data_get($calendarFieldReviews, 'submitted_files.calendar_file.status', 'pending');
         if ($calendarFileStatus === 'flagged') {
@@ -870,9 +889,135 @@ class OrganizationSubmittedDocumentsController extends Controller
             'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => $calendar->entries,
             'progressDocumentLabel' => 'Activity calendar',
-            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($calendar->status),
-            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($calendar->status),
+            'progressStages' => SubmissionRoutingProgress::stagesForSimpleSdaoPipeline($statusForView),
+            'progressSummary' => SubmissionRoutingProgress::summaryForSimpleSdao($statusForView),
+            'hasFileAttachments' => false,
+            'isActivityCalendarDetail' => true,
+            'activityCalendarEntryRevisionFlags' => $activityCalendarEntryRevisionFlags,
+            'activityCalendarEntryRevisionNotes' => $activityCalendarEntryRevisionNotes,
+            'activityCalendarEntryUpdateState' => $activityCalendarEntryUpdateState,
+            'canSubmitActivityCalendarEntryRevisions' => $canSubmitActivityCalendarEntryRevisions,
+            'activityCalendarEntryRevisionSubmitUrl' => route('organizations.submitted-documents.calendars.entry-revisions.submit', $calendar),
         ]);
+    }
+
+    public function submitActivityCalendarEntryRevisions(Request $request, ActivityCalendar $calendar): RedirectResponse
+    {
+        $this->ensureOfficerOwnsOrganization($request, (int) $calendar->organization_id);
+
+        if (strtolower((string) ($calendar->status ?? '')) !== 'revision') {
+            return back()->with('error', 'This activity calendar is not open for revision updates.');
+        }
+
+        $calendar->load(['entries']);
+        $recorder = app(ReviewableUpdateRecorder::class);
+        $pendingItemSet = [];
+        foreach ($recorder->pendingForReviewable($calendar) as $row) {
+            $pendingItemSet[(string) $row->section_key.'.'.(string) $row->field_key] = true;
+        }
+
+        $required = $this->activityCalendarActiveEntryRevisionDescriptors($calendar, $pendingItemSet);
+        if ($required === []) {
+            return back()->with('error', 'No activity row fields are flagged for revision.');
+        }
+
+        $rules = ['activities' => ['required', 'array']];
+        foreach ($required as $req) {
+            $eid = $req['entry_id'];
+            $rk = $this->activityCalendarRequestKeyForEntryAttribute($req['attr']);
+            $rules['activities.'.$eid] = ['required', 'array'];
+            $rules['activities.'.$eid.'.'.$rk] = $this->activityCalendarValidationRulesForAttribute($req['attr']);
+        }
+
+        $validated = $request->validate($rules);
+        $activities = is_array($validated['activities'] ?? null) ? $validated['activities'] : [];
+        $entryMap = $calendar->entries->keyBy('id');
+
+        $unchangedLabels = [];
+        foreach ($required as $req) {
+            $entry = $entryMap->get($req['entry_id']);
+            if (! $entry instanceof ActivityCalendarEntry) {
+                $unchangedLabels[] = $req['label'];
+
+                continue;
+            }
+            $rk = $this->activityCalendarRequestKeyForEntryAttribute($req['attr']);
+            $incoming = data_get($activities, $req['entry_id'].'.'.$rk);
+            $oldStr = $this->serializeEntryAttributeForRevisionCompare($entry, $req['attr']);
+            $newStr = $this->normalizeActivityCalendarRevisionValue($req['attr'], $incoming);
+            if ($oldStr === $newStr) {
+                $unchangedLabels[] = $req['label'];
+            }
+        }
+
+        if ($unchangedLabels !== []) {
+            return back()
+                ->withErrors(['activity_calendar' => 'Please update all requested activity calendar revisions before submitting.'])
+                ->withInput();
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+
+        DB::transaction(function () use ($calendar, $required, $activities, $user, $recorder, $entryMap): void {
+            $reviews = is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [];
+            $updatesByEntry = [];
+
+            foreach ($required as $req) {
+                $entry = $entryMap->get($req['entry_id']);
+                if (! $entry instanceof ActivityCalendarEntry) {
+                    abort(404, 'Activity row not found.');
+                }
+                $rk = $this->activityCalendarRequestKeyForEntryAttribute($req['attr']);
+                $incoming = data_get($activities, $req['entry_id'].'.'.$rk);
+                $oldStr = $this->serializeEntryAttributeForRevisionCompare($entry, $req['attr']);
+                $newStr = $this->normalizeActivityCalendarRevisionValue($req['attr'], $incoming);
+                $updatesByEntry[$req['entry_id']][$req['attr']] = $this->castIncomingEntryAttributeForStorage($req['attr'], $incoming);
+
+                $sk = $req['section_key'];
+                $fk = $req['field_key'];
+                $existing = is_array($reviews[$sk][$fk] ?? null) ? $reviews[$sk][$fk] : [];
+                $reviews[$sk][$fk] = array_merge($existing, [
+                    'status' => 'pending',
+                    'note' => null,
+                ]);
+
+                $recorder->recordFieldUpdate(
+                    $calendar,
+                    (int) $user->id,
+                    $sk,
+                    $fk,
+                    $oldStr,
+                    $newStr,
+                );
+            }
+
+            foreach ($updatesByEntry as $eid => $attrs) {
+                $row = ActivityCalendarEntry::query()
+                    ->where('activity_calendar_id', (int) $calendar->id)
+                    ->where('id', (int) $eid)
+                    ->first();
+                if (! $row instanceof ActivityCalendarEntry) {
+                    abort(404, 'Activity row not found.');
+                }
+                $row->update($attrs);
+            }
+
+            $calendar->admin_field_reviews = $reviews;
+            $calendar->status = 'under_review';
+            $calendar->save();
+        });
+
+        $this->notifyActivityCalendarEntryRevisionsToAdmins($calendar);
+
+        Log::info('Review workflow: activity calendar entry revisions submitted by officer', [
+            'calendar_id' => (int) $calendar->id,
+            'organization_id' => (int) $calendar->organization_id,
+            'field_count' => count($required),
+        ]);
+
+        return back()
+            ->with('activity_calendar_revision_resubmit_ok', true);
     }
 
     /**
@@ -3065,13 +3210,265 @@ class OrganizationSubmittedDocumentsController extends Controller
      */
     private function activityCalendarWorkflowLinks(ActivityCalendar $calendar): array
     {
-        $links = [];
-        $status = strtoupper((string) ($calendar->status ?? ''));
-        if ($status === 'REVISION') {
-            $links[] = ['label' => 'Edit / resubmit activity calendar', 'href' => route('organizations.activity-calendar-submission'), 'variant' => 'primary'];
+        return [];
+    }
+
+    /**
+     * @param  array<string, bool>  $pendingItemSet
+     * @return list<array{entry_id: int, section_key: string, field_key: string, attr: string, label: string}>
+     */
+    private function activityCalendarActiveEntryRevisionDescriptors(ActivityCalendar $calendar, array $pendingItemSet): array
+    {
+        $reviews = is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [];
+        $out = [];
+        foreach ($reviews as $sectionKey => $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            $sk = (string) $sectionKey;
+            if (! preg_match('/^entry_\d+$/', $sk)) {
+                continue;
+            }
+            foreach ($fields as $fieldKey => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $st = strtolower(trim((string) ($row['status'] ?? 'pending')));
+                if (! in_array($st, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
+                    continue;
+                }
+                $note = trim((string) ($row['note'] ?? ''));
+                if ($note === '') {
+                    continue;
+                }
+                $fk = (string) $fieldKey;
+                if (! preg_match('/^entry_(\d+)_(name|date|venue|sdg|participants|budget|program)$/', $fk, $m)) {
+                    continue;
+                }
+                if (isset($pendingItemSet[$sk.'.'.$fk])) {
+                    continue;
+                }
+                $eid = (int) $m[1];
+                $attr = match ($m[2]) {
+                    'name' => 'activity_name',
+                    'date' => 'activity_date',
+                    'venue' => 'venue',
+                    'sdg' => 'target_sdg',
+                    'participants' => 'target_participants',
+                    'budget' => 'estimated_budget',
+                    'program' => 'target_program',
+                };
+                $label = trim((string) ($row['label'] ?? ''));
+                if ($label === '') {
+                    $label = ucwords(str_replace('_', ' ', $fk));
+                }
+                $out[] = [
+                    'entry_id' => $eid,
+                    'section_key' => $sk,
+                    'field_key' => $fk,
+                    'attr' => $attr,
+                    'label' => $label,
+                ];
+            }
         }
 
-        return $links;
+        return $out;
+    }
+
+    /**
+     * @param  list<array{entry_id: int, section_key: string, field_key: string, attr: string, label: string}>  $descriptors
+     * @return array<int, array<string, bool>>
+     */
+    private function activityCalendarActiveEntryRevisionFieldMap(array $descriptors): array
+    {
+        $map = [];
+        foreach ($descriptors as $d) {
+            $map[$d['entry_id']][$d['attr']] = true;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Per-field SDAO notes for the officer revision card (mirrors active descriptor rules).
+     *
+     * @param  array<string, bool>  $pendingItemSet
+     * @return array<int, array<string, string>>
+     */
+    private function activityCalendarEntryRevisionNotes(ActivityCalendar $calendar, array $pendingItemSet): array
+    {
+        $reviews = is_array($calendar->admin_field_reviews) ? $calendar->admin_field_reviews : [];
+        $out = [];
+        foreach ($reviews as $sectionKey => $fields) {
+            if (! is_array($fields)) {
+                continue;
+            }
+            $sk = (string) $sectionKey;
+            if (! preg_match('/^entry_\d+$/', $sk)) {
+                continue;
+            }
+            foreach ($fields as $fieldKey => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $st = strtolower(trim((string) ($row['status'] ?? 'pending')));
+                if (! in_array($st, ['flagged', 'revision', 'needs_revision', 'for_revision'], true)) {
+                    continue;
+                }
+                $note = trim((string) ($row['note'] ?? ''));
+                if ($note === '') {
+                    continue;
+                }
+                $fk = (string) $fieldKey;
+                if (! preg_match('/^entry_(\d+)_(name|date|venue|sdg|participants|budget|program)$/', $fk, $m)) {
+                    continue;
+                }
+                if (isset($pendingItemSet[$sk.'.'.$fk])) {
+                    continue;
+                }
+                $eid = (int) $m[1];
+                $attr = match ($m[2]) {
+                    'name' => 'activity_name',
+                    'date' => 'activity_date',
+                    'venue' => 'venue',
+                    'sdg' => 'target_sdg',
+                    'participants' => 'target_participants',
+                    'budget' => 'estimated_budget',
+                    'program' => 'target_program',
+                };
+                $out[$eid][$attr] = $note;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Rows with unacknowledged officer resubmissions on entry sections (shows UPDATED + disables Edit).
+     *
+     * @return array<int, array{is_updated: bool}>
+     */
+    private function activityCalendarEntryUpdatePresentationState(ActivityCalendar $calendar): array
+    {
+        $calendar->loadMissing('entries');
+        $sectionKeys = ModuleRevisionFieldUpdate::query()
+            ->where('reviewable_type', $calendar->getMorphClass())
+            ->where('reviewable_id', (int) $calendar->id)
+            ->whereNull('acknowledged_at')
+            ->pluck('section_key')
+            ->all();
+
+        $updated = [];
+        foreach ($sectionKeys as $sk) {
+            if (is_string($sk) && preg_match('/^entry_(\d+)$/', $sk, $m)) {
+                $updated[(int) $m[1]] = true;
+            }
+        }
+
+        $state = [];
+        foreach ($calendar->entries as $entry) {
+            $eid = (int) $entry->id;
+            $state[$eid] = ['is_updated' => isset($updated[$eid])];
+        }
+
+        return $state;
+    }
+
+    private function activityCalendarScrollIdForAdminFieldKey(string $fieldKey): ?string
+    {
+        if (! preg_match('/^entry_(\d+)_(name|date|venue|sdg|participants|budget|program)$/', $fieldKey, $m)) {
+            return null;
+        }
+        $suffix = match ($m[2]) {
+            'name' => 'activity_name',
+            'date' => 'date',
+            'venue' => 'venue',
+            'sdg' => 'sdgs',
+            'participants' => 'participants',
+            'budget' => 'budget',
+            'program' => 'program',
+        };
+
+        return 'activity-calendar-entry-'.$m[1].'-'.$suffix;
+    }
+
+    private function activityCalendarRequestKeyForEntryAttribute(string $attr): string
+    {
+        return $attr;
+    }
+
+    /**
+     * @return list<string|\Illuminate\Contracts\Validation\ValidationRule>
+     */
+    private function activityCalendarValidationRulesForAttribute(string $attr): array
+    {
+        return match ($attr) {
+            'activity_date' => ['required', 'date'],
+            'estimated_budget' => ['required', 'numeric', 'min:0'],
+            'activity_name' => ['required', 'string', 'max:255'],
+            'venue' => ['required', 'string', 'max:255'],
+            'target_sdg' => ['required', 'string', 'max:500'],
+            'target_participants' => ['required', 'string', 'max:500'],
+            'target_program' => ['required', 'string', 'max:500'],
+            default => ['required', 'string', 'max:2000'],
+        };
+    }
+
+    private function serializeEntryAttributeForRevisionCompare(ActivityCalendarEntry $entry, string $attr): string
+    {
+        return match ($attr) {
+            'activity_date' => optional($entry->activity_date)->format('Y-m-d') ?? '',
+            'estimated_budget' => $entry->estimated_budget !== null
+                ? number_format((float) $entry->estimated_budget, 2, '.', '')
+                : '',
+            default => trim((string) ($entry->getAttribute($attr) ?? '')),
+        };
+    }
+
+    private function normalizeActivityCalendarRevisionValue(string $attr, mixed $value): string
+    {
+        if ($attr === 'activity_date') {
+            if ($value === null || $value === '') {
+                return '';
+            }
+            try {
+                return \Carbon\Carbon::parse((string) $value)->format('Y-m-d');
+            } catch (\Throwable) {
+                return '';
+            }
+        }
+        if ($attr === 'estimated_budget') {
+            if ($value === null || $value === '') {
+                return '';
+            }
+
+            return number_format((float) $value, 2, '.', '');
+        }
+
+        return trim((string) ($value ?? ''));
+    }
+
+    private function castIncomingEntryAttributeForStorage(string $attr, mixed $incoming): mixed
+    {
+        return match ($attr) {
+            'estimated_budget' => $incoming,
+            default => $incoming,
+        };
+    }
+
+    private function notifyActivityCalendarEntryRevisionsToAdmins(ActivityCalendar $calendar): void
+    {
+        $adminUsers = User::query()
+            ->whereHas('role', fn ($query) => $query->where('name', 'admin'))
+            ->get();
+        app(OrganizationNotificationService::class)->createForUsers(
+            $adminUsers,
+            'Activity Calendar Rows Resubmitted',
+            'An organization updated planned activities flagged for revision. SDAO can review the submission again.',
+            'info',
+            route('admin.calendars.show', $calendar),
+            $calendar
+        );
     }
 
     /**

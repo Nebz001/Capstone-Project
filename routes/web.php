@@ -111,6 +111,8 @@ Route::prefix('organizations')->name('organizations.')->middleware(['auth', 'off
             ->where('key', '[a-z_]+');
         Route::post('/submitted-documents/activity-calendars/{calendar}/resubmit', 'resubmitActivityCalendarRevisionFiles')
             ->name('submitted-documents.calendars.resubmit');
+        Route::post('/submitted-documents/activity-calendars/{calendar}/entry-revisions', 'submitActivityCalendarEntryRevisions')
+            ->name('submitted-documents.calendars.entry-revisions.submit');
         Route::get('/submitted-documents/activity-proposals/{proposal}', 'showSubmittedActivityProposal')->name('submitted-documents.proposals.show');
         Route::post('/submitted-documents/activity-proposals/{proposal}/files/{key}/replace', 'replaceSubmittedActivityProposalFile')
             ->name('submitted-documents.proposals.file.replace')
