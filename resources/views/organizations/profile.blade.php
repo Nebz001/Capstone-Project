@@ -593,7 +593,6 @@
                                 <div id="{{ $revisionAnchorId('application', 'submitted_by') }}" data-profile-revision-field="submitted_by_display" class="{{ $readonlyItemClass }} transition duration-150">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                         <x-forms.label for="submitted_by_display" required class="!mb-0">Submitted By</x-forms.label>
-                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
                                         id="submitted_by_display"
@@ -629,7 +628,7 @@
                             <div id="{{ $revisionAnchorId('application', 'organization') }}" data-profile-revision-field="organization_name" class="{{ $readonlyItemClass }} transition duration-150">
                                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                     <x-forms.label for="organization_name" required class="!mb-0">Organization Name</x-forms.label>
-                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                 </div>
                                 <x-forms.input
                                     id="organization_name"
@@ -665,7 +664,7 @@
                             <div id="{{ $revisionAnchorId('organizational', 'organization_type') }}" data-profile-revision-field="organization_type" class="{{ $readonlyItemClass }} transition duration-150">
                                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                     <x-forms.label for="organization_type" required class="!mb-0">Organization Type</x-forms.label>
-                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                 </div>
                                 <x-forms.select id="organization_type" name="organization_type" class="mt-1.5" required>
                                     <option value="" disabled>Select type</option>
@@ -689,7 +688,7 @@
                             <div id="{{ $revisionAnchorId('organizational', 'school') }}" data-profile-revision-field="college_department" class="{{ $readonlyItemClass }} transition duration-150">
                                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                     <x-forms.label for="college_department" required class="!mb-0">College / Department</x-forms.label>
-                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                 </div>
                                 <x-forms.input
                                     id="college_department"
@@ -712,7 +711,7 @@
                             <div id="{{ $revisionAnchorId('organizational', 'purpose') }}" data-profile-revision-field="purpose" class="{{ $readonlyItemClass }} transition duration-150 sm:col-span-2">
                                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                     <x-forms.label for="purpose" required class="!mb-0">Purpose</x-forms.label>
-                                    <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                    <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                 </div>
                                 <x-forms.textarea id="purpose" name="purpose" class="mt-1.5" rows="4" required data-revision-original="{{ old('purpose', $organization->purpose) }}">{{ old('purpose', $organization->purpose) }}</x-forms.textarea>
                                 @php $editPurposeNote = $formRevisionNote('purpose'); @endphp
@@ -741,7 +740,7 @@
                                 <div id="{{ $revisionAnchorId('contact', 'contact_person') }}" data-profile-revision-field="contact_person" class="{{ $readonlyItemClass }} transition duration-150">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                         <x-forms.label for="contact_person" class="!mb-0">Contact Person</x-forms.label>
-                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                        <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
                                         id="contact_person"
@@ -762,7 +761,7 @@
                                 <div id="{{ $revisionAnchorId('contact', 'contact_no') }}" data-profile-revision-field="contact_no" class="{{ $readonlyItemClass }} transition duration-150">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                         <x-forms.label for="contact_no" class="!mb-0">Contact Number</x-forms.label>
-                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                        <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
                                         id="contact_no"
@@ -783,7 +782,7 @@
                                 <div id="{{ $revisionAnchorId('contact', 'contact_email') }}" data-profile-revision-field="contact_email" class="{{ $readonlyItemClass }} transition duration-150 sm:col-span-2">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                         <x-forms.label for="contact_email" class="!mb-0">Contact Email</x-forms.label>
-                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                        <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
                                         id="contact_email"
@@ -819,7 +818,7 @@
                                 <div id="{{ $revisionAnchorId('adviser', 'full_name') }}" data-profile-revision-field="adviser_name" class="{{ $readonlyItemClass }} transition duration-150">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                         <x-forms.label for="adviser_name" class="!mb-0">Adviser Name</x-forms.label>
-                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                        <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
                                         id="adviser_name"
@@ -841,7 +840,7 @@
                                 <div id="{{ $revisionAnchorId('adviser', 'email') }}" data-profile-revision-field="adviser_email" class="{{ $readonlyItemClass }} transition duration-150">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                         <x-forms.label for="adviser_email" class="!mb-0">Adviser Email</x-forms.label>
-                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                        <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
                                         id="adviser_email"
@@ -862,7 +861,7 @@
                                 <div id="{{ $revisionAnchorId('adviser', 'school_id') }}" data-profile-revision-field="adviser_school_id" class="{{ $readonlyItemClass }} transition duration-150">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                                         <x-forms.label for="adviser_school_id" class="!mb-0">Adviser School ID</x-forms.label>
-                                        <span data-revision-updated-badge class="hidden inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
+                                        <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
                                         id="adviser_school_id"
@@ -1061,8 +1060,7 @@
 
     const normalizeValue = (value) => String(value ?? '')
         .trim()
-        .replace(/\s+/g, ' ')
-        .toLowerCase();
+        .replace(/\s+/g, ' ');
     const normalizeDisplayValue = (value) => String(value ?? '')
         .trim()
         .replace(/\s+/g, ' ');
@@ -1217,6 +1215,7 @@
             }
             const updated = normalizeValue(input.value) !== normalizeValue(original);
             badge.classList.toggle('hidden', !updated);
+            badge.classList.toggle('inline-flex', updated);
             wrap.classList.toggle('ring-1', updated);
             wrap.classList.toggle('ring-sky-300/70', updated);
             wrap.classList.toggle('bg-sky-50/40', updated);
