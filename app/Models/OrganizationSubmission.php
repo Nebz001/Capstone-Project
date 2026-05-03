@@ -13,13 +13,19 @@ class OrganizationSubmission extends Model
     use SoftDeletes;
 
     public const TYPE_REGISTRATION = 'registration';
+
     public const TYPE_RENEWAL = 'renewal';
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_UNDER_REVIEW = 'under_review';
+
     public const STATUS_APPROVED = 'approved';
+
     public const STATUS_REJECTED = 'rejected';
+
     public const STATUS_REVISION = 'revision';
 
     protected $fillable = [
@@ -133,5 +139,49 @@ class OrganizationSubmission extends Model
             self::STATUS_DRAFT => 'DRAFT',
             default => 'PENDING',
         };
+    }
+
+    /**
+     * Renewal admin review synthetic adviser status: approved only when SDAO marked
+     * Full Name, School ID, and Email as passed in {@see $renewal_field_reviews} (adviser section).
+     *
+     * @return 'approved'|'pending'
+     */
+    public function renewalDerivedAdviserReviewStatus(): string
+    {
+        $adviserSection = data_get($this->renewal_field_reviews, 'adviser');
+        if (! is_array($adviserSection)) {
+            return 'pending';
+        }
+        foreach (['adviser_full_name', 'adviser_school_id', 'adviser_email'] as $key) {
+            $st = strtolower(trim((string) data_get($adviserSection, $key.'.status', 'pending')));
+            if ($st !== 'passed') {
+                return 'pending';
+            }
+        }
+
+        return 'approved';
+    }
+
+    /**
+     * Organization-portal renewal detail: same derivation as admin, plus a safe fallback when
+     * the submission is already approved and the stored section review marks adviser as verified
+     * (avoids stale "Pending" if field-level JSON is incomplete).
+     *
+     * @return 'approved'|'pending'
+     */
+    public function renewalPortalDerivedAdviserSdaoStatus(): string
+    {
+        if ($this->renewalDerivedAdviserReviewStatus() === 'approved') {
+            return 'approved';
+        }
+        if ($this->status === self::STATUS_APPROVED) {
+            $sectionStatus = strtolower(trim((string) data_get($this->renewal_section_reviews, 'adviser.status', '')));
+            if ($sectionStatus === 'verified') {
+                return 'approved';
+            }
+        }
+
+        return 'pending';
     }
 }

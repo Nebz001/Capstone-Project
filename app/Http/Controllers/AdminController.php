@@ -33,6 +33,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -591,10 +592,13 @@ class AdminController extends Controller
                 'is_updated' => $row->acknowledged_at === null,
             ];
         }
-        $effectiveFieldReviews = $this->stripNonReviewableOrganizationalRegistrationFieldReviews(
-            $this->stripNonReviewableApplicationRegistrationFieldReviews(
-                $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField)
-            )
+        $effectiveFieldReviews = $this->stripOptionalOthersRequirementWithoutFileFromRegistrationReviews(
+            $this->stripNonReviewableOrganizationalRegistrationFieldReviews(
+                $this->stripNonReviewableApplicationRegistrationFieldReviews(
+                    $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField)
+                )
+            ),
+            $submission
         );
 
         return view('admin.registrations.show', [
@@ -804,6 +808,8 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_REGISTRATION, 404);
 
+        $submission->loadMissing(['attachments']);
+
         $validator = Validator::make($request->all(), [
             'field_review' => ['nullable', 'array'],
             'section_review' => ['nullable', 'array'],
@@ -820,7 +826,7 @@ class AdminController extends Controller
             unset($fieldReviewInput['adviser']['status']);
         }
         $sectionSubmittedInput = is_array($validated['section_submitted'] ?? null) ? $validated['section_submitted'] : [];
-        $sectionSchema = $this->registrationReviewFieldSchema();
+        $sectionSchema = $this->registrationReviewFieldSchema($submission);
 
         $normalizedFieldReviews = [];
         $normalizedSectionReviews = [];
@@ -998,9 +1004,42 @@ class AdminController extends Controller
     }
 
     /**
+     * True when the submission has a stored attachment for this registration requirement key.
+     */
+    private function registrationSubmissionHasRequirementFile(OrganizationSubmission $submission, string $requirementKey): bool
+    {
+        $prefix = Attachment::TYPE_REGISTRATION_REQUIREMENT.':';
+
+        return $submission->attachments->contains(function (Attachment $attachment) use ($prefix, $requirementKey): bool {
+            $type = (string) ($attachment->file_type ?? '');
+            if (! str_starts_with($type, $prefix)) {
+                return false;
+            }
+
+            return Str::after($type, $prefix) === $requirementKey;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldReviews
+     * @return array<string, mixed>
+     */
+    private function stripOptionalOthersRequirementWithoutFileFromRegistrationReviews(array $fieldReviews, OrganizationSubmission $submission): array
+    {
+        if ($this->registrationSubmissionHasRequirementFile($submission, 'others')) {
+            return $fieldReviews;
+        }
+        if (isset($fieldReviews['requirements']['others'])) {
+            unset($fieldReviews['requirements']['others']);
+        }
+
+        return $fieldReviews;
+    }
+
+    /**
      * @return array<string, array<string, string>>
      */
-    private function registrationReviewFieldSchema(): array
+    private function registrationReviewFieldSchema(OrganizationSubmission $submission): array
     {
         $requirementLabels = [
             'letter_of_intent' => 'Letter of Intent',
@@ -1009,10 +1048,13 @@ class AdminController extends Controller
             'updated_list_of_officers_founders' => 'Updated List of Officers/Founders',
             'dean_endorsement_faculty_adviser' => 'Letter from the School Dean endorsing the Faculty Adviser',
             'proposed_projects_budget' => 'List of Proposed Projects with Proposed Budget for the AY',
-            'others' => 'Others',
+            'others' => 'Other requirement',
         ];
         $requirementFields = [];
         foreach (SubmissionRequirement::requirementKeysForType(OrganizationSubmission::TYPE_REGISTRATION) as $key) {
+            if ($key === 'others' && ! $this->registrationSubmissionHasRequirementFile($submission, 'others')) {
+                continue;
+            }
             $requirementFields[$key] = $requirementLabels[$key] ?? ucwords(str_replace('_', ' ', $key));
         }
 
@@ -1270,7 +1312,10 @@ class AdminController extends Controller
                 'is_updated' => $row->acknowledged_at === null,
             ];
         }
-        $effectiveFieldReviews = $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField);
+        $effectiveFieldReviews = $this->stripNonReviewableRenewalFieldReviewsFromPersisted(
+            $this->resetUpdatedFieldReviewStates($storedFieldReviews, $updatesByField),
+            $submission
+        );
         $sections = $this->renewalReviewSections($submission);
 
         return view('admin.reviews.module-show', [
@@ -2054,13 +2099,18 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
 
-        return $this->saveModuleDraft($request, $submission, $this->renewalReviewSchema(), 'renewal_field_reviews', 'renewal_section_reviews');
+        $submission->loadMissing(['attachments']);
+
+        return $this->saveModuleDraft($request, $submission, $this->renewalReviewSchemaForSubmission($submission), 'renewal_field_reviews', 'renewal_section_reviews');
     }
 
     public function updateRenewalStatus(Request $request, OrganizationSubmission $submission): RedirectResponse
     {
         $this->authorizeAdmin($request);
         abort_unless($submission->type === OrganizationSubmission::TYPE_RENEWAL, 404);
+
+        $submission->loadMissing(['attachments']);
+
         $validated = $request->validate([
             'field_review' => ['nullable', 'array'],
             'remarks' => ['nullable', 'string', 'max:5000'],
@@ -2069,7 +2119,7 @@ class AdminController extends Controller
         $admin = $request->user();
         [$fieldReviews, $sectionReviews, $hasPending, $hasMissingNotes] = $this->normalizeModuleFieldReviews(
             is_array($validated['field_review'] ?? null) ? $validated['field_review'] : [],
-            $this->renewalReviewSchema(),
+            $this->renewalReviewSchemaForSubmission($submission),
             $admin
         );
         if ($hasPending || $hasMissingNotes) {
@@ -2556,6 +2606,9 @@ class AdminController extends Controller
         return $blocks === [] ? null : implode("\n\n—\n\n", $blocks);
     }
 
+    /**
+     * Full renewal review labels (display + lookups). Not all keys are manually reviewable — see {@see renewalReviewSchemaForSubmission()}.
+     */
     private function renewalReviewSchema(): array
     {
         return [
@@ -2567,7 +2620,6 @@ class AdminController extends Controller
             ],
             'contact' => [
                 'contact_person' => 'Contact Person',
-                'adviser_name' => 'Adviser Name',
                 'contact_no' => 'Contact Number',
                 'contact_email' => 'Contact Email',
             ],
@@ -2575,7 +2627,6 @@ class AdminController extends Controller
                 'adviser_full_name' => 'Full Name',
                 'adviser_school_id' => 'School ID',
                 'adviser_email' => 'Email',
-                'adviser_status' => 'Status',
             ],
             'requirements' => [
                 'letter_of_intent' => 'Letter of Intent',
@@ -2587,15 +2638,79 @@ class AdminController extends Controller
                 'past_projects' => 'Past Projects',
                 'financial_statement_previous_ay' => 'Financial Statement (Previous AY)',
                 'evaluation_summary_past_projects' => 'Evaluation Summary (Past Projects)',
-                'others' => 'Others',
+                'others' => 'Other requirement',
             ],
         ];
+    }
+
+    private function renewalSubmissionHasRequirementFile(OrganizationSubmission $submission, string $requirementKey): bool
+    {
+        $prefix = Attachment::TYPE_RENEWAL_REQUIREMENT.':';
+
+        return $submission->attachments->contains(function (Attachment $attachment) use ($prefix, $requirementKey): bool {
+            $type = (string) ($attachment->file_type ?? '');
+            if (! str_starts_with($type, $prefix)) {
+                return false;
+            }
+
+            return Str::after($type, $prefix) === $requirementKey;
+        });
+    }
+
+    /**
+     * Schema keys used for draft merge, validation, and persisting renewal_field_reviews (reviewable fields only).
+     */
+    private function renewalReviewSchemaForSubmission(OrganizationSubmission $submission): array
+    {
+        $base = $this->renewalReviewSchema();
+        $adviserReviewable = $base['adviser'];
+        $requirementsReviewable = [];
+        foreach (self::RENEWAL_REQUIREMENT_FILE_KEYS as $key) {
+            if ($key === 'others' && ! $this->renewalSubmissionHasRequirementFile($submission, 'others')) {
+                continue;
+            }
+            $requirementsReviewable[$key] = $base['requirements'][$key];
+        }
+
+        return [
+            'overview' => [
+                'organization' => $base['overview']['organization'],
+            ],
+            'contact' => $base['contact'],
+            'adviser' => $adviserReviewable,
+            'requirements' => $requirementsReviewable,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldReviews
+     * @return array<string, mixed>
+     */
+    private function stripNonReviewableRenewalFieldReviewsFromPersisted(array $fieldReviews, OrganizationSubmission $submission): array
+    {
+        foreach (['submitted_by', 'academic_year', 'submission_date'] as $overviewKey) {
+            if (isset($fieldReviews['overview'][$overviewKey])) {
+                unset($fieldReviews['overview'][$overviewKey]);
+            }
+        }
+        if (isset($fieldReviews['adviser']['adviser_status'])) {
+            unset($fieldReviews['adviser']['adviser_status']);
+        }
+        if (isset($fieldReviews['contact']['adviser_name'])) {
+            unset($fieldReviews['contact']['adviser_name']);
+        }
+        if (! $this->renewalSubmissionHasRequirementFile($submission, 'others') && isset($fieldReviews['requirements']['others'])) {
+            unset($fieldReviews['requirements']['others']);
+        }
+
+        return $fieldReviews;
     }
 
     private function renewalReviewSections(OrganizationSubmission $submission): array
     {
         $adviserNomination = $this->submissionAdviserNomination($submission);
         $requirementRows = $submission->requirements->keyBy('requirement_key');
+        $syntheticAdviserKey = $submission->renewalDerivedAdviserReviewStatus();
         $sections = [
             ['key' => 'overview', 'title' => 'Submission Overview', 'subtitle' => 'Renewal context and submitter details.', 'fields' => []],
             ['key' => 'contact', 'title' => 'Contact Details', 'subtitle' => 'Primary point-of-contact for this renewal.', 'fields' => []],
@@ -2604,13 +2719,12 @@ class AdminController extends Controller
         ];
         $sections[0]['fields'] = [
             ['key' => 'organization', 'label' => 'Organization', 'value' => $submission->organization?->organization_name ?? 'N/A'],
-            ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $submission->submittedBy?->full_name ?? 'N/A'],
-            ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $submission->academicTerm?->academic_year ?? 'N/A'],
-            ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => optional($submission->submission_date)->format('M d, Y') ?? 'N/A'],
+            ['key' => 'submitted_by', 'label' => 'Submitted By', 'value' => $submission->submittedBy?->full_name ?? 'N/A', 'reviewable' => false],
+            ['key' => 'academic_year', 'label' => 'Academic Year', 'value' => $submission->academicTerm?->academic_year ?? 'N/A', 'reviewable' => false],
+            ['key' => 'submission_date', 'label' => 'Submission Date', 'value' => optional($submission->submission_date)->format('M d, Y') ?? 'N/A', 'reviewable' => false],
         ];
         $sections[1]['fields'] = [
             ['key' => 'contact_person', 'label' => 'Contact Person', 'value' => $submission->contact_person ?? 'N/A'],
-            ['key' => 'adviser_name', 'label' => 'Adviser Name', 'value' => $submission->adviser_name ?? 'N/A'],
             ['key' => 'contact_no', 'label' => 'Contact Number', 'value' => $submission->contact_no ?? 'N/A'],
             ['key' => 'contact_email', 'label' => 'Contact Email', 'value' => $submission->contact_email ?? 'N/A', 'wide' => true],
         ];
@@ -2618,10 +2732,20 @@ class AdminController extends Controller
             ['key' => 'adviser_full_name', 'label' => 'Full Name', 'value' => $adviserNomination?->user?->full_name ?? 'N/A'],
             ['key' => 'adviser_school_id', 'label' => 'School ID', 'value' => (string) ($adviserNomination?->user?->school_id ?? 'N/A')],
             ['key' => 'adviser_email', 'label' => 'Email', 'value' => (string) ($adviserNomination?->user?->email ?? 'N/A')],
-            ['key' => 'adviser_status', 'label' => 'Status', 'value' => $adviserNomination ? ucfirst((string) $adviserNomination->status) : 'No nomination'],
+            [
+                'key' => 'adviser_status',
+                'label' => 'Adviser status',
+                'value' => '',
+                'reviewable' => false,
+                'renewal_synthetic_adviser_status' => true,
+                'synthetic_status_key' => $syntheticAdviserKey,
+            ],
         ];
         foreach (self::RENEWAL_REQUIREMENT_FILE_KEYS as $key) {
             $attachment = $submission->attachments()->where('file_type', Attachment::TYPE_RENEWAL_REQUIREMENT.':'.$key)->latest('id')->first();
+            if ($key === 'others' && ! $attachment) {
+                continue;
+            }
             $requirement = $requirementRows->get($key);
             $checked = (bool) ($requirement?->is_submitted ?? false);
             $extension = strtoupper((string) pathinfo((string) ($attachment?->original_name ?: $attachment?->stored_path ?: ''), PATHINFO_EXTENSION));

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Organization;
 use App\Models\OrganizationAdviser;
 use App\Models\OrganizationSubmission;
 use App\Models\User;
+use App\Services\AdviserAssignmentAvailability;
 use App\Services\OrganizationNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +23,26 @@ class OrganizationAdviserController extends Controller
             return response()->json([]);
         }
 
+        $exceptOrganizationId = $request->filled('except_organization_id')
+            ? max(0, (int) $request->input('except_organization_id'))
+            : null;
+        if ($exceptOrganizationId === 0) {
+            $exceptOrganizationId = null;
+        }
+
+        if ($exceptOrganizationId === null) {
+            $exceptOrgName = trim((string) $request->input('except_organization_name', ''));
+            if ($exceptOrgName !== '') {
+                $normalized = mb_strtolower($exceptOrgName);
+                $resolvedOrg = Organization::query()
+                    ->whereRaw('LOWER(TRIM(organization_name)) = ?', [$normalized])
+                    ->first();
+                if ($resolvedOrg) {
+                    $exceptOrganizationId = (int) $resolvedOrg->id;
+                }
+            }
+        }
+
         $rows = User::query()
             ->whereHas('role', function ($roleQuery): void {
                 $roleQuery->whereIn('name', self::ADVISER_ROLE_NAMES);
@@ -33,22 +55,32 @@ class OrganizationAdviserController extends Controller
             })
             ->select('id', 'first_name', 'last_name', 'email', 'school_id')
             ->limit(10)
-            ->get()
-            ->map(function (User $user): array {
-                $fullName = trim(($user->first_name ?? '').' '.($user->last_name ?? ''));
+            ->get();
 
-                return [
-                    'id' => (int) $user->id,
-                    'full_name' => $fullName !== '' ? $fullName : ($user->email ?? 'Adviser'),
-                    'first_name' => (string) ($user->first_name ?? ''),
-                    'last_name' => (string) ($user->last_name ?? ''),
-                    'email' => (string) ($user->email ?? ''),
-                    'school_id' => (string) ($user->school_id ?? ''),
-                ];
-            })
-            ->values();
+        $availability = app(AdviserAssignmentAvailability::class);
+        $blockedMap = $availability->unavailableAdviserUserIdsMap(
+            $rows->pluck('id')->all(),
+            $exceptOrganizationId
+        );
 
-        return response()->json($rows);
+        $payload = $rows->map(function (User $user) use ($blockedMap): array {
+            $fullName = trim(($user->first_name ?? '').' '.($user->last_name ?? ''));
+            $id = (int) $user->id;
+            $isBlocked = isset($blockedMap[$id]);
+
+            return [
+                'id' => $id,
+                'full_name' => $fullName !== '' ? $fullName : ($user->email ?? 'Adviser'),
+                'first_name' => (string) ($user->first_name ?? ''),
+                'last_name' => (string) ($user->last_name ?? ''),
+                'email' => (string) ($user->email ?? ''),
+                'school_id' => (string) ($user->school_id ?? ''),
+                'is_available' => ! $isBlocked,
+                'unavailable_reason' => $isBlocked ? AdviserAssignmentAvailability::UNAVAILABLE_REASON : null,
+            ];
+        })->values();
+
+        return response()->json($payload);
     }
 
     public function reviewAdviser(Request $request, OrganizationAdviser $adviser): RedirectResponse
@@ -112,6 +144,15 @@ class OrganizationAdviserController extends Controller
             ])->withInput();
         }
 
+        if (app(AdviserAssignmentAvailability::class)->isAdviserUnavailable(
+            $adviserUserId,
+            (int) $submission->organization_id
+        )) {
+            return back()->withErrors([
+                'adviser_user_id' => AdviserAssignmentAvailability::VALIDATION_MESSAGE,
+            ])->withInput();
+        }
+
         $latest = OrganizationAdviser::query()
             ->where('organization_id', $submission->organization_id)
             ->where('submission_id', (int) $submission->id)
@@ -140,4 +181,3 @@ class OrganizationAdviserController extends Controller
         return back()->with('success', 'New faculty adviser nomination submitted for review.');
     }
 }
-

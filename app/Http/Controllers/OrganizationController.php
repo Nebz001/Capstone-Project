@@ -23,6 +23,7 @@ use App\Models\Role;
 use App\Models\SubmissionRequirement;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\AdviserAssignmentAvailability;
 use App\Services\OrganizationNotificationService;
 use App\Services\OrganizationRegistrationRevisionSummaryService;
 use App\Support\OrganizationStoragePath;
@@ -1377,6 +1378,12 @@ class OrganizationController extends Controller
             ])->withInput();
         }
 
+        if (app(AdviserAssignmentAvailability::class)->isAdviserUnavailable((int) $validated['adviser_user_id'], null)) {
+            return back()->withErrors([
+                'adviser_user_id' => AdviserAssignmentAvailability::VALIDATION_MESSAGE,
+            ])->withInput();
+        }
+
         $this->enforceRequiredRequirementSelectionsAndFiles(
             $request,
             self::REGISTRATION_REQUIRED_REQUIREMENT_KEYS
@@ -1620,6 +1627,15 @@ class OrganizationController extends Controller
                     ->withErrors(['organization_name' => 'Organization name must match your registered organization.'])
                     ->withInput();
             }
+        }
+
+        if (app(AdviserAssignmentAvailability::class)->isAdviserUnavailable(
+            (int) $validated['adviser_user_id'],
+            (int) $organization->id
+        )) {
+            return back()->withErrors([
+                'adviser_user_id' => AdviserAssignmentAvailability::VALIDATION_MESSAGE,
+            ])->withInput();
         }
 
         $validated['contact_no'] = $this->normalizePhilippineContactNo($validated['contact_no']);

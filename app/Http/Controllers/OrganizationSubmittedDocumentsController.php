@@ -25,7 +25,9 @@ use App\Services\ReviewWorkflow\RevisionSummaryService;
 use App\Support\ManilaDateTime;
 use App\Support\OrganizationStoragePath;
 use App\Support\SubmissionRoutingProgress;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -375,6 +377,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'adviserNomination' => $adviserNomination,
             'canRenominateAdviser' => $adviserNomination?->status === 'rejected',
             'adviserRenominateActionUrl' => route('organizations.submitted-documents.adviser.renominate', $submission),
+            'adviserSearchExceptOrganizationId' => (int) $submission->organization_id,
             'submitActionUrl' => route('organizations.submitted-documents.registrations.resubmit', $submission),
             'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => null,
@@ -576,6 +579,14 @@ class OrganizationSubmittedDocumentsController extends Controller
             $pendingRequirementUpdateKeys
         );
         $adviserNomination = $this->submissionAdviserNomination($submission);
+        $renewalAdviserPortalStatus = null;
+        if ($adviserNomination) {
+            $renewalAdviserPortalStatus = strtolower((string) $adviserNomination->status) === 'rejected'
+                ? $this->submissionStatusPresentation('REJECTED')
+                : ($submission->renewalPortalDerivedAdviserSdaoStatus() === 'approved'
+                    ? $this->submissionStatusPresentation('APPROVED')
+                    : $this->submissionStatusPresentation('PENDING'));
+        }
 
         return view('organizations.submitted-documents.detail', [
             'backRoute' => $this->submittedDocumentsListUrl($request),
@@ -583,6 +594,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'subtitle' => 'Organization renewal application on file with SDAO.',
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
+            'renewalAdviserPortalStatus' => $renewalAdviserPortalStatus,
             'metaRows' => $this->renewalMetaRowsFromSubmission($submission),
             'remarkHighlight' => is_string($revisionSummary['general_remarks'] ?? null)
                 ? trim((string) $revisionSummary['general_remarks'])
@@ -594,6 +606,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             'adviserNomination' => $adviserNomination,
             'canRenominateAdviser' => $adviserNomination?->status === 'rejected',
             'adviserRenominateActionUrl' => route('organizations.submitted-documents.adviser.renominate', $submission),
+            'adviserSearchExceptOrganizationId' => (int) $submission->organization_id,
             'submitActionUrl' => route('organizations.submitted-documents.renewals.resubmit', $submission),
             'canSubmitFileRevision' => collect($fileLinks)->contains(fn (array $row): bool => (bool) ($row['can_replace'] ?? false)),
             'calendarEntries' => null,
@@ -1518,7 +1531,7 @@ class OrganizationSubmittedDocumentsController extends Controller
             $displayName = 'Previously uploaded file';
             $mimeForBadge = null;
             if ($officerKey !== null) {
-                [$att,] = $this->resolveActivityProposalFileAttachmentAndPath($proposal, $requestForm, $officerKey);
+                [$att] = $this->resolveActivityProposalFileAttachmentAndPath($proposal, $requestForm, $officerKey);
                 if ($att) {
                     $dn = trim((string) ($att->original_name ?? ''));
                     $displayName = $dn !== '' ? $dn : (is_string($att->stored_path) && $att->stored_path !== '' ? basename($att->stored_path) : $displayName);
@@ -3398,7 +3411,7 @@ class OrganizationSubmittedDocumentsController extends Controller
     }
 
     /**
-     * @return list<string|\Illuminate\Contracts\Validation\ValidationRule>
+     * @return list<string|ValidationRule>
      */
     private function activityCalendarValidationRulesForAttribute(string $attr): array
     {
@@ -3432,7 +3445,7 @@ class OrganizationSubmittedDocumentsController extends Controller
                 return '';
             }
             try {
-                return \Carbon\Carbon::parse((string) $value)->format('Y-m-d');
+                return Carbon::parse((string) $value)->format('Y-m-d');
             } catch (\Throwable) {
                 return '';
             }
