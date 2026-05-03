@@ -1,4 +1,4 @@
-import { ALERT_BUTTON_CLASSES, showAlert, showConfirmAlert } from '../components/alerts';
+import { showConfirmAlert } from '../components/alerts';
 import { initToast, showToast } from '../components/toast';
 
 const escapeHtml = (value) => {
@@ -33,44 +33,7 @@ const toApiPayload = (data) => ({
 
 const entryUrl = (template, id) => template.replace('__ENTRY_ID__', String(id));
 
-const showSubmissionSuccessAlert = () => {
-	const flashEl = document.getElementById('activity-calendar-submitted-flash');
-	if (!flashEl) return;
-
-	let data;
-	try {
-		data = JSON.parse(flashEl.textContent);
-	} catch {
-		return;
-	}
-	flashEl.remove();
-
-	showAlert({
-		icon: 'success',
-		title: 'Activity Calendar Submitted',
-		text: 'Your activity calendar has been submitted successfully. What would you like to do next?',
-		showConfirmButton: true,
-		showDenyButton: true,
-		confirmButtonText: 'Go to Activity Submission',
-		denyButtonText: 'Go to Proposal Submission',
-		allowOutsideClick: false,
-		customClass: {
-			actions: 'gap-2 flex-col sm:flex-row w-full px-4',
-			confirmButton: ALERT_BUTTON_CLASSES.indigoConfirm + ' w-full sm:w-auto',
-			denyButton: ALERT_BUTTON_CLASSES.neutralCancel + ' w-full sm:w-auto',
-		},
-	}).then((result) => {
-		if (result.isConfirmed && (data.activitySubmissionUrl || data.submittedDocumentsUrl)) {
-			window.location.href = data.activitySubmissionUrl || data.submittedDocumentsUrl;
-		} else if (result.isDenied && data.proposalSubmissionUrl) {
-			window.location.href = data.proposalSubmissionUrl;
-		}
-	});
-};
-
 export const initActivityCalendarSubmissionPage = () => {
-	showSubmissionSuccessAlert();
-
 	const mainForm = document.getElementById('activity-calendar-form');
 	if (!mainForm) return;
 

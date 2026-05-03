@@ -480,7 +480,8 @@ const showOrganizationApplicationSuccessAlert = () => {
     const flashEl =
         document.getElementById("organization-register-success-alert-data") ||
         document.getElementById("organization-renew-success-alert-data") ||
-        document.getElementById("after-activity-report-success-alert-data");
+        document.getElementById("after-activity-report-success-alert-data") ||
+        document.getElementById("activity-calendar-submitted-success-alert-data");
 
     if (!flashEl) {
         return;
