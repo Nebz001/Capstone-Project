@@ -749,6 +749,7 @@ class OrganizationSubmittedDocumentsController extends Controller
         $this->ensureOfficerOwnsOrganization($request, (int) $calendar->organization_id);
         $calendar->load([
             'organization',
+            'academicTerm',
             'entries' => function ($q): void {
                 $q->orderBy('activity_date')->orderBy('id')->with('proposal');
             },
@@ -838,8 +839,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             ];
         }
 
-        $term = $this->activityCalendarTermLabel($calendar->semester);
-        $titleLine = trim(($calendar->academic_year ?? 'Academic year N/A').' · '.$term.' activity calendar');
+        $resolvedAy = $calendar->academicTerm?->academic_year ?? '—';
+        $resolvedTerm = $this->activityCalendarTermLabel($calendar->academicTerm?->semester);
+        $titleLine = trim(($resolvedAy !== '—' ? $resolvedAy : 'Academic year N/A').' · '.$resolvedTerm.' activity calendar');
 
         $nav = $this->detailBackNavigation($request);
 
@@ -851,10 +853,9 @@ class OrganizationSubmittedDocumentsController extends Controller
             'statusLabel' => $sp['label'],
             'statusClass' => $sp['badge_class'],
             'metaRows' => [
-                ['label' => 'RSO name (form)', 'value' => $calendar->submitted_organization_name ?? '—'],
                 ['label' => 'Organization (profile)', 'value' => $calendar->organization?->organization_name ?? '—'],
-                ['label' => 'Academic year', 'value' => $calendar->academic_year ?? '—'],
-                ['label' => 'Term', 'value' => $term],
+                ['label' => 'Academic year', 'value' => $resolvedAy],
+                ['label' => 'Term', 'value' => $resolvedTerm],
                 ['label' => 'Date submitted', 'value' => optional($calendar->submission_date)->format('M j, Y') ?? '—'],
                 ['label' => 'Activities listed', 'value' => (string) $calendar->entries->count()],
             ],
@@ -3279,13 +3280,11 @@ class OrganizationSubmittedDocumentsController extends Controller
             ]);
         }
 
-        foreach (ActivityCalendar::query()->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $cal) {
+        foreach (ActivityCalendar::query()->with('academicTerm')->where('organization_id', $organization->id)->orderByDesc('updated_at')->get() as $cal) {
             $sp = $this->submissionStatusPresentation($cal->status);
-            $term = $this->activityCalendarTermLabel($cal->semester);
-            $title = trim(($cal->academic_year ?? 'AY —').' · '.$term.' Activity Calendar');
-            $hasFile = is_string($cal->calendar_file) && $cal->calendar_file !== '';
-            // Keep this record under "Manage Organization -> Submitted Documents"
-            // (do not jump back into the Activity Submission workflow module).
+            $calAy = $cal->academicTerm?->academic_year ?? '—';
+            $term = $this->activityCalendarTermLabel($cal->academicTerm?->semester);
+            $title = trim(($calAy !== '—' ? $calAy : 'AY —').' · '.$term.' Activity Calendar');
             $detail = $qDetail(route('organizations.submitted-documents.calendars.show', $cal));
             $rows->push([
                 'type_key' => 'activity_calendar',
@@ -3298,16 +3297,16 @@ class OrganizationSubmittedDocumentsController extends Controller
                 'status_raw' => $cal->status,
                 'status_label' => $sp['label'],
                 'status_variant' => $this->variantKeyFromBadge($sp['badge_class']),
-                'academic_year' => $cal->academic_year,
-                'academic_context' => trim(collect([$cal->academic_year ? 'AY '.$cal->academic_year : null, $term !== '—' ? $term : null])->filter()->implode(' · ')) ?: null,
+                'academic_year' => $calAy,
+                'academic_context' => trim(collect([$calAy !== '—' ? 'AY '.$calAy : null, $term !== '—' ? $term : null])->filter()->implode(' · ')) ?: null,
                 'remarks_preview' => $this->revisionSectionsPreview($this->moduleRevisionSections(is_array($cal->admin_field_reviews) ? $cal->admin_field_reviews : [])),
                 'detail_href' => $detail,
-                'has_files' => $hasFile,
+                'has_files' => false,
                 'files_href' => $detail.'#submitted-files',
                 'sort_timestamp' => $cal->updated_at?->getTimestamp() ?? 0,
                 'row_actions' => $this->listRowActions(
                     $detail,
-                    $hasFile,
+                    false,
                     $detail.'#submitted-files',
                     [],
                 ),

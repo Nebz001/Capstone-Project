@@ -2366,6 +2366,7 @@ class OrganizationController extends Controller
 
         $latestCalendar = $organization->activityCalendars()
             ->with([
+                'academicTerm',
                 'entries' => fn ($query) => $query->orderBy('activity_date')->orderBy('id'),
             ])
             ->latest('submission_date')
@@ -2460,7 +2461,8 @@ class OrganizationController extends Controller
             ->latest('id')
             ->first();
 
-        if ($latestLockedCalendar && strtolower((string) $latestLockedCalendar->status) !== 'revision') {
+        $latestLockedStatus = strtolower((string) ($latestLockedCalendar->status ?? ''));
+        if ($latestLockedCalendar && ! in_array($latestLockedStatus, ['revision', 'draft'], true)) {
             $calUrl = $isAdminCalendar
                 ? route('admin.submissions.activity-calendar')
                 : route('organizations.activity-calendar-submission');
@@ -2553,20 +2555,32 @@ class OrganizationController extends Controller
             ->where('organization_id', $organization->id)
             ->latest('id')
             ->first();
+        $submittedDocumentsCalendarUrl = $latestCalendar
+            ? route('organizations.submitted-documents.calendars.show', $latestCalendar)
+            : route('organizations.submitted-documents');
         if ($latestCalendar) {
             $this->createOfficerNotification(
                 $user,
                 'Activity Calendar Submitted',
                 'Your activity calendar has been submitted for review.',
                 'info',
-                route('organizations.submitted-documents.calendars.show', $latestCalendar),
+                $submittedDocumentsCalendarUrl,
                 $latestCalendar
             );
         }
 
+        if (! $latestCalendar) {
+            return redirect()
+                ->route('organizations.activity-calendar-submission')
+                ->with(
+                    'activity_calendar_success_redirect',
+                    route('organizations.activity-calendar-submission')
+                );
+        }
+
         return redirect()
             ->route('organizations.activity-calendar-submission')
-            ->with('activity_calendar_submitted', true);
+            ->with('activity_calendar_success_redirect', $submittedDocumentsCalendarUrl);
     }
 
     public function storeActivityCalendarDraftEntry(Request $request): \Illuminate\Http\JsonResponse
@@ -4366,6 +4380,16 @@ class OrganizationController extends Controller
             && (int) $latest->academic_term_id === $termId
         ) {
             return $latest;
+        }
+
+        $hasNonEditableForTerm = ActivityCalendar::query()
+            ->where('organization_id', $organization->id)
+            ->where('academic_term_id', $termId)
+            ->whereNotIn('status', ['draft', 'revision'])
+            ->exists();
+
+        if ($hasNonEditableForTerm) {
+            abort(403, 'This activity calendar has already been submitted and can no longer be edited.');
         }
 
         return ActivityCalendar::create([
