@@ -218,6 +218,26 @@
         @else
         <dl class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
           @foreach (($section['fields'] ?? []) as $field)
+            @if (($moduleLabel ?? '') === 'Renewal' && ($section['key'] ?? '') === 'adviser' && ! empty($field['renewal_synthetic_adviser_status']))
+              @php
+                $synthKey = strtolower(trim((string) ($field['synthetic_status_key'] ?? 'pending')));
+                $renewalAdviserChip = match (true) {
+                  $synthKey === 'approved' => ['border' => 'border-emerald-200', 'bg' => 'bg-emerald-50', 'text' => 'text-emerald-700', 'dot' => 'bg-emerald-500'],
+                  default => ['border' => 'border-amber-200', 'bg' => 'bg-amber-50', 'text' => 'text-amber-800', 'dot' => 'bg-amber-500'],
+                };
+                $renewalAdviserLabel = $synthKey === 'approved' ? 'Approved' : 'Pending';
+              @endphp
+              <div class="{{ $readonlyItemClass }} {{ ($field['wide'] ?? false) ? 'md:col-span-2' : '' }}">
+                <dt class="{{ $readonlyLabelClass }}">{{ $field['label'] }}</dt>
+                <dd class="mt-2">
+                  <span class="inline-flex items-center gap-1.5 rounded-full border {{ $renewalAdviserChip['border'] }} {{ $renewalAdviserChip['bg'] }} px-3 py-1 text-xs font-semibold {{ $renewalAdviserChip['text'] }}">
+                    <span class="h-1.5 w-1.5 rounded-full {{ $renewalAdviserChip['dot'] }}" aria-hidden="true"></span>
+                    {{ $renewalAdviserLabel }}
+                  </span>
+                </dd>
+              </div>
+              @continue
+            @endif
             @php
               $isCalendarEntry = ($moduleLabel ?? '') === 'Activity Calendar' && str_starts_with((string) ($section['key'] ?? ''), 'entry_');
               $calAnchor = '';

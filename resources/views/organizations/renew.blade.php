@@ -73,6 +73,9 @@
             enctype="multipart/form-data"
             class="space-y-4"
             data-org-form-blocked="false"
+            @if (! empty($organization?->id))
+                data-adviser-except-organization-id="{{ (int) $organization->id }}"
+            @endif
         >
             @csrf
             <fieldset class="min-w-0 space-y-4 border-0 p-0 m-0">
@@ -163,6 +166,7 @@
                             <p id="adviser_selected_text">{{ old('adviser_search') }}</p>
                         </div>
                         @error('adviser_user_id') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+                        <p id="adviser_search_client_error" class="mt-2 hidden text-sm text-red-600" role="status" aria-live="polite"></p>
                     </div>
                     <div> 
                         <x-forms.label for="contact_no" required>Contact No.</x-forms.label>

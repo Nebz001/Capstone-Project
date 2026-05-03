@@ -396,7 +396,7 @@
                                     @endif
                                 </div>
                                 <div id="{{ $revisionAnchorId('contact', 'contact_no') }}" class="{{ $readonlyItemClass }}">
-                                    <p class="{{ $readonlyLabelClass }}">Contact number</p>
+                                    <p class="{{ $readonlyLabelClass }}">Contact Person Contact No.</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_no ?? '—' }}</p>
                                     @php $contactNoNote = $formRevisionNote('contact_no'); @endphp
                                     @if ($contactNoNote)
@@ -404,7 +404,7 @@
                                     @endif
                                 </div>
                                 <div id="{{ $revisionAnchorId('contact', 'contact_email') }}" class="{{ $readonlyItemClass }} sm:col-span-2">
-                                    <p class="{{ $readonlyLabelClass }}">Contact email</p>
+                                    <p class="{{ $readonlyLabelClass }}">Contact Person Email Address</p>
                                     <p class="{{ $readonlyValueClass }}">{{ $activeApplication?->contact_email ?? '—' }}</p>
                                     @php $contactEmailNote = $formRevisionNote('contact_email'); @endphp
                                     @if ($contactEmailNote)
@@ -760,7 +760,7 @@
                                 @if ($shouldShowField('contact_no'))
                                 <div id="{{ $revisionAnchorId('contact', 'contact_no') }}" data-profile-revision-field="contact_no" class="{{ $readonlyItemClass }} transition duration-150">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                        <x-forms.label for="contact_no" class="!mb-0">Contact Number</x-forms.label>
+                                        <x-forms.label for="contact_no" class="!mb-0">Contact Person Contact No.</x-forms.label>
                                         <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input
@@ -781,7 +781,7 @@
                                 @if ($shouldShowField('contact_email'))
                                 <div id="{{ $revisionAnchorId('contact', 'contact_email') }}" data-profile-revision-field="contact_email" class="{{ $readonlyItemClass }} transition duration-150 sm:col-span-2">
                                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                        <x-forms.label for="contact_email" class="!mb-0">Contact Email</x-forms.label>
+                                        <x-forms.label for="contact_email" class="!mb-0">Contact Person Email Address</x-forms.label>
                                         <span data-revision-updated-badge class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Updated</span>
                                     </div>
                                     <x-forms.input

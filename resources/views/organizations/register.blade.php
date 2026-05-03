@@ -158,9 +158,10 @@
               <p id="adviser_selected_text">{{ old('adviser_search') }}</p>
             </div>
             @error('adviser_user_id') <x-forms.error>{{ $message }}</x-forms.error> @enderror
+            <p id="adviser_search_client_error" class="mt-2 hidden text-sm text-red-600" role="status" aria-live="polite"></p>
           </div>
           <div>
-            <x-forms.label for="contact_no" required>Contact No.</x-forms.label>
+            <x-forms.label for="contact_no" required>Contact Person Contact No.</x-forms.label>
             <x-forms.input
               id="contact_no"
               name="contact_no"
@@ -176,7 +177,7 @@
             @error('contact_no') <x-forms.error>{{ $message }}</x-forms.error> @enderror
           </div>
           <div>
-            <x-forms.label for="email_address" required>Email Address</x-forms.label>
+            <x-forms.label for="email_address" required>Contact Person Email Address</x-forms.label>
             <x-forms.input
               id="email_address"
               name="email_address"

@@ -30,16 +30,9 @@
     'updated_list_of_officers_founders' => 'Updated List of Officers/Founders',
     'dean_endorsement_faculty_adviser' => 'Letter from the School Dean endorsing the Faculty Adviser',
     'proposed_projects_budget' => 'List of Proposed Projects with Proposed Budget for the AY',
-    'others' => 'Others',
+    'others' => 'Other requirement',
   ];
   $requirementRows = $registration?->requirements?->keyBy('requirement_key') ?? collect();
-  $requirementKeys = \App\Models\SubmissionRequirement::requirementKeysForType(\App\Models\OrganizationSubmission::TYPE_REGISTRATION);
-  $requirementAttachmentKeys = ($registration?->attachments ?? collect())
-    ->pluck('file_type')
-    ->filter(fn ($type) => is_string($type) && str_starts_with($type, \App\Models\Attachment::TYPE_REGISTRATION_REQUIREMENT.':'))
-    ->map(fn (string $type): string => (string) \Illuminate\Support\Str::after($type, \App\Models\Attachment::TYPE_REGISTRATION_REQUIREMENT.':'))
-    ->values()
-    ->all();
   $requirementAttachmentsByKey = ($registration?->attachments ?? collect())
     ->filter(fn ($attachment) => is_string($attachment->file_type) && str_starts_with($attachment->file_type, \App\Models\Attachment::TYPE_REGISTRATION_REQUIREMENT.':'))
     ->sortByDesc('id')
@@ -48,6 +41,10 @@
       $key = (string) \Illuminate\Support\Str::after((string) $attachment->file_type, \App\Models\Attachment::TYPE_REGISTRATION_REQUIREMENT.':');
       return [$key => $attachment];
     });
+  $requirementKeys = collect(\App\Models\SubmissionRequirement::requirementKeysForType(\App\Models\OrganizationSubmission::TYPE_REGISTRATION))
+    ->filter(fn (string $key): bool => $key !== 'others' || $requirementAttachmentsByKey->has('others'))
+    ->values()
+    ->all();
   $orgTypeRaw = strtolower((string) ($org?->organization_type ?? ''));
   $orgTypeLabel = match ($orgTypeRaw) {
     'co_curricular' => 'Co-Curricular Organization',
@@ -578,8 +575,8 @@
         @php
           $requirement = $requirementRows->get($key);
           $checked = (bool) ($requirement?->is_submitted ?? false);
-          $hasFile = $checked && in_array($key, $requirementAttachmentKeys, true);
           $attachment = $requirementAttachmentsByKey->get($key);
+          $hasFile = $attachment !== null;
           $requirementUpdate = $fieldUpdateFor('requirements', (string) $key);
           $extension = strtoupper((string) pathinfo((string) ($attachment?->original_name ?: $attachment?->stored_path ?: ''), PATHINFO_EXTENSION));
           $badgeLabel = in_array($extension, ['PDF', 'DOCX', 'PNG', 'JPG', 'JPEG'], true) ? $extension : 'FILE';
