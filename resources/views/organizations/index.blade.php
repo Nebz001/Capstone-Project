@@ -40,10 +40,9 @@
     </header>
 
     @php
-        $sd = $submissionDashboard ?? ['empty' => true];
-        $sdEmpty = ! empty($sd['empty']);
-        $allModuleWorkflows = is_array($moduleWorkflows ?? null) ? $moduleWorkflows : [];
-        $hasAnyWorkflow = ! $sdEmpty || count($allModuleWorkflows) > 0;
+        $dashWorkflows = is_array($dashboardWorkflows ?? null) ? $dashboardWorkflows : [];
+        $hasAnyWorkflow = count($dashWorkflows) > 0;
+        $dashWorkflowCount = count($dashWorkflows);
     @endphp
 
     <section class="mb-6" aria-labelledby="dashboard-submission-status-heading">
@@ -55,37 +54,61 @@
 
             @if (! $hasAnyWorkflow)
                 <div class="px-5 py-5 sm:px-6">
-                    <p class="text-sm font-semibold text-slate-900">No registration submission on file yet</p>
-                    <p class="mt-1 text-xs text-slate-600">Start registration to view approval routing and revision requests in this dashboard card.</p>
+                    <p class="text-sm font-semibold text-slate-900">No submitted documents yet.</p>
+                    <p class="mt-1 text-xs text-slate-600">Start registration to submit organization documents and track approval routing here.</p>
                     <div class="mt-3 flex flex-wrap gap-2">
                         <a href="{{ route('organizations.register') }}{{ $saQ }}" class="inline-flex items-center justify-center rounded-xl bg-[#003E9F] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00327F]">Start registration</a>
                         <a href="{{ route('organizations.manage') }}{{ $saQ }}" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Manage Organization</a>
                     </div>
                 </div>
             @else
-                <div class="divide-y divide-slate-100">
+                <div class="px-5 py-4 sm:px-6">
+                    @if ($dashWorkflowCount > 1)
+                        <div class="mb-5">
+                            <label for="dashboard-workflow-selector" class="mb-1.5 block text-xs font-semibold text-slate-700">View workflow for</label>
+                            <select
+                                id="dashboard-workflow-selector"
+                                class="block w-full max-w-xl rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-4 focus:ring-sky-500/15"
+                            >
+                                @foreach ($dashWorkflows as $w)
+                                    @if (! empty($w['id']))
+                                        <option value="{{ $w['id'] }}" @selected(! empty($w['selected']))>
+                                            {{ $w['selector_option_text'] ?? (($w['selector_label'] ?? $w['title'] ?? '').' — '.($w['status_label'] ?? '')) }}
+                                        </option>
+                                    @endif
+                                @endforeach
+                            </select>
+                        </div>
+                    @endif
 
-                    {{-- ── Registration / Renewal card (existing logic, unchanged) ── --}}
-                    @if (! $sdEmpty)
+                    @foreach ($dashWorkflows as $w)
+                        @if (empty($w['id']))
+                            @continue
+                        @endif
                         @php
-                            $infoRevisions = is_array($sd['info_revisions'] ?? null) ? $sd['info_revisions'] : [];
-                            $fileRevisions = is_array($sd['file_revisions'] ?? null) ? $sd['file_revisions'] : [];
-                            $updatedInfo = is_array($sd['info_updated_under_review'] ?? null) ? $sd['info_updated_under_review'] : [];
-                            $updatedFiles = is_array($sd['file_updated_under_review'] ?? null) ? $sd['file_updated_under_review'] : [];
+                            $wSelected = ! empty($w['selected']);
+                            $infoRevisions = is_array($w['info_revisions'] ?? null) ? $w['info_revisions'] : [];
+                            $fileRevisions = is_array($w['file_revisions'] ?? null) ? $w['file_revisions'] : [];
+                            $updatedInfo = is_array($w['info_updated_under_review'] ?? null) ? $w['info_updated_under_review'] : [];
+                            $updatedFiles = is_array($w['file_updated_under_review'] ?? null) ? $w['file_updated_under_review'] : [];
+                            $wTitle = $w['title'] ?? 'Submission';
                         @endphp
-                        <div class="space-y-4 px-5 py-4.5 sm:px-6">
+                        <div
+                            data-dashboard-workflow-card="{{ $w['id'] }}"
+                            class="space-y-4 {{ $dashWorkflowCount > 1 && ! $wSelected ? 'hidden' : '' }}"
+                        >
                             <div class="flex flex-wrap items-start justify-between gap-2">
-                                <p class="text-sm font-bold text-slate-900">{{ $sd['title'] ?? 'Organization Registration' }}</p>
-                                <span class="inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide {{ $sd['status_badge_class'] ?? 'bg-slate-100 text-slate-700 border border-slate-200' }}">
-                                    {{ $sd['status_label'] ?? 'Status' }}
+                                <p class="text-sm font-bold text-slate-900">{{ $wTitle }}</p>
+                                <span class="inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide {{ $w['status_badge_class'] ?? 'bg-slate-100 text-slate-700 border border-slate-200' }}">
+                                    {{ $w['status_label'] ?? 'Status' }}
                                 </span>
                             </div>
 
                             <x-submission-progress-card
                                 variant="embed"
-                                :document-label="strtoupper(($sd['title'] ?? 'Organization Registration').' · Approval Routing')"
-                                :stages="$sd['stages'] ?? []"
-                                :summary="$sd['status_message'] ?? ''"
+                                :document-label="strtoupper($wTitle.' · Approval Routing')"
+                                :stages="$w['stages'] ?? []"
+                                :summary="$w['status_message'] ?? ''"
                             />
 
                             @include('organizations.partials.dashboard-revision-cards', [
@@ -94,36 +117,10 @@
                                 '__updatedInfo' => $updatedInfo,
                                 '__updatedFiles' => $updatedFiles,
                             ])
-                        </div>
-                    @endif
 
-                    {{-- ── Additional module workflow cards ── --}}
-                    @foreach ($allModuleWorkflows as $mw)
-                        <div class="space-y-4 px-5 py-4.5 sm:px-6">
-                            <div class="flex flex-wrap items-start justify-between gap-2">
-                                <p class="text-sm font-bold text-slate-900">{{ $mw['title'] }}</p>
-                                <span class="inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide {{ $mw['status_badge_class'] }}">
-                                    {{ $mw['status_label'] }}
-                                </span>
-                            </div>
-
-                            <x-submission-progress-card
-                                variant="embed"
-                                :document-label="strtoupper($mw['title'].' · Approval Routing')"
-                                :stages="$mw['stages']"
-                                :summary="$mw['status_message']"
-                            />
-
-                            @include('organizations.partials.dashboard-revision-cards', [
-                                '__infoRevisions' => $mw['info_revisions'] ?? [],
-                                '__fileRevisions' => $mw['file_revisions'] ?? [],
-                                '__updatedInfo' => $mw['info_updated_under_review'] ?? [],
-                                '__updatedFiles' => $mw['file_updated_under_review'] ?? [],
-                            ])
-
-                            @if (! empty($mw['details_url']))
+                            @if (! empty($w['details_url']))
                                 <div>
-                                    <a href="{{ $mw['details_url'] }}?from=dashboard" class="inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] underline-offset-2 hover:underline">
+                                    <a href="{{ $w['details_url'] }}?from=dashboard" class="inline-flex items-center gap-1 text-xs font-semibold text-[#003E9F] underline-offset-2 hover:underline">
                                         View Submission Details
                                         <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
@@ -133,8 +130,32 @@
                             @endif
                         </div>
                     @endforeach
-
                 </div>
+
+                @if ($dashWorkflowCount > 1)
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function () {
+                            var selector = document.getElementById('dashboard-workflow-selector');
+                            var cards = document.querySelectorAll('[data-dashboard-workflow-card]');
+                            if (!selector || !cards.length) return;
+
+                            function showSelectedWorkflow() {
+                                var selectedId = selector.value;
+                                cards.forEach(function (card) {
+                                    var isMatch = card.getAttribute('data-dashboard-workflow-card') === selectedId;
+                                    card.classList.toggle('hidden', !isMatch);
+                                });
+                                try {
+                                    var url = new URL(window.location.href);
+                                    url.searchParams.set('workflow', selectedId);
+                                    window.history.replaceState({}, '', url);
+                                } catch (e) {}
+                            }
+
+                            selector.addEventListener('change', showSelectedWorkflow);
+                        });
+                    </script>
+                @endif
             @endif
         </div>
     </section>

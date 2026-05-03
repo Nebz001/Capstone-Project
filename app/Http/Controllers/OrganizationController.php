@@ -280,7 +280,8 @@ class OrganizationController extends Controller
         $calendarEvents = [];
         $proposalDashboard = ['empty' => true];
         $submissionDashboard = ['empty' => true];
-        $moduleWorkflows = [];
+        $dashboardWorkflows = [];
+        $dashboardSelectedWorkflowId = '';
         $user = $request->user();
         if ($user) {
             $organization = $user->currentOrganization();
@@ -288,6 +289,9 @@ class OrganizationController extends Controller
                 $calendarEvents = $this->buildOrganizationDashboardCalendarEvents($organization);
                 $submissionDashboard = $this->buildSubmissionStatusDashboard($organization);
                 $moduleWorkflows = $this->buildAllModuleWorkflows($organization);
+                $presentation = $this->buildDashboardWorkflowPresentation($request, $submissionDashboard, $moduleWorkflows);
+                $dashboardWorkflows = $presentation['workflows'];
+                $dashboardSelectedWorkflowId = $presentation['selected_id'];
                 $selectedProposalId = (int) $request->integer('proposal_id');
                 [$featuredProposal, $usedDefaultOldestActive] = $this->resolveDashboardFeaturedProposal($organization, $selectedProposalId);
                 $proposalDashboard = $this->buildProposalDashboardProgress($featuredProposal);
@@ -303,7 +307,8 @@ class OrganizationController extends Controller
             'calendarEvents' => $calendarEvents,
             'proposalDashboard' => $proposalDashboard,
             'submissionDashboard' => $submissionDashboard,
-            'moduleWorkflows' => $moduleWorkflows,
+            'dashboardWorkflows' => $dashboardWorkflows,
+            'dashboardSelectedWorkflowId' => $dashboardSelectedWorkflowId,
         ]);
     }
 
@@ -325,6 +330,11 @@ class OrganizationController extends Controller
     /**
      * @return array{
      *   empty: bool,
+     *   workflow_id?: string,
+     *   selector_label?: string,
+     *   effective_status_key?: string,
+     *   details_url?: string,
+     *   sort_ts?: int,
      *   title?: string,
      *   status_label?: string,
      *   status_badge_class?: string,
@@ -342,6 +352,7 @@ class OrganizationController extends Controller
         $submission = $organization->submissions()
             ->whereIn('type', [OrganizationSubmission::TYPE_REGISTRATION, OrganizationSubmission::TYPE_RENEWAL])
             ->whereNotIn('status', [OrganizationSubmission::STATUS_DRAFT])
+            ->with('academicTerm')
             ->latest('submission_date')
             ->latest('id')
             ->first();
@@ -499,14 +510,30 @@ class OrganizationController extends Controller
                 'variant' => 'secondary',
             ];
         }
+        $detailsUrl = route($submission->isRenewal() ? 'organizations.submitted-documents.renewals.show' : 'organizations.submitted-documents.registrations.show', $submission);
+
         $actions[] = [
             'label' => 'View Submission Details',
-            'href' => route($submission->isRenewal() ? 'organizations.submitted-documents.renewals.show' : 'organizations.submitted-documents.registrations.show', $submission).'?from=dashboard',
+            'href' => $detailsUrl.'?from=dashboard',
             'variant' => $actions === [] ? 'primary' : 'secondary',
         ];
 
+        $selectorLabel = $submission->isRenewal() ? 'Organization Renewal' : 'Organization Registration';
+        if ($submission->academicTerm) {
+            $ay = trim((string) ($submission->academicTerm->academic_year ?? ''));
+            $sem = trim((string) ($submission->academicTerm->semester ?? ''));
+            if ($ay !== '' || $sem !== '') {
+                $selectorLabel .= ' — '.trim($ay.($sem !== '' ? ' / '.$sem : ''));
+            }
+        }
+
         return [
             'empty' => false,
+            'workflow_id' => $submission->isRenewal() ? 'renewal-'.$submission->id : 'registration-'.$submission->id,
+            'selector_label' => $selectorLabel,
+            'effective_status_key' => $statusKey,
+            'details_url' => $detailsUrl,
+            'sort_ts' => $submission->updated_at?->getTimestamp() ?? $submission->submission_date?->getTimestamp() ?? 0,
             'title' => $submission->isRenewal() ? 'Organization Renewal' : 'Organization Registration',
             'status_label' => $presentation['label'],
             'status_badge_class' => $presentation['badge_class'],
@@ -551,6 +578,10 @@ class OrganizationController extends Controller
      * and rendered as the first card in the view via $submissionDashboard.
      *
      * @return list<array{
+     *     id: string,
+     *     selector_label: string,
+     *     effective_status_key: string,
+     *     sort_ts: int,
      *     module: string,
      *     title: string,
      *     status_label: string,
@@ -576,11 +607,14 @@ class OrganizationController extends Controller
             ->get();
 
         foreach ($calendars as $calendar) {
+            $calTitle = $this->activityCalendarCardTitle($calendar);
             $workflows[] = $this->buildModuleWorkflowCard(
                 module: 'activity_calendar',
-                title: $this->activityCalendarCardTitle($calendar),
+                title: $calTitle,
                 record: $calendar,
                 statusKey: strtoupper((string) ($calendar->status ?? 'PENDING')),
+                workflowId: 'activity-calendar-'.$calendar->id,
+                selectorLabel: $calTitle,
                 detailsUrl: route('organizations.submitted-documents.calendars.show', $calendar->id),
             );
         }
@@ -593,11 +627,14 @@ class OrganizationController extends Controller
 
         foreach ($proposals as $proposal) {
             $statusKey = strtoupper((string) ($proposal->status ?? 'PENDING'));
+            $propTitle = 'Activity Proposal — '.($proposal->activity_title ?: 'Untitled');
             $workflows[] = $this->buildModuleWorkflowCard(
                 module: 'activity_proposal',
-                title: 'Activity Proposal — '.($proposal->activity_title ?: 'Untitled'),
+                title: $propTitle,
                 record: $proposal,
                 statusKey: $statusKey,
+                workflowId: 'activity-proposal-'.$proposal->id,
+                selectorLabel: $propTitle,
                 detailsUrl: route('organizations.submitted-documents.proposals.show', $proposal->id),
                 stagesOverride: SubmissionRoutingProgress::stagesForActivityProposal($proposal),
                 messageOverride: SubmissionRoutingProgress::summaryForActivityProposal($statusKey),
@@ -612,11 +649,14 @@ class OrganizationController extends Controller
 
         foreach ($reports as $report) {
             $statusKey = strtoupper((string) ($report->status ?? 'PENDING'));
+            $reportTitle = 'After Activity Report — '.($report->event_title ?: 'Untitled');
             $workflows[] = $this->buildModuleWorkflowCard(
                 module: 'activity_report',
-                title: 'After Activity Report — '.($report->event_title ?: 'Untitled'),
+                title: $reportTitle,
                 record: $report,
                 statusKey: $statusKey,
+                workflowId: 'after-activity-report-'.$report->id,
+                selectorLabel: $reportTitle,
                 detailsUrl: route('organizations.submitted-documents.reports.show', $report->id),
                 stagesOverride: SubmissionRoutingProgress::stagesForActivityReport($statusKey),
                 messageOverride: SubmissionRoutingProgress::summaryForActivityReport($statusKey),
@@ -629,6 +669,10 @@ class OrganizationController extends Controller
     /**
      * @param  list<array{label: string, state: string}>|null  $stagesOverride
      * @return array{
+     *     id: string,
+     *     selector_label: string,
+     *     effective_status_key: string,
+     *     sort_ts: int,
      *     module: string,
      *     title: string,
      *     status_label: string,
@@ -647,6 +691,8 @@ class OrganizationController extends Controller
         string $title,
         Model $record,
         string $statusKey,
+        string $workflowId,
+        string $selectorLabel,
         ?string $detailsUrl = null,
         ?array $stagesOverride = null,
         ?string $messageOverride = null,
@@ -664,6 +710,10 @@ class OrganizationController extends Controller
         $routingKey = $effectiveStatus === 'RESUBMITTED' ? 'UNDER_REVIEW' : $effectiveStatus;
 
         return [
+            'id' => $workflowId,
+            'selector_label' => $selectorLabel,
+            'effective_status_key' => $effectiveStatus,
+            'sort_ts' => $this->dashboardWorkflowSortTimestamp($record),
             'module' => $module,
             'title' => $title,
             'status_label' => $presentation['label'],
@@ -676,6 +726,146 @@ class OrganizationController extends Controller
             'info_updated_under_review' => $revisionData['info_updated'],
             'file_updated_under_review' => $revisionData['file_updated'],
         ];
+    }
+
+    private function dashboardWorkflowSortTimestamp(Model $record): int
+    {
+        if ($record instanceof ActivityCalendar) {
+            return $record->updated_at?->getTimestamp()
+                ?? $record->submission_date?->getTimestamp()
+                ?? 0;
+        }
+        if ($record instanceof ActivityProposal) {
+            return $record->updated_at?->getTimestamp()
+                ?? $record->submission_date?->getTimestamp()
+                ?? 0;
+        }
+        if ($record instanceof ActivityReport) {
+            return $record->updated_at?->getTimestamp()
+                ?? $record->report_submission_date?->getTimestamp()
+                ?? 0;
+        }
+
+        return (int) ($record->updated_at?->getTimestamp() ?? 0);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $moduleWorkflows
+     * @return array{workflows: list<array<string, mixed>>, selected_id: string}
+     */
+    private function buildDashboardWorkflowPresentation(Request $request, array $submissionDashboard, array $moduleWorkflows): array
+    {
+        $rows = [];
+        if (empty($submissionDashboard['empty'])) {
+            $rows[] = [
+                'id' => (string) ($submissionDashboard['workflow_id'] ?? ''),
+                'selector_label' => (string) ($submissionDashboard['selector_label'] ?? $submissionDashboard['title'] ?? ''),
+                'effective_status_key' => (string) ($submissionDashboard['effective_status_key'] ?? ''),
+                'sort_ts' => (int) ($submissionDashboard['sort_ts'] ?? 0),
+                'kind' => 'organization_submission',
+                'title' => $submissionDashboard['title'] ?? '',
+                'status_label' => $submissionDashboard['status_label'] ?? '',
+                'status_badge_class' => $submissionDashboard['status_badge_class'] ?? '',
+                'stages' => $submissionDashboard['stages'] ?? [],
+                'status_message' => $submissionDashboard['status_message'] ?? '',
+                'info_revisions' => $submissionDashboard['info_revisions'] ?? [],
+                'file_revisions' => $submissionDashboard['file_revisions'] ?? [],
+                'info_updated_under_review' => $submissionDashboard['info_updated_under_review'] ?? [],
+                'file_updated_under_review' => $submissionDashboard['file_updated_under_review'] ?? [],
+                'details_url' => $submissionDashboard['details_url'] ?? null,
+            ];
+        }
+        foreach ($moduleWorkflows as $mw) {
+            if (! is_array($mw)) {
+                continue;
+            }
+            $rows[] = array_merge($mw, ['kind' => 'module']);
+        }
+
+        $validIds = array_values(array_filter(array_map(fn ($r) => is_array($r) ? ($r['id'] ?? null) : null, $rows)));
+
+        $selected = trim((string) $request->query('workflow', ''));
+        if ($selected === '' || ! in_array($selected, $validIds, true)) {
+            $selected = $this->resolveDefaultDashboardWorkflowId($rows) ?? ($validIds[0] ?? '');
+        }
+
+        foreach ($rows as $i => $row) {
+            if (! is_array($rows[$i])) {
+                continue;
+            }
+            $rows[$i]['selected'] = (($rows[$i]['id'] ?? '') === $selected) && $selected !== '';
+            $sl = trim((string) ($rows[$i]['selector_label'] ?? $rows[$i]['title'] ?? ''));
+            $badge = trim((string) ($rows[$i]['status_label'] ?? ''));
+            $rows[$i]['selector_option_text'] = trim($sl.($badge !== '' ? ' — '.$badge : ''));
+        }
+
+        return ['workflows' => $rows, 'selected_id' => $selected];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $workflows
+     */
+    private function resolveDefaultDashboardWorkflowId(array $workflows): ?string
+    {
+        if ($workflows === []) {
+            return null;
+        }
+
+        $pickFirst = function (callable $predicate) use ($workflows): ?string {
+            foreach ($workflows as $w) {
+                if (! is_array($w) || empty($w['id'])) {
+                    continue;
+                }
+                if ($predicate($w)) {
+                    return (string) $w['id'];
+                }
+            }
+
+            return null;
+        };
+
+        $id = $pickFirst(function (array $w): bool {
+            $k = strtoupper(trim((string) ($w['effective_status_key'] ?? '')));
+
+            return in_array($k, ['REVISION', 'REVISION_REQUIRED'], true);
+        });
+        if ($id !== null) {
+            return $id;
+        }
+
+        $id = $pickFirst(fn (array $w): bool => strtoupper(trim((string) ($w['effective_status_key'] ?? ''))) === 'RESUBMITTED');
+        if ($id !== null) {
+            return $id;
+        }
+
+        $id = $pickFirst(function (array $w): bool {
+            $k = strtoupper(trim((string) ($w['effective_status_key'] ?? '')));
+
+            return in_array($k, ['PENDING', 'UNDER_REVIEW', 'REVIEWED'], true);
+        });
+        if ($id !== null) {
+            return $id;
+        }
+
+        $id = $pickFirst(fn (array $w): bool => strtoupper(trim((string) ($w['effective_status_key'] ?? ''))) === 'REJECTED');
+        if ($id !== null) {
+            return $id;
+        }
+
+        usort($workflows, function ($a, $b): int {
+            $ta = is_array($a) ? (int) ($a['sort_ts'] ?? 0) : 0;
+            $tb = is_array($b) ? (int) ($b['sort_ts'] ?? 0) : 0;
+
+            return $tb <=> $ta;
+        });
+
+        foreach ($workflows as $w) {
+            if (is_array($w) && ! empty($w['id'])) {
+                return (string) $w['id'];
+            }
+        }
+
+        return null;
     }
 
     /**
