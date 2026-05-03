@@ -10,6 +10,29 @@ const escapeHtml = (value) => {
 		.replaceAll("'", '&#039;');
 };
 
+const getCsrfToken = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+const normalizeServerEntry = (row) => ({
+	entryId: row.entryId != null ? Number(row.entryId) : null,
+	date: row.date ?? '',
+	name: row.name ?? '',
+	sdgs: Array.isArray(row.sdgs) ? row.sdgs : [],
+	venue: row.venue ?? '',
+	participantProgram: row.participantProgram ?? '',
+	budget: row.budget != null ? String(row.budget) : '',
+});
+
+const toApiPayload = (data) => ({
+	date: data.date,
+	name: data.name,
+	sdg: data.sdgs,
+	venue: data.venue,
+	participant_program: data.participantProgram,
+	budget: data.budget === '' ? '0' : data.budget,
+});
+
+const entryUrl = (template, id) => template.replace('__ENTRY_ID__', String(id));
+
 const showSubmissionSuccessAlert = () => {
 	const flashEl = document.getElementById('activity-calendar-submitted-flash');
 	if (!flashEl) return;
@@ -89,8 +112,48 @@ export const initActivityCalendarSubmissionPage = () => {
 	if (!entry.date || !entry.name || entry.sdgOptions.length === 0 || !entry.venue || !entry.participantProgram || !entry.budget) return;
 	if (!entry.sdgDropdown || !entry.sdgTrigger || !entry.sdgMenu || !entry.sdgTriggerText || !entry.sdgSelectedWrap || !entry.sdgSelectedList) return;
 
+	const persistApi = mainForm.dataset.calendarEntriesPersist === '1';
+	const storeUrl = mainForm.dataset.calendarEntriesStoreUrl || '';
+	const updateUrlTemplate = mainForm.dataset.calendarEntryUpdateUrlTemplate || '';
+	const deleteUrlTemplate = mainForm.dataset.calendarEntryDeleteUrlTemplate || '';
+
 	const activities = [];
+	const initialEl = document.getElementById('activity-calendar-initial-activities');
+	if (initialEl && initialEl.textContent) {
+		try {
+			const parsed = JSON.parse(initialEl.textContent.trim());
+			if (Array.isArray(parsed)) {
+				for (const row of parsed) {
+					activities.push(normalizeServerEntry(row));
+				}
+			}
+		} catch {
+			/* ignore */
+		}
+	}
+
 	let editingIndex = null;
+
+	const jsonHeaders = {
+		'Content-Type': 'application/json',
+		Accept: 'application/json',
+		'X-CSRF-TOKEN': getCsrfToken(),
+		'X-Requested-With': 'XMLHttpRequest',
+	};
+
+	const parseErrorMessage = async (res) => {
+		try {
+			const body = await res.json();
+			if (body.errors && typeof body.errors === 'object') {
+				const first = Object.values(body.errors).flat()[0];
+				if (first) return String(first);
+			}
+			if (body.message) return String(body.message);
+		} catch {
+			/* ignore */
+		}
+		return 'Something went wrong. Please try again.';
+	};
 
 	const updateHidden = () => {
 		hiddenJson.value = JSON.stringify(activities);
@@ -129,19 +192,18 @@ export const initActivityCalendarSubmissionPage = () => {
 			const row = document.createElement('tr');
 			row.className = 'align-top';
 			row.dataset.index = String(index);
+			if (activity.entryId) {
+				row.dataset.entryId = String(activity.entryId);
+			}
 
 			row.innerHTML = `
-				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.date || '—')}</td>
-				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.name || '—')}</td>
-				<td class="px-5 py-3.5 text-slate-900">${escapeHtml((activity.sdgs || []).join(', ') || '—')}</td>
-				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.venue || '—')}</td>
-				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.participantProgram || '—')}</td>
-				<td class="px-5 py-3.5 text-slate-900">${escapeHtml(activity.budget || '—')}</td>
-				<td class="px-5 py-3.5">
-					<span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">Pending review</span>
-				</td>
-				<td class="px-5 py-3.5 text-sm text-slate-500">For admin use</td>
-				<td class="px-5 py-3.5">
+				<td class="px-5 py-4 font-medium text-slate-900">${escapeHtml(activity.date || '—')}</td>
+				<td class="px-5 py-4 font-medium text-slate-900">${escapeHtml(activity.name || '—')}</td>
+				<td class="px-5 py-4 text-slate-700">${escapeHtml((activity.sdgs || []).join(', ') || '—')}</td>
+				<td class="px-5 py-4 text-slate-700">${escapeHtml(activity.venue || '—')}</td>
+				<td class="px-5 py-4 text-slate-700">${escapeHtml(activity.participantProgram || '—')}</td>
+				<td class="px-5 py-4 text-slate-700">${escapeHtml(activity.budget || '—')}</td>
+				<td class="px-5 py-4">
 					<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 						<button type="button" data-action="edit" class="inline-flex items-center justify-center rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-sky-500/15">Edit</button>
 						<button type="button" data-action="delete" class="inline-flex items-center justify-center rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-sky-500/15">Delete</button>
@@ -237,6 +299,7 @@ export const initActivityCalendarSubmissionPage = () => {
 
 	const getEntryData = () => {
 		return {
+			entryId: editingIndex !== null ? activities[editingIndex]?.entryId ?? null : null,
 			date: entry.date.value.trim(),
 			name: entry.name.value.trim(),
 			sdgs: selectedSdgs(),
@@ -247,13 +310,7 @@ export const initActivityCalendarSubmissionPage = () => {
 	};
 
 	const validateEntry = () => {
-		const fields = [
-			entry.date,
-			entry.name,
-			entry.venue,
-			entry.participantProgram,
-			entry.budget,
-		];
+		const fields = [entry.date, entry.name, entry.venue, entry.participantProgram, entry.budget];
 
 		for (const field of fields) {
 			if (!field.checkValidity()) {
@@ -275,13 +332,64 @@ export const initActivityCalendarSubmissionPage = () => {
 		return true;
 	};
 
-	addButton.addEventListener('click', () => {
+	addButton.addEventListener('click', async () => {
 		if (!validateEntry()) return;
 
 		const data = getEntryData();
+		const wasEditing = editingIndex !== null;
+
+		if (persistApi && storeUrl && (editingIndex === null || activities[editingIndex]?.entryId)) {
+			const payload = toApiPayload(data);
+			try {
+				if (editingIndex !== null && activities[editingIndex]?.entryId) {
+					const id = activities[editingIndex].entryId;
+					const url = entryUrl(updateUrlTemplate, id);
+					const res = await fetch(url, {
+						method: 'PUT',
+						credentials: 'same-origin',
+						headers: jsonHeaders,
+						body: JSON.stringify(payload),
+					});
+					if (!res.ok) {
+						showToast(await parseErrorMessage(res), { variant: 'error' });
+						return;
+					}
+					const body = await res.json();
+					const merged = normalizeServerEntry(body.entry);
+					activities[editingIndex] = merged;
+				} else if (editingIndex === null) {
+					const res = await fetch(storeUrl, {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: jsonHeaders,
+						body: JSON.stringify(payload),
+					});
+					if (!res.ok) {
+						showToast(await parseErrorMessage(res), { variant: 'error' });
+						return;
+					}
+					const body = await res.json();
+					activities.push(normalizeServerEntry(body.entry));
+				} else {
+					activities[editingIndex] = { ...data, entryId: null };
+				}
+
+				render();
+				resetEntry();
+				setModeAdd();
+				entry.date.focus({ preventScroll: true });
+				addedSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+				showToast(wasEditing ? 'Activity updated successfully' : 'Activity added successfully', {
+					variant: 'success',
+				});
+			} catch {
+				showToast('Network error. Please try again.', { variant: 'error' });
+			}
+			return;
+		}
 
 		if (editingIndex === null) {
-			activities.push(data);
+			activities.push({ ...data, entryId: null });
 			render();
 			resetEntry();
 			entry.date.focus({ preventScroll: true });
@@ -290,7 +398,7 @@ export const initActivityCalendarSubmissionPage = () => {
 			return;
 		}
 
-		activities[editingIndex] = data;
+		activities[editingIndex] = { ...data, entryId: activities[editingIndex]?.entryId ?? null };
 		render();
 		resetEntry();
 		setModeAdd();
@@ -342,8 +450,31 @@ export const initActivityCalendarSubmissionPage = () => {
 				icon: 'warning',
 				confirmButtonText: 'Delete',
 				cancelButtonText: 'Cancel',
-			}).then((result) => {
+			}).then(async (result) => {
 				if (!result.isConfirmed) return;
+
+				const act = activities[parsed];
+				if (persistApi && deleteUrlTemplate && act?.entryId) {
+					try {
+						const delUrl = entryUrl(deleteUrlTemplate, act.entryId);
+						const res = await fetch(delUrl, {
+							method: 'DELETE',
+							credentials: 'same-origin',
+							headers: {
+								Accept: 'application/json',
+								'X-CSRF-TOKEN': getCsrfToken(),
+								'X-Requested-With': 'XMLHttpRequest',
+							},
+						});
+						if (!res.ok) {
+							showToast(await parseErrorMessage(res), { variant: 'error' });
+							return;
+						}
+					} catch {
+						showToast('Network error. Please try again.', { variant: 'error' });
+						return;
+					}
+				}
 
 				activities.splice(parsed, 1);
 
